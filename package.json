@@ -1,0 +1,22 @@
+{
+  "name": "radtest",
+  "version": "1.0.0",
+  "description": "rad test read me",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "devDependencies": {
+    "@playwright/test": "^1.58.0",
+    "@types/node": "^25.0.10",
+    "typescript": "^5.9.3"
+  }
+}

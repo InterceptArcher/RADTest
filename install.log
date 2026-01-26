@@ -1,0 +1,38 @@
+Starting Install...
+
+added 3 packages in 3s
+
+2 packages are looking for funding
+  run `npm fund` for details
+npm notice
+npm notice New major version of npm available! 10.8.2 -> 11.8.0
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.8.0
+npm notice To update run: npm install -g npm@11.8.0
+npm notice
+ls: cannot access 'package.json': No such file or directory
+Wrote to /workspaces/RADTest/package.json:
+
+{
+  "name": "radtest",
+  "version": "1.0.0",
+  "description": "rad test read me",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs",
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
+
+
+
+
+added 6 packages, and audited 7 packages in 3s
+
+found 0 vulnerabilities
+Done!
