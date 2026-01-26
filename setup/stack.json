@@ -1,19 +1,24 @@
 {
-  "project_name": "" ,
-  "owner": "" ,
-  "stack_type": "",
+  "project_name": "RADTest",
+  "owner": "Intercept",
+  "stack_type": "fullstack",
   "frontend": {
-    "provider": "",
-    "framework": "",
-    "language": ""
+    "provider": "vercel",
+    "framework": "nextjs",
+    "language": "typescript"
   },
   "backend": {
-    "provider": "",
-    "language": "",
-    "framework": ""
+    "provider": "railway",
+    "language": "python",
+    "framework": "fastapi"
   },
   "database": {
-    "provider": "",
-    "type": ""
+    "provider": "supabase",
+    "type": "postgresql"
+  },
+  "services": {
+    "intelligence_apis": ["apollo.io", "peopledatalabs"],
+    "llm_provider": "openai",
+    "slideshow_api": "gamma"
   }
 }
