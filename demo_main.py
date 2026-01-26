@@ -167,7 +167,101 @@ async def get_job_status(job_id: str):
     domain = company_data.get("domain", "demo.com")
     industry = company_data.get("industry", "Technology")
 
-    # Simulate completed job with mock data using actual company info
+    # Generate industry-specific mock data
+    industry_lower = industry.lower()
+
+    # Industry-specific templates
+    if "tech" in industry_lower or "software" in industry_lower or "saas" in industry_lower:
+        mock_data = {
+            "employee_count": "500-2000",
+            "revenue": "$50M - $200M",
+            "headquarters": "San Francisco, CA",
+            "founded_year": 2012,
+            "ceo": "Tech Executive",
+            "technology": ["Python", "React", "PostgreSQL", "AWS", "Kubernetes"],
+            "target_market": "Enterprise SaaS",
+            "geographic_reach": "Global"
+        }
+    elif "automotive" in industry_lower or "auto" in industry_lower:
+        mock_data = {
+            "employee_count": "10000-50000",
+            "revenue": "$5B - $20B",
+            "headquarters": "Detroit, MI",
+            "founded_year": 2003,
+            "ceo": "Automotive CEO",
+            "technology": ["Electric Vehicles", "Autonomous Driving", "Battery Tech", "AI"],
+            "target_market": "Consumer Automotive",
+            "geographic_reach": "Global"
+        }
+    elif "finance" in industry_lower or "fintech" in industry_lower or "banking" in industry_lower:
+        mock_data = {
+            "employee_count": "5000-15000",
+            "revenue": "$1B - $5B",
+            "headquarters": "New York, NY",
+            "founded_year": 2010,
+            "ceo": "Finance Executive",
+            "technology": ["Blockchain", "Mobile Banking", "AI/ML", "Cloud Infrastructure"],
+            "target_market": "Financial Services",
+            "geographic_reach": "North America & Europe"
+        }
+    elif "healthcare" in industry_lower or "health" in industry_lower or "medical" in industry_lower:
+        mock_data = {
+            "employee_count": "2000-8000",
+            "revenue": "$500M - $2B",
+            "headquarters": "Boston, MA",
+            "founded_year": 2008,
+            "ceo": "Healthcare Executive",
+            "technology": ["EMR Systems", "Telemedicine", "AI Diagnostics", "Cloud Security"],
+            "target_market": "Healthcare Providers",
+            "geographic_reach": "United States"
+        }
+    elif "retail" in industry_lower or "ecommerce" in industry_lower or "e-commerce" in industry_lower:
+        mock_data = {
+            "employee_count": "15000-50000",
+            "revenue": "$10B - $30B",
+            "headquarters": "Seattle, WA",
+            "founded_year": 2005,
+            "ceo": "Retail Executive",
+            "technology": ["E-commerce Platform", "Logistics Tech", "AI Recommendations", "Mobile Apps"],
+            "target_market": "Online Retail",
+            "geographic_reach": "Global"
+        }
+    elif "entertainment" in industry_lower or "media" in industry_lower or "streaming" in industry_lower:
+        mock_data = {
+            "employee_count": "8000-15000",
+            "revenue": "$20B - $30B",
+            "headquarters": "Los Angeles, CA",
+            "founded_year": 1997,
+            "ceo": "Media Executive",
+            "technology": ["Streaming Platform", "Content Delivery Network", "AI Recommendations", "Video Encoding"],
+            "target_market": "Consumer Entertainment",
+            "geographic_reach": "Global - 190+ countries"
+        }
+    elif "aerospace" in industry_lower or "space" in industry_lower:
+        mock_data = {
+            "employee_count": "5000-12000",
+            "revenue": "$2B - $10B",
+            "headquarters": "Hawthorne, CA",
+            "founded_year": 2002,
+            "ceo": "Aerospace CEO",
+            "technology": ["Rocket Propulsion", "Satellite Tech", "Reusable Vehicles", "Advanced Materials"],
+            "target_market": "Commercial & Government Space",
+            "geographic_reach": "Global"
+        }
+    else:
+        # Default for unknown industries
+        mock_data = {
+            "employee_count": "1000-5000",
+            "revenue": "$100M - $500M",
+            "headquarters": "San Francisco, CA",
+            "founded_year": 2010,
+            "ceo": "Chief Executive Officer",
+            "technology": ["Cloud Computing", "Data Analytics", "Mobile Apps", "AI/ML"],
+            "target_market": "Enterprise",
+            "geographic_reach": "Global"
+        }
+
+    # Simulate completed job with industry-appropriate mock data
     return JobStatus(
         job_id=job_id,
         status="completed",
@@ -183,14 +277,7 @@ async def get_job_status(job_id: str):
                 "company_name": company_name,
                 "domain": domain,
                 "industry": industry,
-                "employee_count": "1000-5000",
-                "revenue": "$100M - $500M",
-                "headquarters": "San Francisco, CA",
-                "founded_year": 2010,
-                "ceo": "John Doe",
-                "technology": ["Python", "React", "PostgreSQL", "AWS"],
-                "target_market": "Enterprise B2B",
-                "geographic_reach": "Global",
+                **mock_data,
                 "contacts": {
                     "website": domain,
                     "linkedin": f"https://linkedin.com/company/{company_name.lower().replace(' ', '-')}",
