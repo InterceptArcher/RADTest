@@ -100,22 +100,26 @@ async def create_profile_request(profile_request: CompanyProfileRequest):
     """
     Accept company profile requests and return mock job ID.
 
-    In demo mode, this returns immediately with a mock job ID.
+    In demo mode, this returns immediately with a mock job ID that encodes the company data.
     The actual data processing is simulated.
     """
     logger.info(f"Received profile request for: {profile_request.company_name}")
 
-    # Generate mock job ID
-    import hashlib
-    job_id = f"demo-{hashlib.md5(profile_request.company_name.encode()).hexdigest()[:12]}"
+    # Encode company data in job_id (base64 encoded JSON)
+    import base64
+    import json
 
-    # Store the company data for this job
-    jobs_store[job_id] = {
+    company_data = {
         "company_name": profile_request.company_name,
         "domain": profile_request.domain,
-        "industry": profile_request.industry or "Technology",
-        "requested_by": profile_request.requested_by
+        "industry": profile_request.industry or "Technology"
     }
+
+    encoded_data = base64.urlsafe_b64encode(json.dumps(company_data).encode()).decode()
+    job_id = f"demo-{encoded_data}"
+
+    # Also store in memory as backup (though it may not persist on serverless)
+    jobs_store[job_id] = company_data
 
     return ProfileRequestResponse(
         status="success",
@@ -134,12 +138,30 @@ async def get_job_status(job_id: str):
     """
     logger.info(f"Status check for job: {job_id}")
 
-    # Get the stored company data, or use defaults
-    company_data = jobs_store.get(job_id, {
-        "company_name": "Demo Company",
-        "domain": "demo.com",
-        "industry": "Technology"
-    })
+    # Decode company data from job_id
+    import base64
+    import json
+
+    company_data = None
+
+    # Try to decode from job_id
+    if job_id.startswith("demo-"):
+        try:
+            encoded_data = job_id.replace("demo-", "")
+            decoded_json = base64.urlsafe_b64decode(encoded_data.encode()).decode()
+            company_data = json.loads(decoded_json)
+        except Exception as e:
+            logger.warning(f"Failed to decode job_id: {e}")
+            # Fall back to stored data
+            company_data = jobs_store.get(job_id)
+
+    # Use defaults if no data found
+    if not company_data:
+        company_data = {
+            "company_name": "Demo Company",
+            "domain": "demo.com",
+            "industry": "Technology"
+        }
 
     company_name = company_data.get("company_name", "Demo Company")
     domain = company_data.get("domain", "demo.com")
