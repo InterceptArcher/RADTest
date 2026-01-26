@@ -7,8 +7,14 @@ services:
     plan: free
     branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn demo_main:app --host 0.0.0.0 --port $PORT
+    startCommand: cd backend && uvicorn production_main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.7
+      - key: APOLLO_API_KEY
+        value: Sat2ie-5bGpbtFwYBM7Dxg
+      - key: PEOPLEDATALABS_API_KEY
+        value: 428e3a8e7cd724ea74a8d0116ccd54a2b8220d2284ecab340ac7e723c71e5e84
+      - key: PDL_API_KEY
+        value: 428e3a8e7cd724ea74a8d0116ccd54a2b8220d2284ecab340ac7e723c71e5e84

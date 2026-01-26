@@ -62,9 +62,9 @@ class JobStatus(BaseModel):
     result: Optional[dict] = None
 
 
-# Get environment variables
+# Get environment variables (try both naming conventions)
 APOLLO_API_KEY = os.getenv("APOLLO_API_KEY")
-PEOPLEDATALABS_API_KEY = os.getenv("PEOPLEDATALABS_API_KEY")
+PEOPLEDATALABS_API_KEY = os.getenv("PEOPLEDATALABS_API_KEY") or os.getenv("PDL_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -243,6 +243,94 @@ async def fetch_pdl_data(company_data: dict) -> dict:
         return {}
 
 
+def extract_data_from_apis(company_data: dict, apollo_data: dict, pdl_data: dict) -> dict:
+    """Extract company data directly from Apollo and PeopleDataLabs responses"""
+    result = {
+        "company_name": company_data["company_name"],
+        "domain": company_data["domain"],
+        "industry": company_data.get("industry", "Unknown"),
+        "employee_count": "Unknown",
+        "revenue": "Unknown",
+        "headquarters": "Unknown",
+        "founded_year": None,
+        "ceo": "Unknown",
+        "technology": [],
+        "target_market": "Unknown",
+        "geographic_reach": "Unknown",
+        "confidence_score": 0.7
+    }
+
+    # Extract from Apollo.io data
+    if apollo_data and "organizations" in apollo_data:
+        orgs = apollo_data.get("organizations", [])
+        if orgs and len(orgs) > 0:
+            org = orgs[0]
+
+            # Get company name
+            if org.get("name"):
+                result["company_name"] = org["name"]
+
+            # Get industry
+            if org.get("industry"):
+                result["industry"] = org["industry"]
+
+            # Get employee count
+            if org.get("estimated_num_employees"):
+                emp = org["estimated_num_employees"]
+                result["employee_count"] = f"{emp:,}+" if emp else "Unknown"
+
+            # Get location
+            if org.get("city") and org.get("state"):
+                result["headquarters"] = f"{org['city']}, {org['state']}"
+            elif org.get("country"):
+                result["headquarters"] = org["country"]
+
+            # Get founded year
+            if org.get("founded_year"):
+                result["founded_year"] = org["founded_year"]
+
+            # Get revenue
+            if org.get("annual_revenue"):
+                rev = org["annual_revenue"]
+                if rev:
+                    result["revenue"] = f"${rev:,}" if isinstance(rev, (int, float)) else str(rev)
+
+            # Get technology
+            if org.get("technologies"):
+                result["technology"] = org["technologies"][:5]  # Top 5
+
+    # Extract from PeopleDataLabs data
+    if pdl_data and pdl_data.get("status") == 200:
+        company = pdl_data.get("data", {})
+
+        # Override with PDL data if available (often more accurate)
+        if company.get("name"):
+            result["company_name"] = company["name"]
+
+        if company.get("industry"):
+            result["industry"] = company["industry"]
+
+        if company.get("size"):
+            result["employee_count"] = company["size"]
+
+        if company.get("location"):
+            loc = company["location"]
+            if loc.get("name"):
+                result["headquarters"] = loc["name"]
+
+        if company.get("founded"):
+            result["founded_year"] = company["founded"]
+
+        if company.get("annual_revenue"):
+            result["revenue"] = company["annual_revenue"]
+
+        if company.get("tags"):
+            result["technology"] = company["tags"][:5]
+
+    logger.info(f"Extracted data for {result['company_name']}")
+    return result
+
+
 async def store_raw_data(company_name: str, apollo_data: dict, pdl_data: dict):
     """Store raw data in Supabase"""
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -277,15 +365,12 @@ async def store_raw_data(company_name: str, apollo_data: dict, pdl_data: dict):
 
 
 async def validate_with_llm(company_data: dict, apollo_data: dict, pdl_data: dict) -> dict:
-    """Validate and enrich data using OpenAI"""
+    """Validate and enrich data using OpenAI, or extract from API responses"""
+
+    # If no OpenAI, extract data directly from API responses
     if not OPENAI_API_KEY:
-        logger.warning("OpenAI API key not configured, returning basic data")
-        return {
-            "company_name": company_data["company_name"],
-            "domain": company_data["domain"],
-            "industry": company_data.get("industry", "Unknown"),
-            "confidence_score": 0.5
-        }
+        logger.info("OpenAI not configured, extracting data from API responses")
+        return extract_data_from_apis(company_data, apollo_data, pdl_data)
 
     try:
         from openai import OpenAI
