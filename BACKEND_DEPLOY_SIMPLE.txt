@@ -1,0 +1,42 @@
+╔════════════════════════════════════════════════════════════╗
+║                                                            ║
+║     🚀 DEPLOY BACKEND - 4 SIMPLE STEPS                   ║
+║                                                            ║
+╠════════════════════════════════════════════════════════════╣
+║                                                            ║
+║  STEP 1: Open Railway                                     ║
+║  → https://railway.app/new                                ║
+║                                                            ║
+║  STEP 2: Deploy from GitHub                               ║
+║  → Click "Deploy from GitHub repo"                        ║
+║  → Select: InterceptArcher/RADTest                        ║
+║  → Root Directory: backend                                ║
+║  → Click "Deploy"                                         ║
+║                                                            ║
+║  STEP 3: Get Your URL (after 2 min)                       ║
+║  → Click your service                                     ║
+║  → Settings → Networking                                  ║
+║  → "Generate Domain"                                      ║
+║  → Copy the URL                                           ║
+║                                                            ║
+║  STEP 4: Update Frontend                                  ║
+║  → Go to: https://vercel.com/dashboard                    ║
+║  → Click "frontend" project                               ║
+║  → Settings → Environment Variables                       ║
+║  → Add: NEXT_PUBLIC_API_URL = <your-railway-url>         ║
+║  → Save and Redeploy                                      ║
+║                                                            ║
+╠════════════════════════════════════════════════════════════╣
+║                                                            ║
+║  ✅ DONE! Visit:                                          ║
+║  → https://frontend-eight-rho-17.vercel.app              ║
+║                                                            ║
+║  🎉 Your full system is now LIVE!                        ║
+║                                                            ║
+╚════════════════════════════════════════════════════════════╝
+
+TOTAL TIME: 4 minutes
+DIFFICULTY: Super Easy
+COST: $0-5/month
+
+START HERE: https://railway.app/new
