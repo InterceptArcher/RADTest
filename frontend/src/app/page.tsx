@@ -56,7 +56,7 @@ export default function Home() {
   };
 
   /**
-   * Simulate processing (replace with actual polling in production).
+   * Simulate processing and fetch actual results from backend.
    */
   const simulateProcessing = async (jobId: string) => {
     // Simulate progress updates
@@ -77,35 +77,20 @@ export default function Home() {
       setCurrentStep(step);
     }
 
-    // Simulate final result
-    // In production, this would come from actual API polling
-    setResult({
-      success: true,
-      company_name: 'Acme Corporation',
-      domain: 'acme.com',
-      slideshow_url: 'https://gamma.app/docs/example-slideshow',
-      confidence_score: 0.85,
-      validated_data: {
-        company_name: 'Acme Corporation',
-        domain: 'acme.com',
-        industry: 'Technology',
-        employee_count: '1000-5000',
-        revenue: '$100M - $500M',
-        headquarters: 'San Francisco, CA',
-        founded_year: 2010,
-        ceo: 'John Doe',
-        technology: ['Python', 'React', 'PostgreSQL'],
-        target_market: 'Enterprise',
-        geographic_reach: 'Global',
-        contacts: {
-          website: 'acme.com',
-          linkedin: 'https://linkedin.com/company/acme',
-          email: 'contact@acme.com',
-        },
-      },
-    });
+    // Fetch actual results from backend
+    try {
+      const jobStatus = await apiClient.checkJobStatus(jobId);
 
-    setState('results');
+      if (jobStatus.status === 'completed' && jobStatus.result) {
+        setResult(jobStatus.result);
+        setState('results');
+      } else {
+        throw new Error('Job processing failed');
+      }
+    } catch (err) {
+      setState('error');
+      setError('Failed to retrieve results. Please try again.');
+    }
   };
 
   /**
