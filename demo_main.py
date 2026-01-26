@@ -5,7 +5,7 @@ Returns mock data for demonstration purposes.
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, Dict
 import asyncio
 import logging
 import sys
@@ -17,6 +17,9 @@ logging.basicConfig(
     stream=sys.stdout
 )
 logger = logging.getLogger(__name__)
+
+# In-memory storage for demo mode
+jobs_store: Dict[str, dict] = {}
 
 # Create FastAPI app
 app = FastAPI(
@@ -106,6 +109,14 @@ async def create_profile_request(profile_request: CompanyProfileRequest):
     import hashlib
     job_id = f"demo-{hashlib.md5(profile_request.company_name.encode()).hexdigest()[:12]}"
 
+    # Store the company data for this job
+    jobs_store[job_id] = {
+        "company_name": profile_request.company_name,
+        "domain": profile_request.domain,
+        "industry": profile_request.industry or "Technology",
+        "requested_by": profile_request.requested_by
+    }
+
     return ProfileRequestResponse(
         status="success",
         job_id=job_id,
@@ -123,7 +134,18 @@ async def get_job_status(job_id: str):
     """
     logger.info(f"Status check for job: {job_id}")
 
-    # Simulate completed job with mock data
+    # Get the stored company data, or use defaults
+    company_data = jobs_store.get(job_id, {
+        "company_name": "Demo Company",
+        "domain": "demo.com",
+        "industry": "Technology"
+    })
+
+    company_name = company_data.get("company_name", "Demo Company")
+    domain = company_data.get("domain", "demo.com")
+    industry = company_data.get("industry", "Technology")
+
+    # Simulate completed job with mock data using actual company info
     return JobStatus(
         job_id=job_id,
         status="completed",
@@ -131,14 +153,14 @@ async def get_job_status(job_id: str):
         current_step="Complete",
         result={
             "success": True,
-            "company_name": "Demo Company",
-            "domain": "demo.com",
-            "slideshow_url": "https://gamma.app/docs/demo-slideshow",
+            "company_name": company_name,
+            "domain": domain,
+            "slideshow_url": f"https://gamma.app/docs/{domain.replace('.', '-')}-profile",
             "confidence_score": 0.85,
             "validated_data": {
-                "company_name": "Demo Company",
-                "domain": "demo.com",
-                "industry": "Technology",
+                "company_name": company_name,
+                "domain": domain,
+                "industry": industry,
                 "employee_count": "1000-5000",
                 "revenue": "$100M - $500M",
                 "headquarters": "San Francisco, CA",
@@ -148,9 +170,9 @@ async def get_job_status(job_id: str):
                 "target_market": "Enterprise B2B",
                 "geographic_reach": "Global",
                 "contacts": {
-                    "website": "demo.com",
-                    "linkedin": "https://linkedin.com/company/demo",
-                    "email": "contact@demo.com"
+                    "website": domain,
+                    "linkedin": f"https://linkedin.com/company/{company_name.lower().replace(' ', '-')}",
+                    "email": f"contact@{domain}"
                 }
             }
         }
