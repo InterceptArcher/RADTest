@@ -7,7 +7,7 @@ services:
     plan: free
     branch: main
     buildCommand: pip install -r requirements.txt
-    startCommand: cd backend && uvicorn production_main:app --host 0.0.0.0 --port $PORT
+    startCommand: uvicorn demo_main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION
