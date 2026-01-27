@@ -370,7 +370,22 @@ async def validate_with_llm(company_data: dict, apollo_data: dict, pdl_data: dic
     # If no OpenAI, extract data directly from API responses
     if not OPENAI_API_KEY:
         logger.info("OpenAI not configured, extracting data from API responses")
-        return extract_data_from_apis(company_data, apollo_data, pdl_data)
+        result = extract_data_from_apis(company_data, apollo_data, pdl_data)
+
+        # If API extraction failed, use company database
+        if result.get("employee_count") == "Unknown":
+            logger.info(f"API extraction failed, checking company database for {company_data['company_name']}")
+            from backend.company_database import get_company_data
+            db_data = get_company_data(
+                company_data["company_name"],
+                company_data["domain"],
+                company_data.get("industry", "")
+            )
+            if db_data:
+                logger.info(f"Found {company_data['company_name']} in database")
+                return db_data
+
+        return result
 
     try:
         from openai import OpenAI
