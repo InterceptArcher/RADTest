@@ -260,74 +260,109 @@ def extract_data_from_apis(company_data: dict, apollo_data: dict, pdl_data: dict
         "confidence_score": 0.7
     }
 
-    # Extract from Apollo.io data
-    if apollo_data and "organizations" in apollo_data:
+    # Extract from PeopleDataLabs data (PRIMARY SOURCE - IT'S WORKING!)
+    if pdl_data and pdl_data.get("status") == 200:
+        logger.info(f"PDL returned data for {company_data['company_name']}")
+
+        # PDL returns data at root level, not nested in "data"
+        company = pdl_data
+
+        # Company name
+        if company.get("display_name"):
+            result["company_name"] = company["display_name"]
+        elif company.get("name"):
+            result["company_name"] = company["name"].title()
+
+        # Industry
+        if company.get("industry"):
+            result["industry"] = company["industry"].title()
+
+        # Employee count (PDL gives exact number!)
+        if company.get("employee_count"):
+            emp = company["employee_count"]
+            if emp > 10000:
+                result["employee_count"] = f"{emp:,}+"
+            else:
+                result["employee_count"] = f"{emp:,}"
+        elif company.get("size"):
+            result["employee_count"] = company["size"]
+
+        # Location/Headquarters
+        if company.get("location"):
+            loc = company["location"]
+            city = loc.get("locality", "")
+            region = loc.get("region", "")
+            country = loc.get("country", "")
+
+            if city and region:
+                result["headquarters"] = f"{city.title()}, {region}"
+            elif loc.get("name"):
+                result["headquarters"] = loc["name"].title()
+
+        # Founded year
+        if company.get("founded"):
+            result["founded_year"] = company["founded"]
+
+        # Technology/Tags
+        if company.get("tags"):
+            # Capitalize and clean tags
+            result["technology"] = [tag.title() for tag in company["tags"][:6]]
+
+        # Determine target market from industry
+        if company.get("industry"):
+            ind = company["industry"].lower()
+            if "software" in ind or "technology" in ind:
+                result["target_market"] = "Enterprise Software"
+            elif "retail" in ind or "consumer" in ind:
+                result["target_market"] = "Consumer Market"
+            elif "finance" in ind or "bank" in ind:
+                result["target_market"] = "Financial Services"
+            else:
+                result["target_market"] = company.get("industry", "Unknown").title()
+
+        # Geographic reach based on employee distribution
+        if company.get("employee_count_by_country"):
+            countries = len(company["employee_count_by_country"])
+            if countries > 50:
+                result["geographic_reach"] = f"Global - {countries}+ countries"
+            elif countries > 10:
+                result["geographic_reach"] = f"International - {countries} countries"
+            else:
+                result["geographic_reach"] = f"{countries} countries"
+
+        # Company type (public/private)
+        if company.get("type") == "public" and company.get("ticker"):
+            ticker = company.get("ticker")
+            result["company_type"] = f"Public ({ticker})"
+
+        # Update confidence score - PDL data is high quality!
+        result["confidence_score"] = 0.92
+
+        logger.info(f"Successfully extracted PDL data for {result['company_name']}: {result['employee_count']} employees")
+
+    # Extract from Apollo.io data (fallback if PDL fails)
+    elif apollo_data and "organizations" in apollo_data:
+        logger.info(f"Using Apollo data as fallback")
         orgs = apollo_data.get("organizations", [])
         if orgs and len(orgs) > 0:
             org = orgs[0]
 
-            # Get company name
             if org.get("name"):
                 result["company_name"] = org["name"]
-
-            # Get industry
             if org.get("industry"):
                 result["industry"] = org["industry"]
-
-            # Get employee count
             if org.get("estimated_num_employees"):
                 emp = org["estimated_num_employees"]
                 result["employee_count"] = f"{emp:,}+" if emp else "Unknown"
-
-            # Get location
             if org.get("city") and org.get("state"):
                 result["headquarters"] = f"{org['city']}, {org['state']}"
-            elif org.get("country"):
-                result["headquarters"] = org["country"]
-
-            # Get founded year
             if org.get("founded_year"):
                 result["founded_year"] = org["founded_year"]
-
-            # Get revenue
-            if org.get("annual_revenue"):
-                rev = org["annual_revenue"]
-                if rev:
-                    result["revenue"] = f"${rev:,}" if isinstance(rev, (int, float)) else str(rev)
-
-            # Get technology
             if org.get("technologies"):
-                result["technology"] = org["technologies"][:5]  # Top 5
+                result["technology"] = org["technologies"][:5]
 
-    # Extract from PeopleDataLabs data
-    if pdl_data and pdl_data.get("status") == 200:
-        company = pdl_data.get("data", {})
+            result["confidence_score"] = 0.85
 
-        # Override with PDL data if available (often more accurate)
-        if company.get("name"):
-            result["company_name"] = company["name"]
-
-        if company.get("industry"):
-            result["industry"] = company["industry"]
-
-        if company.get("size"):
-            result["employee_count"] = company["size"]
-
-        if company.get("location"):
-            loc = company["location"]
-            if loc.get("name"):
-                result["headquarters"] = loc["name"]
-
-        if company.get("founded"):
-            result["founded_year"] = company["founded"]
-
-        if company.get("annual_revenue"):
-            result["revenue"] = company["annual_revenue"]
-
-        if company.get("tags"):
-            result["technology"] = company["tags"][:5]
-
-    logger.info(f"Extracted data for {result['company_name']}")
     return result
 
 
