@@ -477,7 +477,8 @@ async def create_profile_request(
     # Generate job ID
     import hashlib
     import time
-    job_id = f"prod-{hashlib.md5(f"{profile_request.company_name}{time.time()}".encode()).hexdigest()[:12]}"
+    job_data = f"{profile_request.company_name}{time.time()}"
+    job_id = f"prod-{hashlib.md5(job_data.encode()).hexdigest()[:12]}"
 
     # Initialize job
     company_data = {
