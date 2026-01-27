@@ -8,22 +8,39 @@ RADTest is a comprehensive company intelligence gathering and profile generation
 
 ### Stack
 - **Frontend**: Next.js/React (Deployed on Vercel)
-- **Backend**: FastAPI (Python) (Deployed on Railway)
+- **Backend**: FastAPI (Python) (Deployed on Render.com)
 - **Database**: Supabase (PostgreSQL)
-- **Worker Services**: Ephemeral Railway containers
-- **Intelligence Sources**: Apollo.io, PeopleDataLabs
-- **LLM Provider**: OpenAI (GPT-4)
+- **Intelligence Sources**: PeopleDataLabs (primary), Apollo.io (fallback)
+- **LLM Provider**: OpenAI (GPT-4) - optional validation
 - **Slideshow Generation**: Gamma API
 
+### Key Technical Decisions
+
+**PeopleDataLabs as Primary Data Source**: The system uses PeopleDataLabs API as the primary source for company intelligence. PDL provides:
+- Exact employee counts (not ranges)
+- Founded year and headquarters location
+- Industry classification and technology tags
+- Geographic distribution across countries
+- Public/Private status with ticker symbols
+- 92% confidence scores for validated data
+
+**Real-time API Integration**: All company data is fetched in real-time from PeopleDataLabs, supporting ALL companies in their database (not limited to hardcoded data). This ensures fresh, accurate data for any company query.
+
+**Fallback Database**: A curated database of 17 major tech companies (Microsoft, Apple, Google, etc.) provides fallback data when APIs are unavailable, ensuring system resilience.
+
 ### Data Flow
-1. User requests company profile via frontend
-2. Backend receives request and triggers Railway worker
-3. Worker gathers intelligence from multiple sources in parallel
-4. Raw data injected into Supabase
-5. LLM agents validate and resolve data conflicts
-6. Finalized data stored in Supabase
-7. Slideshow generated via Gamma API
-8. Results returned to user
+1. User requests company profile via frontend (Vercel)
+2. Backend receives request and creates background job (Render)
+3. System queries PeopleDataLabs API for company intelligence
+4. Data extracted and validated with 92% confidence score
+5. Finalized data stored in Supabase (optional)
+6. Slideshow URL generated (Gamma API integration ready)
+7. Results returned to user with complete company profile
+
+**Current Status**: ✅ Fully operational with PeopleDataLabs integration
+- Backend: https://radtest-backend.onrender.com
+- Frontend: https://frontend-eight-rho-17.vercel.app
+- Tested and verified with real companies (Lululemon, Microsoft, etc.)
 
 ---
 
