@@ -4,9 +4,9 @@
 
 **Configuration**: ✅ 100% Complete
 **LLM Council**: ✅ Multi-Agent Validation Active
-**Code Status**: ✅ Pushed to GitHub (Commit: e65cb7d)
-**Deployment**: 🔄 Ready for Render.com
-**Last Updated**: 2026-01-27
+**Code Status**: ✅ Pushed to GitHub (Commit: fd50932)
+**Deployment**: 🔄 Auto-deploying on Render.com
+**Last Updated**: 2026-01-29
 
 ### Quick Links
 - **🔥 [Complete Redeployment Now](REDEPLOY_COMPLETE.md)** - Finish deployment to Render.com
@@ -56,8 +56,8 @@ RADTest is a comprehensive company intelligence gathering and profile generation
 6. Slideshow URL generated (Gamma API integration ready)
 7. Results returned to user with complete company profile
 
-**Current Status**: ✅ Fully operational with PeopleDataLabs integration
-- Backend: https://radtest-backend.onrender.com
+**Current Status**: ✅ Fully operational with LLM Council (20 specialists + aggregator)
+- Backend: https://radtest-backend-4mux.onrender.com
 - Frontend: https://frontend-eight-rho-17.vercel.app
 - Tested and verified with real companies (Lululemon, Microsoft, etc.)
 
@@ -284,17 +284,37 @@ Automated slideshow generation from finalized company data:
 
 Advanced multi-agent decision making for data conflict resolution:
 
-**Council Architecture** (10-20 LLM agents):
-- Each agent independently evaluates candidate values
-- Provides signals (not final decisions):
-  - Preferred value
-  - Confidence score
-  - Reliability weight
-  - Recency score
-  - Agreement score
+**Council Architecture** (20 Specialist LLMs + 1 Aggregator):
 
-**Revolver Agent** (Decision maker):
-- Consolidates all council signals
+Each specialist independently evaluates data through their unique lens:
+1. **Industry Classification Expert** - NAICS/SIC categories, industry keywords
+2. **Employee Count Analyst** - Headcount, ranges, growth trends
+3. **Revenue & Financial Analyst** - Revenue figures, funding info
+4. **Geographic Presence Specialist** - HQ location, country operations (actual names, not "global")
+5. **Company History Expert** - Founding year, founders, milestones
+6. **Technology Stack Expert** - Core technologies, capabilities
+7. **Target Market Analyst** - B2B/B2C/B2G, customer segments
+8. **Product & Services Analyst** - Main products, offerings
+9. **Competitive Intelligence Analyst** - Competitors, market position
+10. **Leadership & Executive Analyst** - CEO, key executives
+11. **Social Media & Web Presence Analyst** - LinkedIn, Twitter, website
+12. **Legal & Corporate Structure Analyst** - Public/private, ticker, parent company
+13. **Growth & Trajectory Analyst** - Growth stage, expansion signals
+14. **Brand & Reputation Analyst** - Brand recognition, awards
+15. **Partnerships & Alliances Analyst** - Key partners, ecosystem
+16. **Customer Base Analyst** - Notable customers, segments
+17. **Pricing & Business Model Analyst** - Pricing model, business model
+18. **Company Culture Analyst** - Values, culture type
+19. **Innovation & R&D Analyst** - R&D focus, patents
+20. **Risk & Compliance Analyst** - Certifications, regulations
+
+**Chief Aggregator** (Decision maker):
+- Synthesizes all 20 specialist outputs
+- Resolves conflicts by choosing most specific/accurate data
+- Enforces concise, fact-driven output:
+  - Lists actual country names (not "operates in 190 countries")
+  - Uses specific employee counts (not "large workforce")
+  - Provides concrete revenue figures (not "significant revenue")
 - Applies predefined resolution rules:
   1. **Source Reliability**: Tiered weighting (Tier 1 = 1.0, Tier 5 = 0.2)
   2. **Cross-source Agreement**: Values from multiple sources preferred
