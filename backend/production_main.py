@@ -997,9 +997,36 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> str:
         logger.warning("Gamma API key not configured")
         return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
 
-    # TODO: Implement actual Gamma API integration
-    # For now, return a placeholder URL
-    return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
+    try:
+        # Import and initialize Gamma slideshow creator
+        import sys
+        sys.path.insert(0, 'worker')
+        from gamma_slideshow import GammaSlideshowCreator
+
+        gamma_creator = GammaSlideshowCreator(GAMMA_API_KEY)
+
+        # Prepare company data for slideshow
+        company_data = {
+            "company_name": company_name,
+            "validated_data": validated_data,
+            "confidence_score": validated_data.get("confidence_score", 0.85)
+        }
+
+        # Generate slideshow
+        result = await gamma_creator.create_slideshow(company_data)
+
+        if result.get("success"):
+            slideshow_url = result.get("slideshow_url")
+            logger.info(f"Slideshow generated successfully: {slideshow_url}")
+            return slideshow_url
+        else:
+            logger.error(f"Slideshow generation failed: {result.get('error')}")
+            return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
+
+    except Exception as e:
+        logger.error(f"Error generating slideshow: {str(e)}")
+        # Return placeholder on error
+        return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
 
 
 # Generate slideshow endpoint (on-demand)
