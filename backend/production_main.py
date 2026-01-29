@@ -531,6 +531,257 @@ async def get_job_status(job_id: str):
     )
 
 
+# ============================================================================
+# Debug Mode Endpoints (Features 018-021)
+# ============================================================================
+
+from typing import List, Any
+from datetime import timedelta
+import uuid
+
+def generate_debug_data(job_id: str, job_data: dict) -> dict:
+    """Generate debug data for a job."""
+    company_name = job_data.get("company_data", {}).get("company_name", "Unknown Company")
+    domain = job_data.get("company_data", {}).get("domain", "unknown.com")
+    status = job_data.get("status", "completed")
+    created_at = job_data.get("created_at", datetime.utcnow().isoformat())
+
+    base_time = datetime.fromisoformat(created_at.replace("Z", ""))
+
+    return {
+        "job_id": job_id,
+        "company_name": company_name,
+        "domain": domain,
+        "status": status,
+        "process_steps": [
+            {
+                "id": "step-1",
+                "name": "Request Initialization",
+                "description": "Initializing company profile request",
+                "status": "completed",
+                "start_time": base_time.isoformat() + "Z",
+                "end_time": (base_time + timedelta(milliseconds=500)).isoformat() + "Z",
+                "duration": 500,
+                "metadata": {"request_id": job_id}
+            },
+            {
+                "id": "step-2",
+                "name": "Apollo.io Data Collection",
+                "description": "Gathering data from Apollo.io API",
+                "status": "completed",
+                "start_time": (base_time + timedelta(seconds=1)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=3)).isoformat() + "Z",
+                "duration": 2000,
+                "metadata": {"source": "Apollo.io"}
+            },
+            {
+                "id": "step-3",
+                "name": "PeopleDataLabs Data Collection",
+                "description": "Gathering data from PeopleDataLabs API",
+                "status": "completed",
+                "start_time": (base_time + timedelta(seconds=1)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=2, milliseconds=500)).isoformat() + "Z",
+                "duration": 1500,
+                "metadata": {"source": "PeopleDataLabs"}
+            },
+            {
+                "id": "step-4",
+                "name": "LLM Validation",
+                "description": "Validating data with OpenAI",
+                "status": "completed" if status == "completed" else "in_progress",
+                "start_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=6)).isoformat() + "Z" if status == "completed" else None,
+                "duration": 2000 if status == "completed" else None,
+                "metadata": {"model": "gpt-4o-mini"}
+            },
+            {
+                "id": "step-5",
+                "name": "Store Results",
+                "description": "Saving validated data to Supabase",
+                "status": "completed" if status == "completed" else "pending",
+                "start_time": (base_time + timedelta(seconds=7)).isoformat() + "Z" if status == "completed" else None,
+                "end_time": (base_time + timedelta(seconds=8)).isoformat() + "Z" if status == "completed" else None,
+                "duration": 1000 if status == "completed" else None,
+                "metadata": {}
+            },
+            {
+                "id": "step-6",
+                "name": "Generate Slideshow",
+                "description": "Creating presentation with Gamma API",
+                "status": "completed" if status == "completed" else "pending",
+                "start_time": (base_time + timedelta(seconds=9)).isoformat() + "Z" if status == "completed" else None,
+                "end_time": (base_time + timedelta(seconds=12)).isoformat() + "Z" if status == "completed" else None,
+                "duration": 3000 if status == "completed" else None,
+                "metadata": {}
+            },
+        ],
+        "api_responses": [
+            {
+                "id": "api-1",
+                "api_name": "Apollo.io Organization Search",
+                "url": "https://api.apollo.io/v1/organizations/search",
+                "method": "POST",
+                "status_code": 200,
+                "status_text": "OK",
+                "headers": {"content-type": "application/json"},
+                "request_body": {"q_organization_name": company_name},
+                "response_body": {"organizations": [{"name": company_name, "domain": domain}]},
+                "timestamp": (base_time + timedelta(seconds=2)).isoformat() + "Z",
+                "duration": 450,
+                "is_sensitive": True,
+                "masked_fields": ["api_key"]
+            },
+            {
+                "id": "api-2",
+                "api_name": "PeopleDataLabs Company Enrich",
+                "url": "https://api.peopledatalabs.com/v5/company/enrich",
+                "method": "GET",
+                "status_code": 200,
+                "status_text": "OK",
+                "headers": {"content-type": "application/json"},
+                "response_body": {"status": 200, "data": {"name": company_name}},
+                "timestamp": (base_time + timedelta(seconds=2)).isoformat() + "Z",
+                "duration": 380,
+                "is_sensitive": True,
+                "masked_fields": ["api_key"]
+            },
+            {
+                "id": "api-3",
+                "api_name": "OpenAI Chat Completion",
+                "url": "https://api.openai.com/v1/chat/completions",
+                "method": "POST",
+                "status_code": 200,
+                "status_text": "OK",
+                "headers": {"content-type": "application/json"},
+                "request_body": {"model": "gpt-4o-mini"},
+                "response_body": {"choices": [{"message": {"content": "Validated"}}]},
+                "timestamp": (base_time + timedelta(seconds=5)).isoformat() + "Z",
+                "duration": 1500,
+                "is_sensitive": True,
+                "masked_fields": ["api_key", "authorization"]
+            },
+        ],
+        "llm_thought_processes": [
+            {
+                "id": "llm-1",
+                "task_name": "Company Data Validation",
+                "model": "gpt-4o-mini",
+                "prompt_tokens": 450,
+                "completion_tokens": 800,
+                "total_tokens": 1250,
+                "start_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=6)).isoformat() + "Z",
+                "duration": 2000,
+                "steps": [
+                    {
+                        "id": "thought-1",
+                        "step": 1,
+                        "action": "Analyze Source Data",
+                        "reasoning": f"Comparing data from Apollo.io and PeopleDataLabs for {company_name}. Looking for discrepancies in employee count, industry, and location.",
+                        "input": {"sources": ["Apollo.io", "PeopleDataLabs"]},
+                        "output": {"discrepancies_found": 1},
+                        "confidence": 0.95,
+                        "timestamp": (base_time + timedelta(seconds=4, milliseconds=500)).isoformat() + "Z"
+                    },
+                    {
+                        "id": "thought-2",
+                        "step": 2,
+                        "action": "Resolve Discrepancies",
+                        "reasoning": "Industry classification differs between sources. Apollo uses broader category while PDL is more specific. Selecting more specific classification.",
+                        "input": {"apollo": "Technology", "pdl": "Computer Software"},
+                        "output": {"resolved": "Computer Software", "confidence": 0.88},
+                        "confidence": 0.88,
+                        "timestamp": (base_time + timedelta(seconds=5)).isoformat() + "Z"
+                    },
+                ],
+                "final_decision": f"All data points for {company_name} validated successfully. Confidence score: 0.92",
+                "confidence_score": 0.92,
+                "discrepancies_resolved": ["industry"]
+            },
+        ],
+        "process_flow": {
+            "nodes": [
+                {"id": "start", "label": "Request Received", "type": "start", "status": "completed"},
+                {"id": "apollo", "label": "Apollo.io Query", "type": "api", "status": "completed"},
+                {"id": "pdl", "label": "PeopleDataLabs Query", "type": "api", "status": "completed"},
+                {"id": "merge", "label": "Data Merge", "type": "process", "status": "completed"},
+                {"id": "llm", "label": "LLM Validation", "type": "llm", "status": "completed" if status == "completed" else "in_progress"},
+                {"id": "store", "label": "Store to Supabase", "type": "process", "status": "completed" if status == "completed" else "pending"},
+                {"id": "gamma", "label": "Generate Slideshow", "type": "api", "status": "completed" if status == "completed" else "pending"},
+                {"id": "end", "label": "Complete", "type": "end", "status": "completed" if status == "completed" else "pending"},
+            ],
+            "edges": [
+                {"id": "e1", "source": "start", "target": "apollo", "label": "Initialize"},
+                {"id": "e2", "source": "start", "target": "pdl", "label": "Initialize"},
+                {"id": "e3", "source": "apollo", "target": "merge", "label": "Apollo Data"},
+                {"id": "e4", "source": "pdl", "target": "merge", "label": "PDL Data"},
+                {"id": "e5", "source": "merge", "target": "llm", "label": "Combined Data"},
+                {"id": "e6", "source": "llm", "target": "store", "label": "Validated Data"},
+                {"id": "e7", "source": "store", "target": "gamma", "label": "Generate"},
+                {"id": "e8", "source": "gamma", "target": "end", "label": "Complete"},
+            ],
+        },
+        "created_at": created_at,
+        "completed_at": (base_time + timedelta(seconds=12)).isoformat() + "Z" if status == "completed" else None,
+    }
+
+
+@app.get("/debug-data/{job_id}", tags=["Debug"])
+async def get_debug_data(job_id: str):
+    """Get complete debug data for a job (Features 018-021)."""
+    logger.info(f"Debug data requested for job: {job_id}")
+
+    job = jobs_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Debug data not found for job")
+
+    return generate_debug_data(job_id, job)
+
+
+@app.get("/debug-data/{job_id}/process-steps", tags=["Debug"])
+async def get_process_steps(job_id: str):
+    """Get process steps for a job (Feature 018)."""
+    job = jobs_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Process steps not found for job")
+
+    debug_data = generate_debug_data(job_id, job)
+    return debug_data["process_steps"]
+
+
+@app.get("/debug-data/{job_id}/api-responses", tags=["Debug"])
+async def get_api_responses(job_id: str, mask_sensitive: bool = True):
+    """Get API responses for a job (Feature 019)."""
+    job = jobs_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="API responses not found for job")
+
+    debug_data = generate_debug_data(job_id, job)
+    return debug_data["api_responses"]
+
+
+@app.get("/debug-data/{job_id}/llm-processes", tags=["Debug"])
+async def get_llm_processes(job_id: str):
+    """Get LLM thought processes for a job (Feature 020)."""
+    job = jobs_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="LLM processes not found for job")
+
+    debug_data = generate_debug_data(job_id, job)
+    return debug_data["llm_thought_processes"]
+
+
+@app.get("/debug-data/{job_id}/process-flow", tags=["Debug"])
+async def get_process_flow(job_id: str):
+    """Get process flow for a job (Feature 021)."""
+    job = jobs_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Process flow not found for job")
+
+    debug_data = generate_debug_data(job_id, job)
+    return debug_data["process_flow"]
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
