@@ -16,7 +16,7 @@ import type {
 } from '@/types';
 
 // Get API URL from environment variable, with fallback to production Render URL
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://radtest-backend.onrender.com';
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://radtest-backend-4mux.onrender.com';
 
 interface ErrorResponse {
   error: string;
