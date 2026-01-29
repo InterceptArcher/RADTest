@@ -174,12 +174,13 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["current_step"] = "Complete!"
 
         # Build stakeholder map from fetched stakeholders + AI-generated content
-        stakeholder_map_data = None
+        # Always return a stakeholder_map object so frontend knows search was performed
+        stakeholder_map_data = {
+            "stakeholders": [],
+            "lastUpdated": datetime.utcnow().isoformat(),
+            "searchPerformed": True
+        }
         if stakeholders_data:
-            stakeholder_map_data = {
-                "stakeholders": [],
-                "lastUpdated": datetime.utcnow().isoformat()
-            }
             # Get AI-generated stakeholder profiles from validated_data
             ai_stakeholder_profiles = validated_data.get("stakeholder_profiles", {})
 
@@ -1406,12 +1407,34 @@ class OutreachRequest(BaseModel):
     custom_context: Optional[str] = None
 
 
+class OutreachContentEmail(BaseModel):
+    subject: str
+    body: str
+
+
+class OutreachContentLinkedIn(BaseModel):
+    connectionRequest: str
+    followupMessage: str
+
+
+class OutreachContentCallScript(BaseModel):
+    opening: str
+    valueProposition: str
+    questions: List[str]
+    closingCTA: str
+
+
 class OutreachContent(BaseModel):
-    role_type: str
-    stakeholder_name: Optional[str]
-    email: Dict[str, str]
-    linkedin: Dict[str, str]
-    call_script: Dict[str, Any]
+    roleType: str
+    stakeholderName: Optional[str] = None
+    email: OutreachContentEmail
+    linkedin: OutreachContentLinkedIn
+    callScript: OutreachContentCallScript
+    generatedAt: str
+
+
+class OutreachResponse(BaseModel):
+    content: OutreachContent
 
 
 @app.post("/jobs/{job_id}/generate-outreach/{role_type}", tags=["Sales Content"])
@@ -1496,25 +1519,24 @@ Generate the following content (be specific, professional, and value-focused):
 3. CALL SCRIPT:
 - Opening statement (2-3 sentences)
 - 3 discovery questions relevant to {role_type} priorities
-- 2-3 common objections and responses
+- Value proposition statement (2-3 sentences)
+- Closing call to action
 
-Output as JSON:
+Output as JSON with these exact field names:
 {{
     "email": {{
         "subject": "...",
         "body": "..."
     }},
     "linkedin": {{
-        "connection_request": "...",
-        "followup_message": "..."
+        "connectionRequest": "...",
+        "followupMessage": "..."
     }},
-    "call_script": {{
+    "callScript": {{
         "opening": "...",
+        "valueProposition": "...",
         "questions": ["...", "...", "..."],
-        "objection_handlers": {{
-            "objection1": "response1",
-            "objection2": "response2"
-        }}
+        "closingCTA": "..."
     }}
 }}"""
 
@@ -1529,15 +1551,29 @@ Output as JSON:
         )
 
         import json
+        from datetime import datetime
         content = json.loads(response.choices[0].message.content)
 
-        return OutreachContent(
-            role_type=role_type.upper(),
-            stakeholder_name=stakeholder_name,
-            email=content.get("email", {}),
-            linkedin=content.get("linkedin", {}),
-            call_script=content.get("call_script", {})
+        outreach_content = OutreachContent(
+            roleType=role_type.upper(),
+            stakeholderName=stakeholder_name,
+            email=OutreachContentEmail(
+                subject=content.get("email", {}).get("subject", ""),
+                body=content.get("email", {}).get("body", "")
+            ),
+            linkedin=OutreachContentLinkedIn(
+                connectionRequest=content.get("linkedin", {}).get("connectionRequest", ""),
+                followupMessage=content.get("linkedin", {}).get("followupMessage", "")
+            ),
+            callScript=OutreachContentCallScript(
+                opening=content.get("callScript", {}).get("opening", ""),
+                valueProposition=content.get("callScript", {}).get("valueProposition", ""),
+                questions=content.get("callScript", {}).get("questions", []),
+                closingCTA=content.get("callScript", {}).get("closingCTA", "")
+            ),
+            generatedAt=datetime.utcnow().isoformat() + "Z"
         )
+        return OutreachResponse(content=outreach_content)
 
     except Exception as e:
         logger.error(f"Error generating outreach content: {e}")
@@ -1576,15 +1612,15 @@ def get_role_context(role_type: str) -> str:
     return contexts.get(role_type.upper(), "General executive priorities and concerns")
 
 
-def generate_template_outreach(role_type: str, company_name: str, stakeholder_name: str = None) -> OutreachContent:
+def generate_template_outreach(role_type: str, company_name: str, stakeholder_name: str = None) -> OutreachResponse:
     """Generate template outreach content when API is unavailable."""
+    from datetime import datetime
     name_greeting = f"Hi {stakeholder_name.split()[0]}," if stakeholder_name else f"Hi,"
 
     templates = {
         "CIO": {
-            "email": {
-                "subject": f"Digital Transformation Opportunities at {company_name}",
-                "body": f"""{name_greeting}
+            "email_subject": f"Digital Transformation Opportunities at {company_name}",
+            "email_body": f"""{name_greeting}
 
 I've been following {company_name}'s digital initiatives and wanted to reach out about how we're helping CIOs accelerate their transformation journeys while managing complexity.
 
@@ -1592,37 +1628,87 @@ Many CIOs are dealing with the challenge of modernizing legacy systems while mai
 
 Would you be open to a brief conversation about your technology priorities for this year?
 
-Best regards"""
-            },
-            "linkedin": {
-                "connection_request": f"Hi, I work with CIOs at companies like {company_name} on digital transformation. Would love to connect.",
-                "followup_message": f"Thanks for connecting! I noticed {company_name} is investing in modernization. Happy to share insights from similar initiatives if helpful."
-            },
-            "call_script": {
-                "opening": f"Hi, this is [Name] from [Company]. I'm reaching out because we work with CIOs on digital transformation, and I noticed {company_name} has been making strategic technology investments.",
-                "questions": [
-                    "What are your top technology priorities for this year?",
-                    "How are you balancing innovation with managing your existing technology stack?",
-                    "What's your biggest challenge in driving digital adoption across the organization?"
-                ],
-                "objection_handlers": {
-                    "We already have a solution": "That's great to hear. Many of our clients use us alongside existing solutions. Would it be valuable to understand how we complement what you have?",
-                    "Not a priority right now": "I understand. When would be a better time to revisit this conversation?"
-                }
-            }
+Best regards""",
+            "connectionRequest": f"Hi, I work with CIOs at companies like {company_name} on digital transformation. Would love to connect.",
+            "followupMessage": f"Thanks for connecting! I noticed {company_name} is investing in modernization. Happy to share insights from similar initiatives if helpful.",
+            "opening": f"Hi, this is [Name] from [Company]. I'm reaching out because we work with CIOs on digital transformation, and I noticed {company_name} has been making strategic technology investments.",
+            "valueProposition": "We help CIOs accelerate digital transformation while maintaining operational stability, delivering measurable results in the first 90 days.",
+            "questions": [
+                "What are your top technology priorities for this year?",
+                "How are you balancing innovation with managing your existing technology stack?",
+                "What's your biggest challenge in driving digital adoption across the organization?"
+            ],
+            "closingCTA": "Would you be open to a 15-minute call next week to explore how we might help with your priorities?"
+        },
+        "CTO": {
+            "email_subject": f"Engineering Excellence at {company_name}",
+            "email_body": f"""{name_greeting}
+
+I've been impressed by {company_name}'s technical achievements and wanted to connect about how we're helping CTOs drive engineering productivity and innovation.
+
+We work with technology leaders to solve complex challenges around scaling, technical debt, and team velocity while maintaining the agility to ship quickly.
+
+Would you be interested in a brief conversation about your engineering priorities?
+
+Best regards""",
+            "connectionRequest": f"Hi, I work with CTOs at innovative companies like {company_name}. Would love to connect and exchange ideas.",
+            "followupMessage": f"Thanks for connecting! I'd love to learn more about the technical challenges {company_name} is tackling.",
+            "opening": f"Hi, this is [Name] from [Company]. I'm reaching out because we work with CTOs on engineering productivity, and {company_name}'s technical work caught my attention.",
+            "valueProposition": "We help CTOs scale engineering teams and reduce technical debt while shipping faster and maintaining code quality.",
+            "questions": [
+                "What's your biggest engineering challenge right now?",
+                "How are you balancing feature development with technical debt?",
+                "What tools or processes are you exploring to improve team productivity?"
+            ],
+            "closingCTA": "Would you be open to a technical conversation to explore potential synergies?"
+        },
+        "CISO": {
+            "email_subject": f"Security Posture at {company_name}",
+            "email_body": f"""{name_greeting}
+
+Security leaders like yourself are facing an evolving threat landscape while managing compliance requirements and limited resources.
+
+We work with CISOs to strengthen security posture, streamline compliance, and demonstrate security value to the board.
+
+Would you be open to discussing your security priorities for this year?
+
+Best regards""",
+            "connectionRequest": f"Hi, I work with CISOs on security strategy. Would love to connect and share insights.",
+            "followupMessage": f"Thanks for connecting! I'd love to learn about {company_name}'s approach to security in today's threat environment.",
+            "opening": f"Hi, this is [Name] from [Company]. I'm reaching out because we help CISOs strengthen their security posture while managing complexity.",
+            "valueProposition": "We help CISOs reduce risk, streamline compliance, and communicate security value to business stakeholders.",
+            "questions": [
+                "What's your top security concern heading into this year?",
+                "How are you balancing security investments with business enablement?",
+                "What's your approach to demonstrating security ROI to the board?"
+            ],
+            "closingCTA": "Would you be open to a brief security-focused conversation?"
         }
     }
 
-    # Use CIO template as default, customize greeting
-    template = templates.get(role_type.upper(), templates["CIO"])
+    # Use CIO template as default
+    t = templates.get(role_type.upper(), templates["CIO"])
 
-    return OutreachContent(
-        role_type=role_type.upper(),
-        stakeholder_name=stakeholder_name,
-        email=template["email"],
-        linkedin=template["linkedin"],
-        call_script=template["call_script"]
+    outreach_content = OutreachContent(
+        roleType=role_type.upper(),
+        stakeholderName=stakeholder_name,
+        email=OutreachContentEmail(
+            subject=t["email_subject"],
+            body=t["email_body"]
+        ),
+        linkedin=OutreachContentLinkedIn(
+            connectionRequest=t["connectionRequest"],
+            followupMessage=t["followupMessage"]
+        ),
+        callScript=OutreachContentCallScript(
+            opening=t["opening"],
+            valueProposition=t["valueProposition"],
+            questions=t["questions"],
+            closingCTA=t["closingCTA"]
+        ),
+        generatedAt=datetime.utcnow().isoformat() + "Z"
     )
+    return OutreachResponse(content=outreach_content)
 
 
 if __name__ == "__main__":
