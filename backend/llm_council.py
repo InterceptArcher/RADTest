@@ -408,10 +408,33 @@ async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> 
     return final_result
 
 
+def title_case_name(name: str) -> str:
+    """Properly capitalize a name (handles McName, O'Name, etc.)."""
+    if not name:
+        return name
+    # Handle already uppercase acronyms
+    if name.isupper() and len(name) <= 4:
+        return name
+    # Title case with special handling
+    words = name.split()
+    result = []
+    for word in words:
+        if word.lower() in ['ceo', 'cfo', 'cto', 'coo', 'vp', 'svp', 'evp']:
+            result.append(word.upper())
+        elif "'" in word:  # O'Brien, etc.
+            parts = word.split("'")
+            result.append("'".join(p.capitalize() for p in parts))
+        elif word.lower().startswith('mc'):  # McDonald, etc.
+            result.append('Mc' + word[2:].capitalize())
+        else:
+            result.append(word.capitalize())
+    return ' '.join(result)
+
+
 def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> Dict[str, Any]:
     """Extract data directly from API responses as fallback."""
     result = {
-        "company_name": company_data.get("company_name", "Unknown"),
+        "company_name": title_case_name(company_data.get("company_name", "Unknown")),
         "domain": company_data.get("domain", "Unknown"),
         "industry": company_data.get("industry", "Unknown"),
         "confidence_score": 0.6
@@ -432,35 +455,55 @@ def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> 
                 apollo_org = accounts[0]
 
     if apollo_org:
+        if apollo_org.get("name"):
+            result["company_name"] = title_case_name(apollo_org["name"])
         if apollo_org.get("industry"):
-            result["industry"] = apollo_org["industry"]
+            result["industry"] = title_case_name(apollo_org["industry"])
         if apollo_org.get("estimated_num_employees"):
             result["employee_count"] = apollo_org["estimated_num_employees"]
         if apollo_org.get("annual_revenue"):
             result["annual_revenue"] = apollo_org["annual_revenue"]
+        elif apollo_org.get("annual_revenue_printed"):
+            result["annual_revenue"] = apollo_org["annual_revenue_printed"]
         if apollo_org.get("city") and apollo_org.get("country"):
-            result["headquarters"] = f"{apollo_org['city']}, {apollo_org.get('state', '')}, {apollo_org['country']}".replace(", ,", ",")
+            city = title_case_name(apollo_org['city'])
+            state = title_case_name(apollo_org.get('state', ''))
+            country = title_case_name(apollo_org['country'])
+            result["headquarters"] = f"{city}, {state}, {country}".replace(", ,", ",").strip(", ")
         if apollo_org.get("founded_year"):
             result["founded_year"] = apollo_org["founded_year"]
         if apollo_org.get("linkedin_url"):
             result["linkedin_url"] = apollo_org["linkedin_url"]
         if apollo_org.get("keywords"):
             result["technologies"] = apollo_org["keywords"][:10]
+        # CEO from Apollo (if available in organization data)
+        if apollo_org.get("ceo") or apollo_org.get("ceo_name"):
+            result["ceo"] = title_case_name(apollo_org.get("ceo") or apollo_org.get("ceo_name"))
 
     # Extract from PDL data - PDL returns data directly at top level
     pdl_company = pdl_data if pdl_data and pdl_data.get("name") else None
 
     if pdl_company:
+        if pdl_company.get("name"):
+            result["company_name"] = title_case_name(pdl_company["name"])
         if pdl_company.get("industry"):
-            result["industry"] = pdl_company["industry"]
+            result["industry"] = title_case_name(pdl_company["industry"])
         if pdl_company.get("employee_count"):
             result["employee_count"] = pdl_company["employee_count"]
         elif pdl_company.get("size"):
             result["employee_count"] = pdl_company["size"]
+        # Revenue from PDL
+        if pdl_company.get("inferred_revenue"):
+            result["annual_revenue"] = pdl_company["inferred_revenue"]
+        elif pdl_company.get("estimated_annual_revenue"):
+            result["annual_revenue"] = pdl_company["estimated_annual_revenue"]
         if pdl_company.get("location"):
             loc = pdl_company["location"]
             if isinstance(loc, dict):
-                result["headquarters"] = f"{loc.get('locality', '')}, {loc.get('region', '')}, {loc.get('country', '')}".strip(", ")
+                locality = title_case_name(loc.get('locality', ''))
+                region = title_case_name(loc.get('region', ''))
+                country = title_case_name(loc.get('country', ''))
+                result["headquarters"] = f"{locality}, {region}, {country}".strip(", ").replace(", ,", ",")
             elif isinstance(loc, str):
                 result["headquarters"] = loc
         if pdl_company.get("founded"):

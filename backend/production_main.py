@@ -199,12 +199,15 @@ async def fetch_apollo_data(company_data: dict) -> dict:
 
     import httpx
 
+    result = {}
+
     try:
         async with httpx.AsyncClient() as client:
-            # Apollo.io uses api_key in the request body, not headers
+            # Try 1: Organization enrich by domain
+            logger.info(f"Apollo: Trying organizations/enrich for {company_data['domain']}")
             response = await client.post(
                 "https://api.apollo.io/v1/organizations/enrich",
-                headers={"Content-Type": "application/json"},
+                headers={"Content-Type": "application/json", "Cache-Control": "no-cache"},
                 json={
                     "api_key": APOLLO_API_KEY,
                     "domain": company_data["domain"]
@@ -214,34 +217,67 @@ async def fetch_apollo_data(company_data: dict) -> dict:
 
             if response.status_code == 200:
                 data = response.json()
-                logger.info(f"Apollo.io returned data for {company_data['company_name']}")
-                logger.info(f"Apollo.io response keys: {list(data.keys()) if data else 'empty'}")
-                return data
+                if data and data.get("organization"):
+                    logger.info(f"Apollo.io organizations/enrich succeeded for {company_data['company_name']}")
+                    result = data
+                else:
+                    logger.warning(f"Apollo.io returned empty organization data")
             else:
-                logger.warning(f"Apollo.io API returned {response.status_code}: {response.text[:200]}")
-                # Try alternative endpoint - mixed companies/organizations search
+                logger.warning(f"Apollo.io organizations/enrich returned {response.status_code}")
+
+            # Try 2: If no result, try mixed_people/search to find CEO
+            if not result or not result.get("organization"):
+                logger.info(f"Apollo: Trying mixed_people/search for CEO at {company_data['domain']}")
                 response2 = await client.post(
-                    "https://api.apollo.io/v1/mixed_companies/search",
+                    "https://api.apollo.io/v1/mixed_people/search",
                     headers={"Content-Type": "application/json"},
                     json={
                         "api_key": APOLLO_API_KEY,
                         "q_organization_domains": company_data["domain"],
+                        "person_titles": ["CEO", "Chief Executive Officer", "Founder", "Co-Founder"],
                         "page": 1,
-                        "per_page": 1
+                        "per_page": 5
                     },
                     timeout=30.0
                 )
                 if response2.status_code == 200:
-                    data = response2.json()
-                    logger.info(f"Apollo.io (mixed_companies) returned data for {company_data['company_name']}")
-                    return data
+                    people_data = response2.json()
+                    people = people_data.get("people", [])
+                    if people:
+                        # Find CEO or highest-ranking person
+                        ceo = None
+                        for person in people:
+                            title = (person.get("title") or "").lower()
+                            if "ceo" in title or "chief executive" in title:
+                                ceo = person
+                                break
+                        if not ceo and people:
+                            ceo = people[0]  # Use first person as fallback
+
+                        if ceo:
+                            ceo_name = f"{ceo.get('first_name', '')} {ceo.get('last_name', '')}".strip()
+                            if not result:
+                                result = {"organization": {}}
+                            if "organization" not in result:
+                                result["organization"] = {}
+                            result["organization"]["ceo"] = ceo_name
+                            result["organization"]["ceo_title"] = ceo.get("title", "CEO")
+                            logger.info(f"Apollo.io found CEO: {ceo_name}")
+
+                            # Also extract org data from person's organization if we don't have it
+                            if ceo.get("organization") and not result["organization"].get("name"):
+                                org = ceo["organization"]
+                                result["organization"]["name"] = org.get("name")
+                                result["organization"]["industry"] = org.get("industry")
+                                result["organization"]["estimated_num_employees"] = org.get("estimated_num_employees")
                 else:
-                    logger.warning(f"Apollo.io mixed_companies also failed: {response2.status_code}")
-                    return {}
+                    logger.warning(f"Apollo.io mixed_people/search returned {response2.status_code}")
+
+            return result
 
     except Exception as e:
         logger.error(f"Apollo.io error: {str(e)}")
-        return {}
+        return result
 
 
 async def fetch_pdl_data(company_data: dict) -> dict:
