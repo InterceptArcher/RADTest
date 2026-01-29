@@ -458,6 +458,7 @@ SPECIALIST INPUTS:
 ORIGINAL DATA SOURCES:
 Apollo.io: {apollo_data}
 PeopleDataLabs: {pdl_data}
+Hunter.io: {hunter_data}
 Stakeholders: {stakeholders_data}
 
 Output ONLY valid JSON, no explanation."""
@@ -493,11 +494,15 @@ async def call_openai(prompt: str, system_prompt: str, model: str = "gpt-4o-mini
         return {}
 
 
-async def run_specialist(specialist: Dict, company_data: Dict, apollo_data: Dict, pdl_data: Dict, stakeholders_data: List[Dict] = None) -> Dict[str, Any]:
+async def run_specialist(specialist: Dict, company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, stakeholders_data: List[Dict] = None) -> Dict[str, Any]:
     """Run a single specialist LLM."""
     stakeholders_text = ""
     if stakeholders_data:
         stakeholders_text = f"\nStakeholders (C-Suite Executives): {json.dumps(stakeholders_data, indent=2)}"
+
+    hunter_text = ""
+    if hunter_data:
+        hunter_text = f"\nHunter.io Data: {json.dumps(hunter_data, indent=2)}"
 
     data_context = f"""
 Company: {company_data.get('company_name', 'Unknown')}
@@ -506,6 +511,7 @@ Domain: {company_data.get('domain', 'Unknown')}
 Apollo.io Data: {json.dumps(apollo_data, indent=2) if apollo_data else 'No data'}
 
 PeopleDataLabs Data: {json.dumps(pdl_data, indent=2) if pdl_data else 'No data'}
+{hunter_text}
 {stakeholders_text}
 
 Analyze this data for your specialty: {specialist['focus']}
@@ -522,7 +528,7 @@ Analyze this data for your specialty: {specialist['focus']}
     }
 
 
-async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, stakeholders_data: List[Dict] = None) -> Dict[str, Any]:
+async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, stakeholders_data: List[Dict] = None) -> Dict[str, Any]:
     """
     Run the full LLM Council:
     1. Run specialists in batches of 5 to avoid rate limits
@@ -539,7 +545,7 @@ async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, sta
         logger.info(f"Running specialist batch {i//batch_size + 1}/{(len(SPECIALISTS) + batch_size - 1)//batch_size}")
 
         batch_tasks = [
-            run_specialist(specialist, company_data, apollo_data, pdl_data, stakeholders_data)
+            run_specialist(specialist, company_data, apollo_data, pdl_data, hunter_data, stakeholders_data)
             for specialist in batch
         ]
 
@@ -580,6 +586,7 @@ async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, sta
         specialist_inputs=specialist_inputs_text,
         apollo_data=json.dumps(apollo_data, indent=2) if apollo_data else "No data",
         pdl_data=json.dumps(pdl_data, indent=2) if pdl_data else "No data",
+        hunter_data=json.dumps(hunter_data, indent=2) if hunter_data else "No data",
         stakeholders_data=json.dumps(stakeholders_data, indent=2) if stakeholders_data else "No stakeholder data"
     )
 
@@ -631,7 +638,7 @@ def title_case_name(name: str) -> str:
     return ' '.join(result)
 
 
-def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> Dict[str, Any]:
+def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None) -> Dict[str, Any]:
     """Extract data directly from API responses as fallback."""
     result = {
         "company_name": title_case_name(company_data.get("company_name", "Unknown")),
@@ -717,6 +724,47 @@ def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> 
         if pdl_company.get("location") and isinstance(pdl_company["location"], dict):
             result["geographic_reach"] = [pdl_company["location"].get("country", "Unknown")]
 
+    # Extract from Hunter.io data
+    if hunter_data:
+        if hunter_data.get("organization"):
+            result["company_name"] = title_case_name(hunter_data["organization"])
+        if hunter_data.get("country"):
+            if not result.get("geographic_reach"):
+                result["geographic_reach"] = []
+            country = title_case_name(hunter_data["country"])
+            if country not in result["geographic_reach"]:
+                result["geographic_reach"].append(country)
+        if hunter_data.get("industry"):
+            result["industry"] = title_case_name(hunter_data["industry"])
+        if hunter_data.get("twitter"):
+            result["twitter"] = hunter_data["twitter"]
+        if hunter_data.get("facebook"):
+            result["facebook"] = hunter_data["facebook"]
+        if hunter_data.get("linkedin"):
+            result["linkedin_url"] = hunter_data["linkedin"]
+
+        # Extract contact emails from Hunter.io
+        emails = hunter_data.get("emails", [])
+        if emails:
+            # Store email contacts for potential stakeholder enrichment
+            hunter_contacts = []
+            for email in emails[:10]:  # Limit to top 10
+                contact = {
+                    "email": email.get("value"),
+                    "first_name": email.get("first_name"),
+                    "last_name": email.get("last_name"),
+                    "position": email.get("position"),
+                    "department": email.get("department"),
+                    "confidence": email.get("confidence"),
+                    "linkedin": email.get("linkedin"),
+                    "twitter": email.get("twitter"),
+                    "phone": email.get("phone_number")
+                }
+                if contact["email"]:
+                    hunter_contacts.append(contact)
+            if hunter_contacts:
+                result["hunter_contacts"] = hunter_contacts
+
     return result
 
 
@@ -759,14 +807,14 @@ def apply_formatting(data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, stakeholders_data: List[Dict] = None) -> Dict[str, Any]:
+async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, stakeholders_data: List[Dict] = None) -> Dict[str, Any]:
     """
     Main entry point for LLM Council validation.
     Returns validated, concise, fact-driven company data with expanded intelligence.
     Falls back to direct extraction if council fails.
     """
     # Always extract base data first as fallback
-    base_data = extract_base_data(company_data, apollo_data, pdl_data)
+    base_data = extract_base_data(company_data, apollo_data, pdl_data, hunter_data)
 
     # Add stakeholder data to base_data if available
     if stakeholders_data:
@@ -781,7 +829,7 @@ async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data:
         return apply_formatting(base_data)
 
     try:
-        result = await run_council(company_data, apollo_data, pdl_data, stakeholders_data)
+        result = await run_council(company_data, apollo_data, pdl_data, hunter_data, stakeholders_data)
 
         # Check if council returned useful data (more than just metadata)
         useful_fields = [k for k in result.keys() if not k.startswith("_") and result[k]]

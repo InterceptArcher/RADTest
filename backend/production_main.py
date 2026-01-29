@@ -68,6 +68,7 @@ class JobStatus(BaseModel):
 # Get environment variables (try both naming conventions)
 APOLLO_API_KEY = os.getenv("APOLLO_API_KEY")
 PEOPLEDATALABS_API_KEY = os.getenv("PEOPLEDATALABS_API_KEY") or os.getenv("PDL_API_KEY")
+HUNTER_API_KEY = os.getenv("HUNTER_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
@@ -81,6 +82,7 @@ async def health_check():
     api_status = {
         "apollo": "configured" if APOLLO_API_KEY else "missing",
         "peopledatalabs": "configured" if PEOPLEDATALABS_API_KEY else "missing",
+        "hunter": "configured" if HUNTER_API_KEY else "missing",
         "openai": "configured" if OPENAI_API_KEY else "missing",
         "supabase": "configured" if SUPABASE_URL and SUPABASE_KEY else "missing",
         "gamma": "configured" if GAMMA_API_KEY else "missing",
@@ -133,11 +135,16 @@ async def process_company_profile(job_id: str, company_data: dict):
         apollo_data = await fetch_apollo_data(company_data)
 
         # Step 2: Gather intelligence from PeopleDataLabs
-        jobs_store[job_id]["progress"] = 35
+        jobs_store[job_id]["progress"] = 30
         jobs_store[job_id]["current_step"] = "Querying PeopleDataLabs..."
         pdl_data = await fetch_pdl_data(company_data)
 
-        # Step 2.5: Fetch stakeholders from Apollo
+        # Step 2.5: Gather intelligence from Hunter.io
+        jobs_store[job_id]["progress"] = 40
+        jobs_store[job_id]["current_step"] = "Querying Hunter.io..."
+        hunter_data = await fetch_hunter_data(company_data)
+
+        # Step 2.75: Fetch stakeholders from Apollo
         jobs_store[job_id]["progress"] = 45
         jobs_store[job_id]["current_step"] = "Searching for executive stakeholders..."
         stakeholders_data = await fetch_stakeholders(company_data["domain"])
@@ -145,12 +152,12 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Step 3: Store raw data in Supabase
         jobs_store[job_id]["progress"] = 50
         jobs_store[job_id]["current_step"] = "Storing raw data..."
-        await store_raw_data(company_data["company_name"], apollo_data, pdl_data)
+        await store_raw_data(company_data["company_name"], apollo_data, pdl_data, hunter_data)
 
         # Step 4: Validate with LLM Council (28 specialists + 1 aggregator)
         jobs_store[job_id]["progress"] = 60
         jobs_store[job_id]["current_step"] = "Running LLM Council (28 specialists)..."
-        validated_data = await validate_with_council(company_data, apollo_data, pdl_data, stakeholders_data)
+        validated_data = await validate_with_council(company_data, apollo_data, pdl_data, hunter_data, stakeholders_data)
 
         # Extract council metadata for debug mode
         council_metadata = validated_data.pop("_council_metadata", {})
@@ -235,6 +242,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Store raw API data for debug mode
         jobs_store[job_id]["apollo_data"] = apollo_data
         jobs_store[job_id]["pdl_data"] = pdl_data
+        jobs_store[job_id]["hunter_data"] = hunter_data
         jobs_store[job_id]["stakeholders_data"] = stakeholders_data
 
         logger.info(f"Completed processing for job {job_id}")
@@ -388,6 +396,63 @@ async def fetch_pdl_data(company_data: dict) -> dict:
 
     except Exception as e:
         logger.error(f"PeopleDataLabs error: {str(e)}")
+        return {}
+
+
+async def fetch_hunter_data(company_data: dict) -> dict:
+    """Fetch company and contact data from Hunter.io Domain Search API."""
+    if not HUNTER_API_KEY:
+        logger.warning("Hunter.io API key not configured")
+        return {}
+
+    import httpx
+
+    try:
+        async with httpx.AsyncClient() as client:
+            # Hunter.io Domain Search endpoint
+            logger.info(f"Hunter.io: Searching domain {company_data['domain']}")
+            response = await client.get(
+                "https://api.hunter.io/v2/domain-search",
+                params={
+                    "domain": company_data["domain"],
+                    "api_key": HUNTER_API_KEY,
+                    "limit": 20  # Get up to 20 email contacts
+                },
+                timeout=30.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                result = data.get("data", {})
+
+                if result:
+                    logger.info(f"Hunter.io returned data for {company_data['domain']}")
+                    # Log key fields for debugging
+                    if result.get("organization"):
+                        logger.info(f"Hunter organization: {result.get('organization')}")
+                    if result.get("country"):
+                        logger.info(f"Hunter country: {result.get('country')}")
+                    emails = result.get("emails", [])
+                    logger.info(f"Hunter emails found: {len(emails)}")
+
+                    # Extract additional metadata
+                    meta = data.get("meta", {})
+                    if meta:
+                        result["_meta"] = meta
+
+                return result
+            elif response.status_code == 401:
+                logger.error("Hunter.io API key is invalid")
+                return {}
+            elif response.status_code == 429:
+                logger.warning("Hunter.io rate limit exceeded")
+                return {}
+            else:
+                logger.warning(f"Hunter.io API returned {response.status_code}: {response.text[:200]}")
+                return {}
+
+    except Exception as e:
+        logger.error(f"Hunter.io error: {str(e)}")
         return {}
 
 
@@ -626,7 +691,7 @@ def extract_data_from_apis(company_data: dict, apollo_data: dict, pdl_data: dict
     return result
 
 
-async def store_raw_data(company_name: str, apollo_data: dict, pdl_data: dict):
+async def store_raw_data(company_name: str, apollo_data: dict, pdl_data: dict, hunter_data: dict = None):
     """Store raw data in Supabase"""
     if not SUPABASE_URL or not SUPABASE_KEY:
         logger.warning("Supabase not configured, skipping storage")
@@ -651,6 +716,14 @@ async def store_raw_data(company_name: str, apollo_data: dict, pdl_data: dict):
                 "company_name": company_name,
                 "source": "peopledatalabs",
                 "raw_data": pdl_data
+            }).execute()
+
+        # Store Hunter.io data
+        if hunter_data:
+            supabase.table("raw_data").insert({
+                "company_name": company_name,
+                "source": "hunter",
+                "raw_data": hunter_data
             }).execute()
 
         logger.info(f"Stored raw data for {company_name}")
@@ -1081,6 +1154,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
     # Get actual API response data
     apollo_data = job_data.get("apollo_data", {})
     pdl_data = job_data.get("pdl_data", {})
+    hunter_data = job_data.get("hunter_data", {})
     result = job_data.get("result", {})
     validated_data = result.get("validated_data", {})
 
@@ -1141,6 +1215,34 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
         "type": pdl_company.get("type", "N/A"),
     }
 
+    # Extract Hunter.io fields
+    hunter_extracted = {
+        "organization": hunter_data.get("organization", "N/A"),
+        "domain": hunter_data.get("domain", "N/A"),
+        "country": hunter_data.get("country", "N/A"),
+        "state": hunter_data.get("state", "N/A"),
+        "city": hunter_data.get("city", "N/A"),
+        "email_pattern": hunter_data.get("pattern", "N/A"),
+        "emails_found": len(hunter_data.get("emails", [])),
+        "twitter": hunter_data.get("twitter", "N/A"),
+        "facebook": hunter_data.get("facebook", "N/A"),
+        "linkedin": hunter_data.get("linkedin", "N/A"),
+        "accept_all": hunter_data.get("accept_all", "N/A"),
+        "webmail": hunter_data.get("webmail", False),
+    }
+
+    # Extract sample contacts from Hunter.io emails
+    hunter_contacts = []
+    for email in hunter_data.get("emails", [])[:5]:
+        hunter_contacts.append({
+            "email": email.get("value", "N/A"),
+            "name": f"{email.get('first_name', '')} {email.get('last_name', '')}".strip() or "N/A",
+            "position": email.get("position", "N/A"),
+            "department": email.get("department", "N/A"),
+            "confidence": email.get("confidence", 0),
+        })
+    hunter_extracted["sample_contacts"] = hunter_contacts
+
     base_time = datetime.fromisoformat(created_at.replace("Z", ""))
 
     return {
@@ -1185,6 +1287,20 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                     "source": "PeopleDataLabs",
                     "fields_retrieved": pdl_extracted,
                     "status": "success" if pdl_company else "no_data"
+                }
+            },
+            {
+                "id": "step-3b",
+                "name": "Hunter.io Data Collection",
+                "description": "Gathering domain and contact data from Hunter.io API",
+                "status": "completed" if hunter_data else "skipped",
+                "start_time": (base_time + timedelta(seconds=2, milliseconds=500)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=3, milliseconds=500)).isoformat() + "Z",
+                "duration": 1000,
+                "metadata": {
+                    "source": "Hunter.io",
+                    "fields_retrieved": hunter_extracted,
+                    "status": "success" if hunter_data else "no_data"
                 }
             },
             {
@@ -1251,6 +1367,21 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "response_body": pdl_data if pdl_data else {"error": "No data returned"},
                 "timestamp": (base_time + timedelta(seconds=2)).isoformat() + "Z",
                 "duration": 380,
+                "is_sensitive": True,
+                "masked_fields": ["api_key"]
+            },
+            {
+                "id": "api-2b",
+                "api_name": "Hunter.io Domain Search",
+                "url": "https://api.hunter.io/v2/domain-search",
+                "method": "GET",
+                "status_code": 200 if hunter_data else 404,
+                "status_text": "OK" if hunter_data else "Not Found",
+                "headers": {"content-type": "application/json"},
+                "request_body": {"domain": domain, "limit": 20},
+                "response_body": hunter_data if hunter_data else {"error": "No data returned or API not configured"},
+                "timestamp": (base_time + timedelta(seconds=3)).isoformat() + "Z",
+                "duration": 320,
                 "is_sensitive": True,
                 "masked_fields": ["api_key"]
             },
