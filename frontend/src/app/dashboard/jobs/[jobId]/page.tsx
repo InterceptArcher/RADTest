@@ -248,6 +248,14 @@ export default function JobDetailPage() {
             <BuyingSignalsCard signals={buyingSignals} />
           )}
 
+          {/* Stakeholder Map - New Intelligence Section */}
+          {stakeholderMap && (
+            <StakeholderMapCard
+              stakeholderMap={stakeholderMap}
+              onGenerateOutreach={handleGenerateOutreach}
+            />
+          )}
+
           {/* Sales Program - New Intelligence Section */}
           {salesProgram && (
             <SalesProgramCard
@@ -413,16 +421,6 @@ export default function JobDetailPage() {
           )}
         </div>
       </div>
-
-      {/* Stakeholder Map - Full Width Section (show even if empty to indicate search was performed) */}
-      {stakeholderMap && (
-        <div className="mt-6">
-          <StakeholderMapCard
-            stakeholderMap={stakeholderMap}
-            onGenerateOutreach={handleGenerateOutreach}
-          />
-        </div>
-      )}
 
       {/* Outreach Generator Modal */}
       <OutreachGeneratorModal
