@@ -172,13 +172,64 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["status"] = "completed"
         jobs_store[job_id]["progress"] = 100
         jobs_store[job_id]["current_step"] = "Complete!"
+
+        # Build stakeholder map from fetched stakeholders + AI-generated content
+        stakeholder_map_data = None
+        if stakeholders_data:
+            stakeholder_map_data = {
+                "stakeholders": [],
+                "lastUpdated": datetime.utcnow().isoformat()
+            }
+            # Get AI-generated stakeholder profiles from validated_data
+            ai_stakeholder_profiles = validated_data.get("stakeholder_profiles", {})
+
+            for s in stakeholders_data:
+                role_type = s.get("role_type", "Unknown")
+                ai_profile = ai_stakeholder_profiles.get(role_type, {})
+
+                stakeholder_map_data["stakeholders"].append({
+                    "name": s.get("name", "Unknown"),
+                    "title": s.get("title", ""),
+                    "roleType": role_type,
+                    "bio": ai_profile.get("bio", ""),
+                    "isNewHire": s.get("is_new_hire", False),
+                    "hireDate": s.get("hire_date"),
+                    "contact": {
+                        "email": s.get("email"),
+                        "phone": s.get("phone"),
+                        "linkedinUrl": s.get("linkedin_url")
+                    },
+                    "strategicPriorities": ai_profile.get("strategic_priorities", []),
+                    "communicationPreference": ai_profile.get("communication_preference", ""),
+                    "recommendedPlay": ai_profile.get("recommended_play", "")
+                })
+
         jobs_store[job_id]["result"] = {
             "success": True,
             "company_name": company_data["company_name"],
             "domain": company_data["domain"],
             "slideshow_url": slideshow_url,
             "confidence_score": validated_data.get("confidence_score", 0.85),
-            "validated_data": validated_data
+            "validated_data": validated_data,
+            # New intelligence sections at top level for frontend
+            "executive_snapshot": {
+                "companyOverview": validated_data.get("executive_snapshot", {}).get("company_overview", ""),
+                "companyClassification": validated_data.get("executive_snapshot", {}).get("company_classification", "Private"),
+                "estimatedITSpend": validated_data.get("executive_snapshot", {}).get("estimated_it_spend", ""),
+                "technologyStack": validated_data.get("technology_stack", [])
+            } if validated_data.get("executive_snapshot") or validated_data.get("technology_stack") else None,
+            "buying_signals": {
+                "intentTopics": validated_data.get("buying_signals", {}).get("intent_topics", []),
+                "signalStrength": validated_data.get("buying_signals", {}).get("signal_strength", "medium"),
+                "scoops": validated_data.get("buying_signals", {}).get("scoops", []),
+                "opportunityThemes": validated_data.get("opportunity_themes", [])
+            } if validated_data.get("buying_signals") or validated_data.get("opportunity_themes") else None,
+            "stakeholder_map": stakeholder_map_data,
+            "sales_program": {
+                "intentLevel": validated_data.get("sales_program", {}).get("intent_level", "Medium"),
+                "intentScore": validated_data.get("sales_program", {}).get("intent_score", 50),
+                "strategyText": validated_data.get("sales_program", {}).get("strategy_text", "")
+            } if validated_data.get("sales_program") else None
         }
         # Store raw API data for debug mode
         jobs_store[job_id]["apollo_data"] = apollo_data
