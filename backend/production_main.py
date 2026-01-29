@@ -192,13 +192,13 @@ async def fetch_apollo_data(company_data: dict) -> dict:
 
     try:
         async with httpx.AsyncClient() as client:
+            # Apollo.io uses api_key in the request body, not headers
             response = await client.post(
-                "https://api.apollo.io/v1/organizations/search",
-                headers={"X-Api-Key": APOLLO_API_KEY},
+                "https://api.apollo.io/v1/organizations/enrich",
+                headers={"Content-Type": "application/json"},
                 json={
-                    "q_organization_name": company_data["company_name"],
-                    "page": 1,
-                    "per_page": 1
+                    "api_key": APOLLO_API_KEY,
+                    "domain": company_data["domain"]
                 },
                 timeout=30.0
             )
@@ -206,10 +206,29 @@ async def fetch_apollo_data(company_data: dict) -> dict:
             if response.status_code == 200:
                 data = response.json()
                 logger.info(f"Apollo.io returned data for {company_data['company_name']}")
+                logger.info(f"Apollo.io response keys: {list(data.keys()) if data else 'empty'}")
                 return data
             else:
-                logger.warning(f"Apollo.io API returned {response.status_code}")
-                return {}
+                logger.warning(f"Apollo.io API returned {response.status_code}: {response.text[:200]}")
+                # Try alternative endpoint - mixed companies/organizations search
+                response2 = await client.post(
+                    "https://api.apollo.io/v1/mixed_companies/search",
+                    headers={"Content-Type": "application/json"},
+                    json={
+                        "api_key": APOLLO_API_KEY,
+                        "q_organization_domains": company_data["domain"],
+                        "page": 1,
+                        "per_page": 1
+                    },
+                    timeout=30.0
+                )
+                if response2.status_code == 200:
+                    data = response2.json()
+                    logger.info(f"Apollo.io (mixed_companies) returned data for {company_data['company_name']}")
+                    return data
+                else:
+                    logger.warning(f"Apollo.io mixed_companies also failed: {response2.status_code}")
+                    return {}
 
     except Exception as e:
         logger.error(f"Apollo.io error: {str(e)}")
@@ -217,7 +236,7 @@ async def fetch_apollo_data(company_data: dict) -> dict:
 
 
 async def fetch_pdl_data(company_data: dict) -> dict:
-    """Fetch company data from PeopleDataLabs"""
+    """Fetch company data from PeopleDataLabs Company Enrich API"""
     if not PEOPLEDATALABS_API_KEY:
         logger.warning("PeopleDataLabs API key not configured")
         return {}
@@ -226,19 +245,34 @@ async def fetch_pdl_data(company_data: dict) -> dict:
 
     try:
         async with httpx.AsyncClient() as client:
+            # Use Company Enrich endpoint with website parameter
             response = await client.get(
                 "https://api.peopledatalabs.com/v5/company/enrich",
                 headers={"X-Api-Key": PEOPLEDATALABS_API_KEY},
-                params={"website": company_data["domain"]},
+                params={
+                    "website": company_data["domain"],
+                    "min_likelihood": 2  # Minimum confidence threshold
+                },
                 timeout=30.0
             )
 
             if response.status_code == 200:
                 data = response.json()
                 logger.info(f"PeopleDataLabs returned data for {company_data['company_name']}")
+                # Log the keys we got back for debugging
+                if data:
+                    logger.info(f"PDL response keys: {list(data.keys())}")
+                    if "name" in data:
+                        logger.info(f"PDL company name: {data.get('name')}")
+                    if "industry" in data:
+                        logger.info(f"PDL industry: {data.get('industry')}")
+                    if "size" in data:
+                        logger.info(f"PDL size: {data.get('size')}")
+                    if "employee_count" in data:
+                        logger.info(f"PDL employee_count: {data.get('employee_count')}")
                 return data
             else:
-                logger.warning(f"PeopleDataLabs API returned {response.status_code}")
+                logger.warning(f"PeopleDataLabs API returned {response.status_code}: {response.text[:200]}")
                 return {}
 
     except Exception as e:
@@ -303,8 +337,12 @@ def extract_data_from_apis(company_data: dict, apollo_data: dict, pdl_data: dict
                 result["technology"] = org["technologies"][:5]  # Top 5
 
     # Extract from PeopleDataLabs data
-    if pdl_data and pdl_data.get("status") == 200:
-        company = pdl_data.get("data", {})
+    # PDL company/enrich returns data directly at top level, not wrapped in {status, data}
+    if pdl_data:
+        # Check if it's the direct response or wrapped
+        company = pdl_data.get("data", pdl_data) if isinstance(pdl_data.get("data"), dict) else pdl_data
+
+        logger.info(f"PDL extraction - company keys: {list(company.keys()) if company else 'none'}")
 
         # Override with PDL data if available (often more accurate)
         if company.get("name"):
@@ -313,24 +351,56 @@ def extract_data_from_apis(company_data: dict, apollo_data: dict, pdl_data: dict
         if company.get("industry"):
             result["industry"] = company["industry"]
 
+        # PDL uses different fields for employee count
         if company.get("size"):
             result["employee_count"] = company["size"]
+        elif company.get("employee_count"):
+            result["employee_count"] = str(company["employee_count"])
 
+        # PDL location structure
         if company.get("location"):
             loc = company["location"]
-            if loc.get("name"):
-                result["headquarters"] = loc["name"]
+            if isinstance(loc, dict):
+                # Build location string from components
+                parts = []
+                if loc.get("locality"):
+                    parts.append(loc["locality"])
+                if loc.get("region"):
+                    parts.append(loc["region"])
+                if loc.get("country"):
+                    parts.append(loc["country"])
+                if parts:
+                    result["headquarters"] = ", ".join(parts)
+                elif loc.get("name"):
+                    result["headquarters"] = loc["name"]
+            elif isinstance(loc, str):
+                result["headquarters"] = loc
 
         if company.get("founded"):
             result["founded_year"] = company["founded"]
 
-        if company.get("annual_revenue"):
+        # PDL uses different revenue fields
+        if company.get("inferred_revenue"):
+            result["revenue"] = company["inferred_revenue"]
+        elif company.get("annual_revenue"):
             result["revenue"] = company["annual_revenue"]
 
+        # PDL tags/industries
         if company.get("tags"):
             result["technology"] = company["tags"][:5]
 
-    logger.info(f"Extracted data for {result['company_name']}")
+        # Additional PDL fields
+        if company.get("linkedin_url"):
+            result["linkedin"] = company["linkedin_url"]
+
+        if company.get("summary"):
+            result["description"] = company["summary"]
+
+        # Target market from PDL
+        if company.get("type"):
+            result["target_market"] = company["type"]
+
+    logger.info(f"Extracted data for {result['company_name']}: industry={result.get('industry')}, employees={result.get('employee_count')}")
     return result
 
 
@@ -555,34 +625,61 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
     result = job_data.get("result", {})
     validated_data = result.get("validated_data", {})
 
-    # Extract Apollo.io fields
+    # Extract Apollo.io fields (handles both organization/enrich and mixed_companies/search)
     apollo_org = {}
-    if apollo_data and "organizations" in apollo_data:
-        orgs = apollo_data.get("organizations", [])
-        if orgs:
-            apollo_org = orgs[0]
+    if apollo_data:
+        # Check if it's from organizations/enrich (data at top level) or search (in array)
+        if "organization" in apollo_data:
+            apollo_org = apollo_data.get("organization", {})
+        elif "organizations" in apollo_data:
+            orgs = apollo_data.get("organizations", [])
+            if orgs:
+                apollo_org = orgs[0]
+        elif "accounts" in apollo_data:
+            accounts = apollo_data.get("accounts", [])
+            if accounts:
+                apollo_org = accounts[0]
+        else:
+            # Data might be at top level
+            apollo_org = apollo_data
 
     apollo_extracted = {
         "company_name": apollo_org.get("name", "N/A"),
         "industry": apollo_org.get("industry", "N/A"),
-        "employee_count": apollo_org.get("estimated_num_employees", "N/A"),
-        "headquarters": f"{apollo_org.get('city', '')}, {apollo_org.get('state', '')}".strip(", ") or "N/A",
+        "employee_count": apollo_org.get("estimated_num_employees") or apollo_org.get("employee_count", "N/A"),
+        "headquarters": f"{apollo_org.get('city', '')}, {apollo_org.get('state', '')}".strip(", ") or apollo_org.get("country", "N/A"),
         "founded_year": apollo_org.get("founded_year", "N/A"),
-        "website": apollo_org.get("website_url", "N/A"),
+        "website": apollo_org.get("website_url") or apollo_org.get("primary_domain", "N/A"),
         "linkedin": apollo_org.get("linkedin_url", "N/A"),
-        "technologies": apollo_org.get("technologies", [])[:5] if apollo_org.get("technologies") else [],
+        "technologies": (apollo_org.get("technologies") or [])[:5],
+        "annual_revenue": apollo_org.get("annual_revenue", "N/A"),
     }
 
-    # Extract PeopleDataLabs fields
-    pdl_company = pdl_data.get("data", {}) if pdl_data.get("status") == 200 else pdl_data
+    # Extract PeopleDataLabs fields (PDL returns data directly, not wrapped)
+    pdl_company = pdl_data if pdl_data else {}
+
+    # Build headquarters from location components
+    pdl_location = "N/A"
+    if pdl_company.get("location"):
+        loc = pdl_company["location"]
+        if isinstance(loc, dict):
+            parts = [loc.get("locality"), loc.get("region"), loc.get("country")]
+            pdl_location = ", ".join([p for p in parts if p]) or loc.get("name", "N/A")
+        elif isinstance(loc, str):
+            pdl_location = loc
+
     pdl_extracted = {
         "company_name": pdl_company.get("name", "N/A"),
         "industry": pdl_company.get("industry", "N/A"),
+        "employee_count": pdl_company.get("employee_count", "N/A"),
         "employee_range": pdl_company.get("size", "N/A"),
-        "headquarters": pdl_company.get("location", {}).get("name", "N/A") if isinstance(pdl_company.get("location"), dict) else "N/A",
+        "headquarters": pdl_location,
         "founded_year": pdl_company.get("founded", "N/A"),
         "linkedin": pdl_company.get("linkedin_url", "N/A"),
-        "tags": pdl_company.get("tags", [])[:5] if pdl_company.get("tags") else [],
+        "tags": (pdl_company.get("tags") or [])[:5],
+        "summary": pdl_company.get("summary", "N/A"),
+        "inferred_revenue": pdl_company.get("inferred_revenue", "N/A"),
+        "type": pdl_company.get("type", "N/A"),
     }
 
     base_time = datetime.fromisoformat(created_at.replace("Z", ""))
