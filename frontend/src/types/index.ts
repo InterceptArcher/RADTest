@@ -139,6 +139,7 @@ export interface LLMThoughtStep {
   input?: unknown;
   output?: unknown;
   confidence?: number;
+  timestamp?: string;
 }
 
 /**
@@ -148,10 +149,15 @@ export interface LLMThoughtProcess {
   id: string;
   taskName: string;
   model: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
   startTime: string;
   endTime?: string;
+  duration?: number;
   steps: LLMThoughtStep[];
   finalDecision: string;
+  confidenceScore?: number;
   discrepanciesResolved?: string[];
 }
 
