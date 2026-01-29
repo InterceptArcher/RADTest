@@ -52,6 +52,11 @@ export interface ProfileResult {
   confidence_score: number;
   finalize_record_id?: string;
   validated_data?: CompanyData;
+  // New expanded intelligence sections
+  executive_snapshot?: ExecutiveSnapshot;
+  buying_signals?: BuyingSignals;
+  stakeholder_map?: StakeholderMap;
+  sales_program?: SalesProgram;
 }
 
 /**
@@ -270,4 +275,152 @@ export interface ExtendedCompanyData {
     linkedin?: string;
     email?: string;
   };
+  // New expanded intelligence sections
+  executive_snapshot?: ExecutiveSnapshot;
+  buying_signals?: BuyingSignals;
+  stakeholder_map?: StakeholderMap;
+  sales_program?: SalesProgram;
+}
+
+/**
+ * Intelligence Expansion Types - Executive Snapshot, Buying Signals, Stakeholder Map, Sales Program
+ */
+
+/**
+ * Technology stack item with category and last seen date.
+ */
+export interface TechnologyItem {
+  name: string;
+  category: string;
+  lastSeen?: string;
+}
+
+/**
+ * Executive Snapshot - Company overview and classification.
+ */
+export interface ExecutiveSnapshot {
+  companyOverview: string;
+  companyClassification: 'Public' | 'Private' | 'Government' | 'Unknown';
+  estimatedITSpend?: string;
+  technologyStack: TechnologyItem[];
+}
+
+/**
+ * Scoop/Trigger event (executive hires, funding, M&A, expansions).
+ */
+export interface Scoop {
+  type: 'executive_hire' | 'funding' | 'expansion' | 'merger_acquisition' | 'product_launch' | 'other';
+  title: string;
+  date?: string;
+  details: string;
+}
+
+/**
+ * Opportunity theme mapping challenge to solution.
+ */
+export interface OpportunityTheme {
+  challenge: string;
+  solutionCategory: string;
+}
+
+/**
+ * Buying Signals - Intent topics and scoops.
+ */
+export interface BuyingSignals {
+  intentTopics: string[];
+  signalStrength: 'low' | 'medium' | 'high' | 'very_high';
+  scoops: Scoop[];
+  opportunityThemes: OpportunityTheme[];
+}
+
+/**
+ * Stakeholder contact information.
+ */
+export interface StakeholderContact {
+  email?: string;
+  phone?: string;
+  linkedinUrl?: string;
+}
+
+/**
+ * C-suite role type.
+ */
+export type StakeholderRoleType = 'CIO' | 'CTO' | 'CISO' | 'COO' | 'CFO' | 'CPO' | 'Unknown';
+
+/**
+ * Individual stakeholder profile.
+ */
+export interface Stakeholder {
+  name: string;
+  title: string;
+  roleType: StakeholderRoleType;
+  bio?: string;
+  isNewHire: boolean;
+  hireDate?: string;
+  contact: StakeholderContact;
+  strategicPriorities: string[];
+  communicationPreference?: string;
+  recommendedPlay?: string;
+}
+
+/**
+ * Stakeholder Map - Collection of executive profiles.
+ */
+export interface StakeholderMap {
+  stakeholders: Stakeholder[];
+  lastUpdated?: string;
+}
+
+/**
+ * Intent level for sales program.
+ */
+export type IntentLevel = 'Low' | 'Medium' | 'High' | 'Very High';
+
+/**
+ * Sales Program - Intent-based strategy.
+ */
+export interface SalesProgram {
+  intentLevel: IntentLevel;
+  intentScore: number;
+  strategyText: string;
+}
+
+/**
+ * Generated outreach content for a stakeholder.
+ */
+export interface OutreachContent {
+  roleType: StakeholderRoleType;
+  stakeholderName?: string;
+  email: {
+    subject: string;
+    body: string;
+  };
+  linkedin: {
+    connectionRequest: string;
+    followupMessage: string;
+  };
+  callScript: {
+    opening: string;
+    valueProposition: string;
+    questions: string[];
+    closingCTA: string;
+  };
+  generatedAt: string;
+}
+
+/**
+ * Request payload for generating outreach content.
+ */
+export interface OutreachRequest {
+  stakeholderName?: string;
+  customContext?: string;
+}
+
+/**
+ * Response from outreach generation endpoint.
+ */
+export interface OutreachResponse {
+  success: boolean;
+  content?: OutreachContent;
+  error?: string;
 }

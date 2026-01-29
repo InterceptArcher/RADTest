@@ -5,7 +5,7 @@ Uses Apollo.io, PeopleDataLabs, LLM Council validation, and Gamma slideshow gene
 from fastapi import FastAPI, HTTPException, status, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import Optional, Dict
+from typing import Optional, Dict, List, Any
 import asyncio
 import logging
 import sys
@@ -133,19 +133,24 @@ async def process_company_profile(job_id: str, company_data: dict):
         apollo_data = await fetch_apollo_data(company_data)
 
         # Step 2: Gather intelligence from PeopleDataLabs
-        jobs_store[job_id]["progress"] = 40
+        jobs_store[job_id]["progress"] = 35
         jobs_store[job_id]["current_step"] = "Querying PeopleDataLabs..."
         pdl_data = await fetch_pdl_data(company_data)
+
+        # Step 2.5: Fetch stakeholders from Apollo
+        jobs_store[job_id]["progress"] = 45
+        jobs_store[job_id]["current_step"] = "Searching for executive stakeholders..."
+        stakeholders_data = await fetch_stakeholders(company_data["domain"])
 
         # Step 3: Store raw data in Supabase
         jobs_store[job_id]["progress"] = 50
         jobs_store[job_id]["current_step"] = "Storing raw data..."
         await store_raw_data(company_data["company_name"], apollo_data, pdl_data)
 
-        # Step 4: Validate with LLM Council (20 specialists + 1 aggregator)
+        # Step 4: Validate with LLM Council (28 specialists + 1 aggregator)
         jobs_store[job_id]["progress"] = 60
-        jobs_store[job_id]["current_step"] = "Running LLM Council (20 specialists)..."
-        validated_data = await validate_with_council(company_data, apollo_data, pdl_data)
+        jobs_store[job_id]["current_step"] = "Running LLM Council (28 specialists)..."
+        validated_data = await validate_with_council(company_data, apollo_data, pdl_data, stakeholders_data)
 
         # Extract council metadata for debug mode
         council_metadata = validated_data.pop("_council_metadata", {})
@@ -178,6 +183,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Store raw API data for debug mode
         jobs_store[job_id]["apollo_data"] = apollo_data
         jobs_store[job_id]["pdl_data"] = pdl_data
+        jobs_store[job_id]["stakeholders_data"] = stakeholders_data
 
         logger.info(f"Completed processing for job {job_id}")
 
@@ -281,7 +287,7 @@ async def fetch_apollo_data(company_data: dict) -> dict:
 
 
 async def fetch_pdl_data(company_data: dict) -> dict:
-    """Fetch company data from PeopleDataLabs Company Enrich API"""
+    """Fetch company data from PeopleDataLabs Company Enrich API with extended fields."""
     if not PEOPLEDATALABS_API_KEY:
         logger.warning("PeopleDataLabs API key not configured")
         return {}
@@ -315,6 +321,14 @@ async def fetch_pdl_data(company_data: dict) -> dict:
                         logger.info(f"PDL size: {data.get('size')}")
                     if "employee_count" in data:
                         logger.info(f"PDL employee_count: {data.get('employee_count')}")
+                    # Log new fields for intelligence expansion
+                    if "type" in data:
+                        logger.info(f"PDL company type: {data.get('type')}")
+                    if "funding_details" in data:
+                        logger.info(f"PDL funding_details: {data.get('funding_details')}")
+                    if "technographics" in data:
+                        techs = data.get('technographics', [])
+                        logger.info(f"PDL technographics count: {len(techs) if techs else 0}")
                 return data
             else:
                 logger.warning(f"PeopleDataLabs API returned {response.status_code}: {response.text[:200]}")
@@ -323,6 +337,117 @@ async def fetch_pdl_data(company_data: dict) -> dict:
     except Exception as e:
         logger.error(f"PeopleDataLabs error: {str(e)}")
         return {}
+
+
+async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
+    """Fetch C-suite executives from Apollo.io for stakeholder mapping."""
+    if not APOLLO_API_KEY:
+        logger.warning("Apollo API key not configured for stakeholder search")
+        return []
+
+    import httpx
+
+    # Target C-suite roles
+    target_titles = [
+        "CIO", "Chief Information Officer",
+        "CTO", "Chief Technology Officer",
+        "CISO", "Chief Information Security Officer", "Chief Security Officer",
+        "COO", "Chief Operating Officer",
+        "CFO", "Chief Financial Officer",
+        "CPO", "Chief Product Officer", "Chief People Officer"
+    ]
+
+    stakeholders = []
+
+    try:
+        async with httpx.AsyncClient() as client:
+            logger.info(f"Apollo: Searching for C-suite stakeholders at {domain}")
+            response = await client.post(
+                "https://api.apollo.io/v1/mixed_people/search",
+                headers={"Content-Type": "application/json"},
+                json={
+                    "api_key": APOLLO_API_KEY,
+                    "q_organization_domains": domain,
+                    "person_titles": target_titles,
+                    "page": 1,
+                    "per_page": 25  # Get up to 25 to ensure we find all C-suite
+                },
+                timeout=30.0
+            )
+
+            if response.status_code == 200:
+                data = response.json()
+                people = data.get("people", [])
+                logger.info(f"Apollo: Found {len(people)} potential stakeholders")
+
+                # Map roles to standardized types
+                role_mapping = {
+                    "cio": "CIO", "chief information officer": "CIO",
+                    "cto": "CTO", "chief technology officer": "CTO",
+                    "ciso": "CISO", "chief information security officer": "CISO", "chief security officer": "CISO",
+                    "coo": "COO", "chief operating officer": "COO",
+                    "cfo": "CFO", "chief financial officer": "CFO",
+                    "cpo": "CPO", "chief product officer": "CPO", "chief people officer": "CPO"
+                }
+
+                seen_roles = set()
+
+                for person in people:
+                    title = (person.get("title") or "").lower()
+
+                    # Determine standardized role type
+                    role_type = None
+                    for keyword, role in role_mapping.items():
+                        if keyword in title:
+                            role_type = role
+                            break
+
+                    if not role_type or role_type in seen_roles:
+                        continue
+
+                    seen_roles.add(role_type)
+
+                    # Extract employment history for new hire detection
+                    employment_history = person.get("employment_history", [])
+                    is_new_hire = False
+                    hire_date = None
+
+                    if employment_history:
+                        current_job = employment_history[0] if employment_history else {}
+                        start_date = current_job.get("start_date")
+                        if start_date:
+                            hire_date = start_date
+                            # Consider "new hire" if started in last 12 months
+                            try:
+                                from datetime import datetime, timedelta
+                                start = datetime.fromisoformat(start_date.replace("Z", ""))
+                                if datetime.utcnow() - start < timedelta(days=365):
+                                    is_new_hire = True
+                            except:
+                                pass
+
+                    stakeholder = {
+                        "name": f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
+                        "title": person.get("title", ""),
+                        "role_type": role_type,
+                        "email": person.get("email"),
+                        "phone": person.get("phone_numbers", [None])[0] if person.get("phone_numbers") else None,
+                        "linkedin_url": person.get("linkedin_url"),
+                        "is_new_hire": is_new_hire,
+                        "hire_date": hire_date,
+                        "photo_url": person.get("photo_url")
+                    }
+                    stakeholders.append(stakeholder)
+                    logger.info(f"Apollo: Found {role_type}: {stakeholder['name']}")
+
+                logger.info(f"Apollo: Extracted {len(stakeholders)} unique C-suite stakeholders")
+            else:
+                logger.warning(f"Apollo stakeholder search returned {response.status_code}")
+
+    except Exception as e:
+        logger.error(f"Apollo stakeholder search error: {str(e)}")
+
+    return stakeholders
 
 
 def extract_data_from_apis(company_data: dict, apollo_data: dict, pdl_data: dict) -> dict:
@@ -1219,6 +1344,234 @@ async def get_process_flow(job_id: str):
 
     debug_data = generate_debug_data(job_id, job)
     return debug_data["process_flow"]
+
+
+# ============================================================================
+# On-Demand Sales Content Generation
+# ============================================================================
+
+class OutreachRequest(BaseModel):
+    stakeholder_name: Optional[str] = None
+    custom_context: Optional[str] = None
+
+
+class OutreachContent(BaseModel):
+    role_type: str
+    stakeholder_name: Optional[str]
+    email: Dict[str, str]
+    linkedin: Dict[str, str]
+    call_script: Dict[str, Any]
+
+
+@app.post("/jobs/{job_id}/generate-outreach/{role_type}", tags=["Sales Content"])
+async def generate_outreach_content(
+    job_id: str,
+    role_type: str,
+    request: Optional[OutreachRequest] = None
+):
+    """
+    Generate personalized outreach content (email, LinkedIn, call script) for a specific stakeholder role.
+    This is called on-demand when user clicks 'Generate Outreach' to save API costs.
+    """
+    logger.info(f"Generating outreach content for job {job_id}, role {role_type}")
+
+    # Validate role type
+    valid_roles = ["CIO", "CTO", "CISO", "COO", "CFO", "CPO"]
+    if role_type.upper() not in valid_roles:
+        raise HTTPException(status_code=400, detail=f"Invalid role type. Must be one of: {valid_roles}")
+
+    # Get job data
+    job = jobs_store.get(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+
+    if job.get("status") != "completed":
+        raise HTTPException(status_code=400, detail="Job must be completed before generating outreach content")
+
+    # Get validated data and stakeholder info
+    result = job.get("result", {})
+    validated_data = result.get("validated_data", {})
+    stakeholders_data = job.get("stakeholders_data", [])
+
+    # Find the specific stakeholder
+    target_stakeholder = None
+    for s in stakeholders_data:
+        if s.get("role_type", "").upper() == role_type.upper():
+            target_stakeholder = s
+            break
+
+    # Build context for content generation
+    company_name = validated_data.get("company_name", "the company")
+    industry = validated_data.get("industry", "their industry")
+    buying_signals = validated_data.get("buying_signals", {})
+    intent_level = buying_signals.get("signal_strength", "medium")
+    intent_topics = buying_signals.get("intent_topics", [])
+
+    stakeholder_name = target_stakeholder.get("name") if target_stakeholder else None
+    if request and request.stakeholder_name:
+        stakeholder_name = request.stakeholder_name
+
+    # Generate content using OpenAI
+    if not OPENAI_API_KEY:
+        # Return template content if no API key
+        return generate_template_outreach(role_type, company_name, stakeholder_name)
+
+    try:
+        from openai import AsyncOpenAI
+        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+        prompt = f"""Generate personalized sales outreach content for a {role_type} at {company_name}.
+
+COMPANY CONTEXT:
+- Company: {company_name}
+- Industry: {industry}
+- Intent Level: {intent_level}
+- Intent Topics: {', '.join(intent_topics[:3]) if intent_topics else 'Digital transformation, operational efficiency'}
+- Stakeholder Name: {stakeholder_name or 'Unknown'}
+
+ROLE CONTEXT FOR {role_type}:
+{get_role_context(role_type)}
+
+Generate the following content (be specific, professional, and value-focused):
+
+1. EMAIL:
+- Subject line (compelling, under 60 chars)
+- Body (150-200 words, personalized to role and company)
+
+2. LINKEDIN:
+- Connection request message (max 300 chars)
+- Follow-up message (max 500 chars, value-focused)
+
+3. CALL SCRIPT:
+- Opening statement (2-3 sentences)
+- 3 discovery questions relevant to {role_type} priorities
+- 2-3 common objections and responses
+
+Output as JSON:
+{{
+    "email": {{
+        "subject": "...",
+        "body": "..."
+    }},
+    "linkedin": {{
+        "connection_request": "...",
+        "followup_message": "..."
+    }},
+    "call_script": {{
+        "opening": "...",
+        "questions": ["...", "...", "..."],
+        "objection_handlers": {{
+            "objection1": "response1",
+            "objection2": "response2"
+        }}
+    }}
+}}"""
+
+        response = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a sales enablement expert. Generate professional, value-focused outreach content."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.7,
+            response_format={"type": "json_object"}
+        )
+
+        import json
+        content = json.loads(response.choices[0].message.content)
+
+        return OutreachContent(
+            role_type=role_type.upper(),
+            stakeholder_name=stakeholder_name,
+            email=content.get("email", {}),
+            linkedin=content.get("linkedin", {}),
+            call_script=content.get("call_script", {})
+        )
+
+    except Exception as e:
+        logger.error(f"Error generating outreach content: {e}")
+        # Fall back to template
+        return generate_template_outreach(role_type, company_name, stakeholder_name)
+
+
+def get_role_context(role_type: str) -> str:
+    """Get context about priorities and concerns for each C-suite role."""
+    contexts = {
+        "CIO": """
+- Priorities: Digital transformation, IT modernization, security, vendor consolidation
+- Concerns: Budget constraints, legacy system integration, cybersecurity risks
+- Communication style: Data-driven, ROI-focused, risk-aware""",
+        "CTO": """
+- Priorities: Technology innovation, engineering productivity, scalability, technical debt
+- Concerns: Build vs buy decisions, talent retention, keeping up with tech trends
+- Communication style: Technical depth, innovation-focused, forward-looking""",
+        "CISO": """
+- Priorities: Security posture, compliance, risk management, incident response
+- Concerns: Threat landscape, budget for security tools, board-level reporting
+- Communication style: Risk-focused, compliance-aware, security-first""",
+        "COO": """
+- Priorities: Operational efficiency, process optimization, cost reduction, scalability
+- Concerns: Operational bottlenecks, resource allocation, cross-functional alignment
+- Communication style: Efficiency-focused, metrics-driven, practical""",
+        "CFO": """
+- Priorities: Cost optimization, ROI, financial planning, risk management
+- Concerns: Budget allocation, proving technology ROI, financial compliance
+- Communication style: Numbers-driven, ROI-focused, business case oriented""",
+        "CPO": """
+- Priorities: Product innovation, customer experience, market fit, product roadmap
+- Concerns: Time to market, competitive differentiation, user feedback
+- Communication style: Customer-focused, innovation-driven, market-aware"""
+    }
+    return contexts.get(role_type.upper(), "General executive priorities and concerns")
+
+
+def generate_template_outreach(role_type: str, company_name: str, stakeholder_name: str = None) -> OutreachContent:
+    """Generate template outreach content when API is unavailable."""
+    name_greeting = f"Hi {stakeholder_name.split()[0]}," if stakeholder_name else f"Hi,"
+
+    templates = {
+        "CIO": {
+            "email": {
+                "subject": f"Digital Transformation Opportunities at {company_name}",
+                "body": f"""{name_greeting}
+
+I've been following {company_name}'s digital initiatives and wanted to reach out about how we're helping CIOs accelerate their transformation journeys while managing complexity.
+
+Many CIOs are dealing with the challenge of modernizing legacy systems while maintaining operational stability. Our approach focuses on delivering quick wins that build momentum for larger initiatives.
+
+Would you be open to a brief conversation about your technology priorities for this year?
+
+Best regards"""
+            },
+            "linkedin": {
+                "connection_request": f"Hi, I work with CIOs at companies like {company_name} on digital transformation. Would love to connect.",
+                "followup_message": f"Thanks for connecting! I noticed {company_name} is investing in modernization. Happy to share insights from similar initiatives if helpful."
+            },
+            "call_script": {
+                "opening": f"Hi, this is [Name] from [Company]. I'm reaching out because we work with CIOs on digital transformation, and I noticed {company_name} has been making strategic technology investments.",
+                "questions": [
+                    "What are your top technology priorities for this year?",
+                    "How are you balancing innovation with managing your existing technology stack?",
+                    "What's your biggest challenge in driving digital adoption across the organization?"
+                ],
+                "objection_handlers": {
+                    "We already have a solution": "That's great to hear. Many of our clients use us alongside existing solutions. Would it be valuable to understand how we complement what you have?",
+                    "Not a priority right now": "I understand. When would be a better time to revisit this conversation?"
+                }
+            }
+        }
+    }
+
+    # Use CIO template as default, customize greeting
+    template = templates.get(role_type.upper(), templates["CIO"])
+
+    return OutreachContent(
+        role_type=role_type.upper(),
+        stakeholder_name=stakeholder_name,
+        email=template["email"],
+        linkedin=template["linkedin"],
+        call_script=template["call_script"]
+    )
 
 
 if __name__ == "__main__":

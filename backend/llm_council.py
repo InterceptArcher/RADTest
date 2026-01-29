@@ -4,7 +4,7 @@ LLM Council for Company Data Validation
 """
 import asyncio
 import logging
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any, Optional, Union
 from datetime import datetime
 import json
 import os
@@ -216,13 +216,170 @@ Output JSON: {"rd_focus": [...], "patent_count": number_or_null, "innovations": 
 - Risk factors
 List specific certifications. Output JSON: {"certifications": [...], "regulations": [...], "risk_factors": [...]}"""
     },
+    # === NEW SPECIALISTS FOR EXPANDED INTELLIGENCE (21-28) ===
+    {
+        "id": "company_overview_writer",
+        "name": "Company Overview Writer",
+        "focus": "executive_snapshot",
+        "prompt": """You are a company overview specialist. Write a concise executive-friendly overview:
+- 2-3 sentence company description (who they are, what they do, key differentiators)
+- Company classification (Public, Private, Government Contractor)
+- Estimated annual IT spend based on: employee count, revenue, industry (tech=5-10% of revenue, others=3-5%)
+Be factual and professional. Output JSON: {
+    "company_overview": "2-3 sentence overview...",
+    "company_classification": "Public/Private/Government",
+    "estimated_it_spend": "$X-$Y million",
+    "it_spend_calculation_basis": "Based on X employees and Y revenue..."
+}"""
+    },
+    {
+        "id": "buying_signals_analyst",
+        "name": "Buying Signals Analyst",
+        "focus": "buying_signals",
+        "prompt": """You are a buying signals analyst. Identify active buying signals and intent topics from:
+- Technology stack changes (new tools indicate budget allocation)
+- Job postings (hiring for specific roles indicates initiatives)
+- Growth indicators
+- Recent company changes
+Output JSON: {
+    "intent_topics": ["Topic 1", "Topic 2", "Topic 3"],
+    "signal_strength": "low/medium/high/very_high",
+    "buying_indicators": ["Indicator 1", "Indicator 2"],
+    "technology_changes": ["Recent tech adoptions or changes"]
+}"""
+    },
+    {
+        "id": "scoops_analyst",
+        "name": "Scoops & Triggers Analyst",
+        "focus": "scoops",
+        "prompt": """You are a corporate intelligence analyst. Identify recent scoops and trigger events:
+- Executive hires (new leaders often bring new vendor preferences)
+- Funding rounds (new capital means new spending)
+- Expansions (new markets indicate expanded infrastructure needs)
+- M&A activity (org changes indicate integration/consolidation needs)
+For each scoop, provide: type, title, date (if known), and a brief description.
+Output JSON: {
+    "scoops": [
+        {"type": "executive_hire/funding/expansion/ma", "title": "...", "date": "YYYY-MM-DD or null", "details": "..."}
+    ],
+    "trigger_summary": "1-2 sentence summary of key triggers"
+}"""
+    },
+    {
+        "id": "opportunity_themes_analyst",
+        "name": "Opportunity Themes Analyst",
+        "focus": "opportunity_themes",
+        "prompt": """You are a sales opportunity analyst. Map organizational challenges to solution categories:
+- Identify 2-4 key business/technology challenges based on company context
+- Map each challenge to relevant solution categories
+- Provide value proposition hooks
+Output JSON: {
+    "opportunity_themes": [
+        {"challenge": "Challenge description", "solution_category": "Category", "value_proposition": "How to position"}
+    ],
+    "organizational_challenges": ["Challenge 1", "Challenge 2"],
+    "solution_categories": ["Category 1", "Category 2"]
+}"""
+    },
+    {
+        "id": "stakeholder_bio_writer",
+        "name": "Stakeholder Bio Writer",
+        "focus": "stakeholder_profiles",
+        "prompt": """You are an executive profile writer. For each stakeholder provided, create:
+- A 2-3 sentence professional bio based on their role and company context
+- Strategic priorities typical for their role (CIO=digital transformation, CTO=tech innovation, etc.)
+- Communication style recommendation (data-driven, vision-focused, ROI-focused, etc.)
+- Recommended approach for engaging them
+Output JSON: {
+    "stakeholder_profiles": [
+        {
+            "role_type": "CIO/CTO/CISO/COO/CFO/CPO",
+            "bio": "2-3 sentence bio...",
+            "strategic_priorities": ["Priority 1", "Priority 2", "Priority 3"],
+            "communication_preference": "data-driven/vision-focused/ROI-focused/risk-focused",
+            "recommended_approach": "How to engage this stakeholder..."
+        }
+    ]
+}"""
+    },
+    {
+        "id": "sales_program_strategist",
+        "name": "Sales Program Strategist",
+        "focus": "sales_strategy",
+        "prompt": """You are a sales strategist. Based on the buying signals and company context, determine:
+- Intent level: "Low" (early curiosity), "Medium" (problem acknowledgement), "High" (active evaluation), "Very High" (decision stage)
+- Strategy recommendation based on intent level
+- Key talking points per stakeholder type
+- Timing recommendation
+Output JSON: {
+    "intent_level": "Low/Medium/High/Very High",
+    "intent_score": 0.0-1.0,
+    "strategy_text": "Strategy recommendation...",
+    "timing_recommendation": "When to engage...",
+    "stakeholder_strategies": {
+        "CIO": "Approach for CIO...",
+        "CTO": "Approach for CTO...",
+        "CFO": "Approach for CFO..."
+    }
+}"""
+    },
+    {
+        "id": "tech_stack_categorizer",
+        "name": "Technology Stack Categorizer",
+        "focus": "tech_stack_categories",
+        "prompt": """You are a technology analyst. Categorize the company's technology stack into standard categories:
+- CRM (e.g., Salesforce, HubSpot)
+- Marketing Automation (e.g., Marketo, Pardot)
+- Sales Tools (e.g., Outreach, Gong)
+- Infrastructure (e.g., AWS, Azure, GCP)
+- Analytics (e.g., Tableau, Looker)
+- Collaboration (e.g., Slack, Teams)
+- Security (e.g., Okta, CrowdStrike)
+- Other
+Output JSON: {
+    "technology_categories": {
+        "crm": ["Tool1", "Tool2"],
+        "marketing_automation": ["Tool1"],
+        "sales_tools": ["Tool1"],
+        "infrastructure": ["Tool1", "Tool2"],
+        "analytics": ["Tool1"],
+        "collaboration": ["Tool1"],
+        "security": ["Tool1"],
+        "other": ["Tool1"]
+    },
+    "tech_stack_summary": "Brief summary of tech maturity and notable tools"
+}"""
+    },
+    {
+        "id": "it_spend_estimator",
+        "name": "IT Spend Estimator",
+        "focus": "it_spend",
+        "prompt": """You are an IT spending analyst. Estimate annual IT spend based on:
+- Employee count (larger = more IT spend)
+- Annual revenue (tech companies: 5-10% of revenue, others: 3-5%)
+- Industry (tech/finance spend more)
+- Known technology stack complexity
+Provide a range estimate with confidence level.
+Output JSON: {
+    "estimated_it_spend_low": "$X million",
+    "estimated_it_spend_high": "$Y million",
+    "estimated_it_spend_display": "$X-$Y million",
+    "spend_confidence": "low/medium/high",
+    "calculation_basis": "How you calculated this...",
+    "spend_breakdown": {
+        "infrastructure": "XX%",
+        "software": "XX%",
+        "services": "XX%"
+    }
+}"""
+    },
 ]
 
 # Aggregator prompt
-AGGREGATOR_PROMPT = """You are the Chief Data Aggregator. You have received analyses from 20 specialist LLMs about a company.
+AGGREGATOR_PROMPT = """You are the Chief Data Aggregator. You have received analyses from 28 specialist LLMs about a company.
 
 Your job is to:
-1. Synthesize all specialist inputs into a single, authoritative company profile
+1. Synthesize all specialist inputs into a single, authoritative company profile with EXPANDED INTELLIGENCE
 2. Resolve any conflicts by choosing the most specific/accurate data
 3. BE CONCISE AND FACT-DRIVEN - no verbose language
 4. List specifics instead of generalizations (e.g., list actual country names, not "operates globally")
@@ -230,17 +387,15 @@ Your job is to:
 6. Remove any fluff or marketing language
 
 CRITICAL OUTPUT RULES:
-- CAPITALIZATION: Use Proper Title Case for all names (company names, person names, cities, countries, industries). Example: "Microsoft Corporation", "Satya Nadella", "San Francisco, California, United States"
-- geographic_reach: List actual country names with proper capitalization (max 20), NOT "190 countries worldwide"
-- employee_count: Use a number or specific range, NOT "large workforce"
-- annual_revenue: Use specific figures like "$198.3 billion" or "$50M-$100M", NOT "significant revenue" or null
-- ceo: Full name with proper capitalization like "Tim Cook" or "Satya Nadella", NOT lowercase or null
-- target_market: List specific segments, NOT "various industries"
-- technologies: List actual tech names, NOT "modern technology stack"
+- CAPITALIZATION: Use Proper Title Case for all names (company names, person names, cities, countries, industries)
+- geographic_reach: List actual country names with proper capitalization (max 20)
+- employee_count: Use a number or specific range
+- annual_revenue: Use specific figures like "$198.3 billion" or "$50M-$100M"
+- ceo: Full name with proper capitalization
+- target_market: List specific segments
+- technologies: List actual tech names
 
-IMPORTANT: For annual_revenue and ceo fields, you MUST provide a value if ANY data source mentions it. Look carefully in the Apollo and PDL data for revenue figures and executive names.
-
-Output a clean JSON object with these fields:
+Output a clean JSON object with BOTH original and EXPANDED fields:
 {{
     "company_name": "Proper Case Name",
     "domain": "example.com",
@@ -260,7 +415,41 @@ Output a clean JSON object with these fields:
     "competitors": ["Competitor1", "Competitor2"],
     "company_type": "Public/Private/Subsidiary",
     "linkedin_url": "https://linkedin.com/company/...",
-    "confidence_score": 0.0-1.0
+    "confidence_score": 0.0-1.0,
+
+    "executive_snapshot": {{
+        "company_overview": "2-3 sentence overview of the company",
+        "company_classification": "Public/Private/Government",
+        "estimated_it_spend": "$X-$Y million"
+    }},
+
+    "buying_signals": {{
+        "intent_topics": ["Topic 1", "Topic 2", "Topic 3"],
+        "signal_strength": "low/medium/high/very_high",
+        "scoops": [
+            {{"type": "executive_hire/funding/expansion/ma", "title": "...", "date": "YYYY-MM-DD or null", "details": "..."}}
+        ],
+        "opportunity_themes": [
+            {{"challenge": "...", "solution_category": "...", "value_proposition": "..."}}
+        ]
+    }},
+
+    "technology_stack": {{
+        "crm": ["Tool1"],
+        "marketing_automation": ["Tool1"],
+        "sales_tools": ["Tool1"],
+        "infrastructure": ["Tool1"],
+        "analytics": ["Tool1"],
+        "collaboration": ["Tool1"],
+        "security": ["Tool1"],
+        "other": ["Tool1"]
+    }},
+
+    "sales_program": {{
+        "intent_level": "Low/Medium/High/Very High",
+        "intent_score": 0.0-1.0,
+        "strategy_text": "Sales strategy based on intent level"
+    }}
 }}
 
 SPECIALIST INPUTS:
@@ -269,6 +458,7 @@ SPECIALIST INPUTS:
 ORIGINAL DATA SOURCES:
 Apollo.io: {apollo_data}
 PeopleDataLabs: {pdl_data}
+Stakeholders: {stakeholders_data}
 
 Output ONLY valid JSON, no explanation."""
 
@@ -303,8 +493,12 @@ async def call_openai(prompt: str, system_prompt: str, model: str = "gpt-4o-mini
         return {}
 
 
-async def run_specialist(specialist: Dict, company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> Dict[str, Any]:
+async def run_specialist(specialist: Dict, company_data: Dict, apollo_data: Dict, pdl_data: Dict, stakeholders_data: List[Dict] = None) -> Dict[str, Any]:
     """Run a single specialist LLM."""
+    stakeholders_text = ""
+    if stakeholders_data:
+        stakeholders_text = f"\nStakeholders (C-Suite Executives): {json.dumps(stakeholders_data, indent=2)}"
+
     data_context = f"""
 Company: {company_data.get('company_name', 'Unknown')}
 Domain: {company_data.get('domain', 'Unknown')}
@@ -312,6 +506,7 @@ Domain: {company_data.get('domain', 'Unknown')}
 Apollo.io Data: {json.dumps(apollo_data, indent=2) if apollo_data else 'No data'}
 
 PeopleDataLabs Data: {json.dumps(pdl_data, indent=2) if pdl_data else 'No data'}
+{stakeholders_text}
 
 Analyze this data for your specialty: {specialist['focus']}
 """
@@ -327,13 +522,13 @@ Analyze this data for your specialty: {specialist['focus']}
     }
 
 
-async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> Dict[str, Any]:
+async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, stakeholders_data: List[Dict] = None) -> Dict[str, Any]:
     """
     Run the full LLM Council:
     1. Run specialists in batches of 5 to avoid rate limits
     2. Aggregate results with central LLM
     """
-    logger.info(f"Starting LLM Council for {company_data.get('company_name')}")
+    logger.info(f"Starting LLM Council ({len(SPECIALISTS)} specialists) for {company_data.get('company_name')}")
 
     # Step 1: Run specialists in batches of 5 to avoid rate limits
     valid_results = []
@@ -344,7 +539,7 @@ async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> 
         logger.info(f"Running specialist batch {i//batch_size + 1}/{(len(SPECIALISTS) + batch_size - 1)//batch_size}")
 
         batch_tasks = [
-            run_specialist(specialist, company_data, apollo_data, pdl_data)
+            run_specialist(specialist, company_data, apollo_data, pdl_data, stakeholders_data)
             for specialist in batch
         ]
 
@@ -384,7 +579,8 @@ async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> 
     aggregator_prompt = AGGREGATOR_PROMPT.format(
         specialist_inputs=specialist_inputs_text,
         apollo_data=json.dumps(apollo_data, indent=2) if apollo_data else "No data",
-        pdl_data=json.dumps(pdl_data, indent=2) if pdl_data else "No data"
+        pdl_data=json.dumps(pdl_data, indent=2) if pdl_data else "No data",
+        stakeholders_data=json.dumps(stakeholders_data, indent=2) if stakeholders_data else "No stakeholder data"
     )
 
     logger.info("Running aggregator LLM...")
@@ -563,22 +759,29 @@ def apply_formatting(data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> Dict[str, Any]:
+async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, stakeholders_data: List[Dict] = None) -> Dict[str, Any]:
     """
     Main entry point for LLM Council validation.
-    Returns validated, concise, fact-driven company data.
+    Returns validated, concise, fact-driven company data with expanded intelligence.
     Falls back to direct extraction if council fails.
     """
     # Always extract base data first as fallback
     base_data = extract_base_data(company_data, apollo_data, pdl_data)
 
+    # Add stakeholder data to base_data if available
+    if stakeholders_data:
+        base_data["stakeholder_map"] = {
+            "stakeholders": stakeholders_data,
+            "data_quality": "complete" if len(stakeholders_data) >= 3 else "partial" if stakeholders_data else "minimal"
+        }
+
     if not OPENAI_API_KEY:
         logger.warning("OpenAI not configured, using direct extraction")
-        base_data["_council_metadata"] = {"specialists_run": 0, "specialists_total": 20, "mode": "direct_extraction"}
+        base_data["_council_metadata"] = {"specialists_run": 0, "specialists_total": len(SPECIALISTS), "mode": "direct_extraction"}
         return apply_formatting(base_data)
 
     try:
-        result = await run_council(company_data, apollo_data, pdl_data)
+        result = await run_council(company_data, apollo_data, pdl_data, stakeholders_data)
 
         # Check if council returned useful data (more than just metadata)
         useful_fields = [k for k in result.keys() if not k.startswith("_") and result[k]]
@@ -593,6 +796,10 @@ async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data:
         for key, value in base_data.items():
             if key not in result or not result.get(key):
                 result[key] = value
+
+        # Always include stakeholder_map from base data if council didn't generate it
+        if "stakeholder_map" not in result and base_data.get("stakeholder_map"):
+            result["stakeholder_map"] = base_data["stakeholder_map"]
 
         if not result.get("confidence_score"):
             result["confidence_score"] = 0.8

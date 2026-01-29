@@ -10,9 +10,12 @@ export default function DashboardLayout({
 }) {
   return (
     <JobsProvider>
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-slate-50">
+        {/* Background pattern */}
+        <div className="fixed inset-0 bg-gradient-mesh opacity-50 pointer-events-none" />
+
         <Sidebar />
-        <main className="pl-64">
+        <main className="pl-72 relative">
           <div className="min-h-screen">
             {children}
           </div>

@@ -98,7 +98,7 @@ export default function AddCompanyForm() {
       <div>
         <label
           htmlFor="companyName"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-slate-700 mb-2"
         >
           Company Name
         </label>
@@ -110,14 +110,19 @@ export default function AddCompanyForm() {
             setFormData({ ...formData, companyName: e.target.value })
           }
           placeholder="e.g., Microsoft Corporation"
-          className={`w-full px-4 py-3 rounded-lg border ${
+          className={`input-field ${
             errors.companyName
-              ? 'border-red-500 focus:ring-red-500'
-              : 'border-gray-300 focus:ring-blue-500'
-          } focus:outline-none focus:ring-2 focus:border-transparent transition-colors`}
+              ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
+              : ''
+          }`}
         />
         {errors.companyName && (
-          <p className="mt-1 text-sm text-red-600">{errors.companyName}</p>
+          <p className="mt-2 text-sm text-red-600 flex items-center">
+            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            {errors.companyName}
+          </p>
         )}
       </div>
 
@@ -125,7 +130,7 @@ export default function AddCompanyForm() {
       <div>
         <label
           htmlFor="website"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-slate-700 mb-2"
         >
           Company Website
         </label>
@@ -137,14 +142,19 @@ export default function AddCompanyForm() {
             setFormData({ ...formData, website: e.target.value })
           }
           placeholder="e.g., microsoft.com"
-          className={`w-full px-4 py-3 rounded-lg border ${
+          className={`input-field ${
             errors.website
-              ? 'border-red-500 focus:ring-red-500'
-              : 'border-gray-300 focus:ring-blue-500'
-          } focus:outline-none focus:ring-2 focus:border-transparent transition-colors`}
+              ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
+              : ''
+          }`}
         />
         {errors.website && (
-          <p className="mt-1 text-sm text-red-600">{errors.website}</p>
+          <p className="mt-2 text-sm text-red-600 flex items-center">
+            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            {errors.website}
+          </p>
         )}
       </div>
 
@@ -152,7 +162,7 @@ export default function AddCompanyForm() {
       <div>
         <label
           htmlFor="email"
-          className="block text-sm font-medium text-gray-700 mb-1"
+          className="block text-sm font-medium text-slate-700 mb-2"
         >
           Your Email
         </label>
@@ -162,14 +172,19 @@ export default function AddCompanyForm() {
           value={formData.email}
           onChange={(e) => setFormData({ ...formData, email: e.target.value })}
           placeholder="e.g., you@company.com"
-          className={`w-full px-4 py-3 rounded-lg border ${
+          className={`input-field ${
             errors.email
-              ? 'border-red-500 focus:ring-red-500'
-              : 'border-gray-300 focus:ring-blue-500'
-          } focus:outline-none focus:ring-2 focus:border-transparent transition-colors`}
+              ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
+              : ''
+          }`}
         />
         {errors.email && (
-          <p className="mt-1 text-sm text-red-600">{errors.email}</p>
+          <p className="mt-2 text-sm text-red-600 flex items-center">
+            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            {errors.email}
+          </p>
         )}
       </div>
 
@@ -177,10 +192,8 @@ export default function AddCompanyForm() {
       <button
         type="submit"
         disabled={isSubmitting}
-        className={`w-full py-3 px-4 rounded-lg font-medium text-white transition-colors ${
-          isSubmitting
-            ? 'bg-gray-400 cursor-not-allowed'
-            : 'bg-blue-600 hover:bg-blue-700'
+        className={`btn-primary w-full ${
+          isSubmitting ? 'opacity-70 cursor-not-allowed' : ''
         }`}
       >
         {isSubmitting ? (
@@ -204,10 +217,15 @@ export default function AddCompanyForm() {
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
             </svg>
-            Submitting...
+            Processing...
           </span>
         ) : (
-          'Generate Company Profile'
+          <>
+            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Generate Profile
+          </>
         )}
       </button>
     </form>
