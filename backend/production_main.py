@@ -166,6 +166,9 @@ async def process_company_profile(job_id: str, company_data: dict):
             "confidence_score": validated_data.get("confidence_score", 0.85),
             "validated_data": validated_data
         }
+        # Store raw API data for debug mode
+        jobs_store[job_id]["apollo_data"] = apollo_data
+        jobs_store[job_id]["pdl_data"] = pdl_data
 
         logger.info(f"Completed processing for job {job_id}")
 
@@ -540,11 +543,47 @@ from datetime import timedelta
 import uuid
 
 def generate_debug_data(job_id: str, job_data: dict) -> dict:
-    """Generate debug data for a job."""
+    """Generate debug data for a job with actual API response data."""
     company_name = job_data.get("company_data", {}).get("company_name", "Unknown Company")
     domain = job_data.get("company_data", {}).get("domain", "unknown.com")
     status = job_data.get("status", "completed")
     created_at = job_data.get("created_at", datetime.utcnow().isoformat())
+
+    # Get actual API response data
+    apollo_data = job_data.get("apollo_data", {})
+    pdl_data = job_data.get("pdl_data", {})
+    result = job_data.get("result", {})
+    validated_data = result.get("validated_data", {})
+
+    # Extract Apollo.io fields
+    apollo_org = {}
+    if apollo_data and "organizations" in apollo_data:
+        orgs = apollo_data.get("organizations", [])
+        if orgs:
+            apollo_org = orgs[0]
+
+    apollo_extracted = {
+        "company_name": apollo_org.get("name", "N/A"),
+        "industry": apollo_org.get("industry", "N/A"),
+        "employee_count": apollo_org.get("estimated_num_employees", "N/A"),
+        "headquarters": f"{apollo_org.get('city', '')}, {apollo_org.get('state', '')}".strip(", ") or "N/A",
+        "founded_year": apollo_org.get("founded_year", "N/A"),
+        "website": apollo_org.get("website_url", "N/A"),
+        "linkedin": apollo_org.get("linkedin_url", "N/A"),
+        "technologies": apollo_org.get("technologies", [])[:5] if apollo_org.get("technologies") else [],
+    }
+
+    # Extract PeopleDataLabs fields
+    pdl_company = pdl_data.get("data", {}) if pdl_data.get("status") == 200 else pdl_data
+    pdl_extracted = {
+        "company_name": pdl_company.get("name", "N/A"),
+        "industry": pdl_company.get("industry", "N/A"),
+        "employee_range": pdl_company.get("size", "N/A"),
+        "headquarters": pdl_company.get("location", {}).get("name", "N/A") if isinstance(pdl_company.get("location"), dict) else "N/A",
+        "founded_year": pdl_company.get("founded", "N/A"),
+        "linkedin": pdl_company.get("linkedin_url", "N/A"),
+        "tags": pdl_company.get("tags", [])[:5] if pdl_company.get("tags") else [],
+    }
 
     base_time = datetime.fromisoformat(created_at.replace("Z", ""))
 
@@ -562,27 +601,35 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "start_time": base_time.isoformat() + "Z",
                 "end_time": (base_time + timedelta(milliseconds=500)).isoformat() + "Z",
                 "duration": 500,
-                "metadata": {"request_id": job_id}
+                "metadata": {"request_id": job_id, "company": company_name, "domain": domain}
             },
             {
                 "id": "step-2",
                 "name": "Apollo.io Data Collection",
                 "description": "Gathering data from Apollo.io API",
-                "status": "completed",
+                "status": "completed" if apollo_data else "failed",
                 "start_time": (base_time + timedelta(seconds=1)).isoformat() + "Z",
                 "end_time": (base_time + timedelta(seconds=3)).isoformat() + "Z",
                 "duration": 2000,
-                "metadata": {"source": "Apollo.io"}
+                "metadata": {
+                    "source": "Apollo.io",
+                    "fields_retrieved": apollo_extracted,
+                    "status": "success" if apollo_org else "no_data"
+                }
             },
             {
                 "id": "step-3",
                 "name": "PeopleDataLabs Data Collection",
                 "description": "Gathering data from PeopleDataLabs API",
-                "status": "completed",
+                "status": "completed" if pdl_data else "failed",
                 "start_time": (base_time + timedelta(seconds=1)).isoformat() + "Z",
                 "end_time": (base_time + timedelta(seconds=2, milliseconds=500)).isoformat() + "Z",
                 "duration": 1500,
-                "metadata": {"source": "PeopleDataLabs"}
+                "metadata": {
+                    "source": "PeopleDataLabs",
+                    "fields_retrieved": pdl_extracted,
+                    "status": "success" if pdl_company else "no_data"
+                }
             },
             {
                 "id": "step-4",
@@ -592,7 +639,10 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "start_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
                 "end_time": (base_time + timedelta(seconds=6)).isoformat() + "Z" if status == "completed" else None,
                 "duration": 2000 if status == "completed" else None,
-                "metadata": {"model": "gpt-4o-mini"}
+                "metadata": {
+                    "model": "gpt-4o-mini",
+                    "validated_fields": validated_data if validated_data else {}
+                }
             },
             {
                 "id": "step-5",
@@ -602,7 +652,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "start_time": (base_time + timedelta(seconds=7)).isoformat() + "Z" if status == "completed" else None,
                 "end_time": (base_time + timedelta(seconds=8)).isoformat() + "Z" if status == "completed" else None,
                 "duration": 1000 if status == "completed" else None,
-                "metadata": {}
+                "metadata": {"tables": ["raw_data", "finalize_data"]}
             },
             {
                 "id": "step-6",
@@ -612,7 +662,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "start_time": (base_time + timedelta(seconds=9)).isoformat() + "Z" if status == "completed" else None,
                 "end_time": (base_time + timedelta(seconds=12)).isoformat() + "Z" if status == "completed" else None,
                 "duration": 3000 if status == "completed" else None,
-                "metadata": {}
+                "metadata": {"slideshow_url": result.get("slideshow_url", "N/A")}
             },
         ],
         "api_responses": [
@@ -621,11 +671,11 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "api_name": "Apollo.io Organization Search",
                 "url": "https://api.apollo.io/v1/organizations/search",
                 "method": "POST",
-                "status_code": 200,
-                "status_text": "OK",
+                "status_code": 200 if apollo_org else 401,
+                "status_text": "OK" if apollo_org else "Unauthorized",
                 "headers": {"content-type": "application/json"},
-                "request_body": {"q_organization_name": company_name},
-                "response_body": {"organizations": [{"name": company_name, "domain": domain}]},
+                "request_body": {"q_organization_name": company_name, "page": 1, "per_page": 1},
+                "response_body": apollo_data if apollo_data else {"error": "No data returned"},
                 "timestamp": (base_time + timedelta(seconds=2)).isoformat() + "Z",
                 "duration": 450,
                 "is_sensitive": True,
@@ -636,10 +686,11 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "api_name": "PeopleDataLabs Company Enrich",
                 "url": "https://api.peopledatalabs.com/v5/company/enrich",
                 "method": "GET",
-                "status_code": 200,
-                "status_text": "OK",
+                "status_code": pdl_data.get("status", 200) if pdl_data else 404,
+                "status_text": "OK" if pdl_data else "Not Found",
                 "headers": {"content-type": "application/json"},
-                "response_body": {"status": 200, "data": {"name": company_name}},
+                "request_body": {"website": domain},
+                "response_body": pdl_data if pdl_data else {"error": "No data returned"},
                 "timestamp": (base_time + timedelta(seconds=2)).isoformat() + "Z",
                 "duration": 380,
                 "is_sensitive": True,
@@ -650,11 +701,17 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "api_name": "OpenAI Chat Completion",
                 "url": "https://api.openai.com/v1/chat/completions",
                 "method": "POST",
-                "status_code": 200,
-                "status_text": "OK",
+                "status_code": 200 if validated_data else 500,
+                "status_text": "OK" if validated_data else "Error",
                 "headers": {"content-type": "application/json"},
-                "request_body": {"model": "gpt-4o-mini"},
-                "response_body": {"choices": [{"message": {"content": "Validated"}}]},
+                "request_body": {
+                    "model": "gpt-4o-mini",
+                    "messages": [{"role": "user", "content": f"Validate company data for {company_name}..."}]
+                },
+                "response_body": {
+                    "validated_result": validated_data,
+                    "confidence_score": validated_data.get("confidence_score", 0.85) if validated_data else 0
+                },
                 "timestamp": (base_time + timedelta(seconds=5)).isoformat() + "Z",
                 "duration": 1500,
                 "is_sensitive": True,
@@ -677,26 +734,29 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                         "id": "thought-1",
                         "step": 1,
                         "action": "Analyze Source Data",
-                        "reasoning": f"Comparing data from Apollo.io and PeopleDataLabs for {company_name}. Looking for discrepancies in employee count, industry, and location.",
-                        "input": {"sources": ["Apollo.io", "PeopleDataLabs"]},
-                        "output": {"discrepancies_found": 1},
+                        "reasoning": f"Comparing data from Apollo.io and PeopleDataLabs for {company_name}. Apollo returned: industry={apollo_extracted.get('industry')}, employees={apollo_extracted.get('employee_count')}. PDL returned: industry={pdl_extracted.get('industry')}, employees={pdl_extracted.get('employee_range')}.",
+                        "input": {
+                            "apollo_data": apollo_extracted,
+                            "pdl_data": pdl_extracted
+                        },
+                        "output": {"discrepancies_found": 1 if apollo_extracted.get('industry') != pdl_extracted.get('industry') else 0},
                         "confidence": 0.95,
                         "timestamp": (base_time + timedelta(seconds=4, milliseconds=500)).isoformat() + "Z"
                     },
                     {
                         "id": "thought-2",
                         "step": 2,
-                        "action": "Resolve Discrepancies",
-                        "reasoning": "Industry classification differs between sources. Apollo uses broader category while PDL is more specific. Selecting more specific classification.",
-                        "input": {"apollo": "Technology", "pdl": "Computer Software"},
-                        "output": {"resolved": "Computer Software", "confidence": 0.88},
-                        "confidence": 0.88,
+                        "action": "Resolve Discrepancies & Validate",
+                        "reasoning": f"Cross-referencing data sources. Final validated data: industry={validated_data.get('industry', 'N/A')}, employees={validated_data.get('employee_count', 'N/A')}, headquarters={validated_data.get('headquarters', 'N/A')}, target_market={validated_data.get('target_market', 'N/A')}.",
+                        "input": {"apollo": apollo_extracted.get('industry'), "pdl": pdl_extracted.get('industry')},
+                        "output": {"validated_data": validated_data},
+                        "confidence": validated_data.get("confidence_score", 0.88) if validated_data else 0.5,
                         "timestamp": (base_time + timedelta(seconds=5)).isoformat() + "Z"
                     },
                 ],
-                "final_decision": f"All data points for {company_name} validated successfully. Confidence score: 0.92",
-                "confidence_score": 0.92,
-                "discrepancies_resolved": ["industry"]
+                "final_decision": f"Validated data for {company_name}: Industry={validated_data.get('industry', 'N/A')}, Employees={validated_data.get('employee_count', 'N/A')}, HQ={validated_data.get('headquarters', 'N/A')}, Founded={validated_data.get('founded_year', 'N/A')}. Confidence: {validated_data.get('confidence_score', 0.85) if validated_data else 0.5}",
+                "confidence_score": validated_data.get("confidence_score", 0.85) if validated_data else 0.5,
+                "discrepancies_resolved": ["industry", "employee_count"] if apollo_extracted.get('industry') != pdl_extracted.get('industry') else []
             },
         ],
         "process_flow": {
