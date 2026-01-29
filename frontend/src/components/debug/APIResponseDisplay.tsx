@@ -268,7 +268,7 @@ export default function APIResponseDisplay({
                       Response Headers
                     </h4>
                     <div className="bg-gray-100 rounded-md p-3">
-                      {Object.entries(response.headers).map(([key, value]) => (
+                      {Object.entries(response.headers).map(([key, value]: [string, string]) => (
                         <div key={key} className="text-xs mb-1">
                           <span className="font-medium text-gray-600">
                             {key}:
