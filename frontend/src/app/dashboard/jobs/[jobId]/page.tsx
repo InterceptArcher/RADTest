@@ -79,10 +79,6 @@ export default function JobDetailPage() {
   const [selectedRoleType, setSelectedRoleType] = useState<StakeholderRoleType>('CIO');
   const [selectedStakeholderName, setSelectedStakeholderName] = useState<string | undefined>();
 
-  // Slideshow generation state
-  const [generatingSlideshow, setGeneratingSlideshow] = useState(false);
-  const [slideshowUrl, setSlideshowUrl] = useState<string | null>(null);
-
   const jobId = params.jobId as string;
   const job = getJob(jobId);
 
@@ -90,35 +86,6 @@ export default function JobDetailPage() {
     setSelectedRoleType(roleType);
     setSelectedStakeholderName(stakeholderName);
     setOutreachModalOpen(true);
-  };
-
-  const handleGenerateSlideshow = async () => {
-    setGeneratingSlideshow(true);
-    try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/generate-slideshow/${jobId}`, {
-        method: 'POST',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to generate slideshow');
-      }
-
-      const data = await response.json();
-
-      if (data.success && data.slideshow_url) {
-        setSlideshowUrl(data.slideshow_url);
-        // Open slideshow in new tab
-        window.open(data.slideshow_url, '_blank');
-      } else {
-        alert(data.error || 'Failed to generate slideshow');
-      }
-    } catch (error) {
-      console.error('Error generating slideshow:', error);
-      alert('Failed to generate slideshow. Please try again.');
-    } finally {
-      setGeneratingSlideshow(false);
-    }
   };
 
   if (!job) {
@@ -326,51 +293,13 @@ export default function JobDetailPage() {
           <div className="card p-6">
             <h2 className="text-lg font-semibold text-slate-900 mb-4">Quick Actions</h2>
             <div className="space-y-3">
-              {/* Generate Slideshow Button */}
-              <button
-                onClick={handleGenerateSlideshow}
-                disabled={generatingSlideshow}
-                className="btn-primary w-full disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {generatingSlideshow ? (
-                  <>
-                    <svg
-                      className="w-5 h-5 mr-2 animate-spin"
-                      fill="none"
-                      viewBox="0 0 24 24"
-                    >
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Generating...
-                  </>
-                ) : (
-                  <>
-                    <svg
-                      className="w-5 h-5 mr-2"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={2}
-                        d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"
-                      />
-                    </svg>
-                    Generate Slideshow
-                  </>
-                )}
-              </button>
-
-              {/* View Slideshow if already generated */}
-              {(job.result.slideshow_url || slideshowUrl) && (
+              {/* View Slideshow Button */}
+              {job.result.slideshow_url && (
                 <a
-                  href={slideshowUrl || job.result.slideshow_url}
+                  href={job.result.slideshow_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="btn-secondary w-full"
+                  className="btn-primary w-full"
                 >
                   <svg
                     className="w-5 h-5 mr-2"

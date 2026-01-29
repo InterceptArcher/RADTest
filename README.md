@@ -14,6 +14,7 @@
 - 🧠 [LLM Council Details](LLM_COUNCIL_OPERATIONAL.md) - Multi-agent architecture explained
 - ⚙️ [Apollo Setup](APOLLO_SETUP.md) - Intelligence gathering configuration
 - 📊 [Configuration Status](CONFIGURATION_COMPLETE.md) - What was configured
+- 🎨 [Gamma API Setup](GAMMA_SETUP.md) - Slideshow generation configuration (✅ OPERATIONAL)
 
 ---
 
@@ -275,6 +276,21 @@ Automated slideshow generation from finalized company data:
 - **Data quality indicators**: Confidence scores displayed in slideshow
 - **Professional theming**: Uses Gamma's professional theme with auto-layout
 - **Batch support**: Can generate multiple slideshows efficiently
+
+**Frontend Integration**:
+- **Simplified UI**: Frontend displays a single "View Slideshow" button when slideshow URL exists
+- **No on-demand generation**: Removed client-side API calls to generate slideshows on demand
+- **Direct access**: Button opens slideshow URL in new tab without additional API requests
+- **Backend handling**: Slideshow URLs are generated automatically during job processing and stored in job results
+
+**Gamma API Configuration** (Updated 2026-01-29):
+- **API Version**: Gamma API v1.0 (GA as of November 2025)
+- **Endpoint**: `https://public-api.gamma.app/v1.0/generations`
+- **Authentication**: X-API-KEY header (not Bearer token)
+- **Response Format**: Returns `generationId` for polling, then `gammaUrl` on completion
+- **Polling**: Checks generation status every 2 seconds (max 120 seconds timeout)
+- **Status Values**: `pending` → `completed` (or `failed`)
+- **✅ FULLY OPERATIONAL**: Tested and verified with real API key
 
 ---
 
@@ -799,7 +815,7 @@ railway up
 - **Status**: All Core APIs Configured - System Operational
 - **Intelligence Gathering**: ✅ Ready (Apollo + PDL configured)
 - **LLM Council**: ✅ OPERATIONAL (OpenAI configured)
-- **Slideshow Generation**: ⚠️ Optional (Gamma API not required)
+- **Slideshow Generation**: ✅ FULLY OPERATIONAL (Gamma API configured and tested)
 
 **API Keys Status**:
 1. ✅ Apollo.io API Key - CONFIGURED
@@ -807,7 +823,7 @@ railway up
 3. ✅ Supabase Key - CONFIGURED
 4. ✅ OpenAI API Key - CONFIGURED (LLM Council operational)
 5. ✅ Gemini API Key - CONFIGURED (available for future use)
-6. ⚠️ Gamma API Key - OPTIONAL for slideshow generation
+6. ✅ Gamma API Key - CONFIGURED AND TESTED (slideshow generation operational)
 7. ⚠️ Railway tokens - OPTIONAL for ephemeral workers
 
 **To Deploy Backend** (All Required APIs Configured):
@@ -863,7 +879,7 @@ curl -X POST http://localhost:8000/profile-request \
 - ✅ Company database fallback (17 major companies)
 - ✅ High-confidence conflict resolution
 - ✅ Complete audit trails and decision transparency
-- ⚠️ Slideshow generation optional (Gamma API not required)
+- ✅ Gamma slideshow generation FULLY OPERATIONAL (tested and verified)
 
 **System Status**: 🟢 FULLY OPERATIONAL
 - All core functionality is working

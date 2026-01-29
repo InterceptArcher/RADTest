@@ -3,6 +3,7 @@ Gamma API slideshow creation module.
 Creates markdown prompts and generates slideshows via Gamma API.
 """
 import logging
+import asyncio
 from typing import Dict, Any, Optional
 import httpx
 
@@ -31,7 +32,8 @@ class GammaSlideshowCreator:
             This value must be provided via environment variables.
         """
         self.api_key = gamma_api_key
-        self.api_url = "https://api.gamma.app/v1/generate"
+        self.api_url = "https://public-api.gamma.app/v1.0/generations"
+        self.status_url = "https://public-api.gamma.app/v1.0/generations"
         logger.info("Gamma slideshow creator initialized")
 
     async def create_slideshow(
@@ -169,29 +171,32 @@ class GammaSlideshowCreator:
             markdown_content: Formatted markdown string
 
         Returns:
-            Dictionary with Gamma API response
+            Dictionary with Gamma API response including URL
 
         Raises:
             Exception: If API request fails
         """
         headers = {
-            "Authorization": f"Bearer {self.api_key}",
+            "X-API-KEY": self.api_key,
             "Content-Type": "application/json"
         }
 
         payload = {
-            "content": markdown_content,
-            "format": "markdown",
-            "theme": "professional",
-            "options": {
-                "auto_layout": True,
-                "slide_numbers": True,
-                "title_slide": True
+            "inputText": markdown_content,
+            "textMode": "preserve",
+            "format": "presentation",
+            "numCards": 15,
+            "textOptions": {
+                "tone": "professional",
+                "audience": "business stakeholders",
+                "language": "en"
             }
         }
 
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(timeout=120) as client:
+                # Create generation
+                logger.info("Sending request to Gamma API")
                 response = await client.post(
                     self.api_url,
                     json=payload,
@@ -199,17 +204,73 @@ class GammaSlideshowCreator:
                 )
 
                 response.raise_for_status()
-
                 result = response.json()
 
-                return {
-                    "url": result.get("url"),
-                    "id": result.get("id"),
-                    "status": "generated"
-                }
+                generation_id = result.get("generationId")
+                if not generation_id:
+                    raise Exception("No generationId returned from Gamma API")
+
+                logger.info(f"Generation started with ID: {generation_id}")
+
+                # Poll for completion (max 120 seconds)
+                max_attempts = 60
+                attempt = 0
+
+                while attempt < max_attempts:
+                    await asyncio.sleep(2)
+                    attempt += 1
+
+                    try:
+                        status_response = await client.get(
+                            f"{self.status_url}/{generation_id}",
+                            headers=headers
+                        )
+
+                        status_response.raise_for_status()
+                        status_data = status_response.json()
+
+                        status = status_data.get("status")
+                        logger.info(f"Generation status (attempt {attempt}/{max_attempts}): {status}")
+                        logger.debug(f"Full status response: {status_data}")
+
+                        if status == "completed":
+                            gamma_url = status_data.get("gammaUrl")
+                            if not gamma_url:
+                                raise Exception("No URL returned from completed generation")
+
+                            logger.info(f"Slideshow generated successfully: {gamma_url}")
+                            return {
+                                "url": gamma_url,
+                                "id": generation_id,
+                                "status": "generated"
+                            }
+
+                        elif status == "failed":
+                            error_msg = status_data.get("error", "Unknown error")
+                            raise Exception(f"Generation failed: {error_msg}")
+
+                        # Still processing, continue polling
+                        elif status in ["pending", "processing", "generating"]:
+                            continue
+
+                        # Unknown status
+                        else:
+                            logger.warning(f"Unknown status: {status}")
+
+                    except httpx.HTTPStatusError as e:
+                        logger.error(f"Status check failed: {e.response.status_code}")
+                        if attempt >= max_attempts:
+                            raise
+
+                raise Exception(f"Generation timed out after {max_attempts * 2} seconds")
 
         except httpx.HTTPStatusError as e:
-            logger.error(f"Gamma API HTTP error: {e.response.status_code}")
+            error_body = ""
+            try:
+                error_body = e.response.text
+            except:
+                pass
+            logger.error(f"Gamma API HTTP error: {e.response.status_code} - {error_body}")
             raise Exception(
                 f"Gamma API error: {e.response.status_code}"
             ) from e

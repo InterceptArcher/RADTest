@@ -11,6 +11,10 @@ import logging
 import sys
 import os
 from datetime import datetime
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Import LLM Council for 20-specialist validation
 from llm_council import validate_with_council, SPECIALISTS
