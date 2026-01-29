@@ -306,7 +306,10 @@ export default function JobDetailPage() {
 
           {/* Sales Program - New Intelligence Section */}
           {salesProgram && (
-            <SalesProgramCard program={salesProgram} />
+            <SalesProgramCard
+              program={salesProgram}
+              onGenerateOutreach={(roleType) => handleGenerateOutreach(roleType)}
+            />
           )}
         </div>
 
