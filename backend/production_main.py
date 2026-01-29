@@ -403,7 +403,7 @@ Return ONLY a JSON object with these fields:
 Use real, accurate data. If data is unavailable, use "Unknown"."""
 
         response = client.chat.completions.create(
-            model="gpt-4",
+            model="gpt-4o-mini",
             messages=[{"role": "user", "content": prompt}],
             temperature=0.1,
             response_format={"type": "json_object"}
@@ -417,12 +417,10 @@ Use real, accurate data. If data is unavailable, use "Unknown"."""
 
     except Exception as e:
         logger.error(f"OpenAI validation error: {str(e)}")
-        return {
-            "company_name": company_data["company_name"],
-            "domain": company_data["domain"],
-            "industry": company_data.get("industry", "Unknown"),
-            "confidence_score": 0.3
-        }
+        # Fall back to extracting data directly from API responses
+        fallback_data = extract_data_from_apis(company_data, apollo_data, pdl_data)
+        fallback_data["confidence_score"] = 0.5  # Lower confidence without LLM validation
+        return fallback_data
 
 
 async def store_validated_data(company_name: str, validated_data: dict):
