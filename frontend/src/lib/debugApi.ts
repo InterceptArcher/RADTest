@@ -15,8 +15,8 @@ import type {
   ProcessFlow,
 } from '@/types';
 
-// Get API URL from environment variable
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+// Get API URL from environment variable, with fallback to production Render URL
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://radtest-backend.onrender.com';
 
 interface ErrorResponse {
   error: string;
