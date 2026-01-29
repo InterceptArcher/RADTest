@@ -290,10 +290,27 @@ async def process_company_profile(job_id: str, company_data: dict):
 
         jobs_store[job_id]["result"] = {
             "success": True,
-            "company_name": company_data["company_name"],
-            "domain": company_data["domain"],
+            "company_name": validated_data.get("company_name", company_data["company_name"]),
+            "domain": validated_data.get("domain", company_data["domain"]),
             "slideshow_url": slideshow_url,
             "confidence_score": validated_data.get("confidence_score", 0.85),
+            # Core company data fields for the overview
+            "industry": validated_data.get("industry"),
+            "sub_industry": validated_data.get("sub_industry"),
+            "employee_count": validated_data.get("employee_count"),
+            "annual_revenue": validated_data.get("annual_revenue"),
+            "headquarters": validated_data.get("headquarters"),
+            "geographic_reach": validated_data.get("geographic_reach", []),
+            "founded_year": validated_data.get("founded_year"),
+            "founders": validated_data.get("founders", []),
+            "ceo": validated_data.get("ceo"),
+            "target_market": validated_data.get("target_market"),
+            "customer_segments": validated_data.get("customer_segments", []),
+            "products": validated_data.get("products", []),
+            "technologies": validated_data.get("technologies", []),
+            "competitors": validated_data.get("competitors", []),
+            "company_type": validated_data.get("company_type"),
+            "linkedin_url": validated_data.get("linkedin_url"),
             "validated_data": validated_data,
             # New intelligence sections at top level for frontend
             "executive_snapshot": {
