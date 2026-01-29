@@ -326,28 +326,50 @@ Analyze this data for your specialty: {specialist['focus']}
 async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> Dict[str, Any]:
     """
     Run the full LLM Council:
-    1. Run all 20 specialists in parallel
+    1. Run specialists in batches of 5 to avoid rate limits
     2. Aggregate results with central LLM
     """
     logger.info(f"Starting LLM Council for {company_data.get('company_name')}")
 
-    # Step 1: Run all specialists in parallel
-    specialist_tasks = [
-        run_specialist(specialist, company_data, apollo_data, pdl_data)
-        for specialist in SPECIALISTS
-    ]
-
-    specialist_results = await asyncio.gather(*specialist_tasks, return_exceptions=True)
-
-    # Filter out exceptions
+    # Step 1: Run specialists in batches of 5 to avoid rate limits
     valid_results = []
-    for i, result in enumerate(specialist_results):
-        if isinstance(result, Exception):
-            logger.error(f"Specialist {SPECIALISTS[i]['id']} failed: {result}")
-        else:
-            valid_results.append(result)
+    batch_size = 5
+
+    for i in range(0, len(SPECIALISTS), batch_size):
+        batch = SPECIALISTS[i:i + batch_size]
+        logger.info(f"Running specialist batch {i//batch_size + 1}/{(len(SPECIALISTS) + batch_size - 1)//batch_size}")
+
+        batch_tasks = [
+            run_specialist(specialist, company_data, apollo_data, pdl_data)
+            for specialist in batch
+        ]
+
+        batch_results = await asyncio.gather(*batch_tasks, return_exceptions=True)
+
+        for j, result in enumerate(batch_results):
+            if isinstance(result, Exception):
+                logger.error(f"Specialist {batch[j]['id']} failed: {result}")
+            elif result.get("analysis"):  # Only add if we got actual analysis
+                valid_results.append(result)
+
+        # Small delay between batches to avoid rate limits
+        if i + batch_size < len(SPECIALISTS):
+            await asyncio.sleep(0.5)
 
     logger.info(f"Completed {len(valid_results)}/{len(SPECIALISTS)} specialist analyses")
+
+    # If no specialists returned data, return empty result with metadata
+    if len(valid_results) == 0:
+        logger.warning("No specialists returned data, skipping aggregator")
+        return {
+            "_council_metadata": {
+                "specialists_run": 0,
+                "specialists_total": len(SPECIALISTS),
+                "timestamp": datetime.utcnow().isoformat(),
+                "specialist_results": [],
+                "mode": "no_specialist_data"
+            }
+        }
 
     # Step 2: Run aggregator
     specialist_inputs_text = "\n\n".join([
@@ -368,6 +390,11 @@ async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> 
         model="gpt-4o-mini"
     )
 
+    # If aggregator failed, return empty with metadata
+    if not final_result:
+        logger.warning("Aggregator returned no data")
+        final_result = {}
+
     # Add metadata
     final_result["_council_metadata"] = {
         "specialists_run": len(valid_results),
@@ -381,31 +408,114 @@ async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> 
     return final_result
 
 
+def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> Dict[str, Any]:
+    """Extract data directly from API responses as fallback."""
+    result = {
+        "company_name": company_data.get("company_name", "Unknown"),
+        "domain": company_data.get("domain", "Unknown"),
+        "industry": company_data.get("industry", "Unknown"),
+        "confidence_score": 0.6
+    }
+
+    # Extract from Apollo data
+    apollo_org = None
+    if apollo_data:
+        if "organization" in apollo_data:
+            apollo_org = apollo_data.get("organization", {})
+        elif "organizations" in apollo_data:
+            orgs = apollo_data.get("organizations", [])
+            if orgs:
+                apollo_org = orgs[0]
+        elif "accounts" in apollo_data:
+            accounts = apollo_data.get("accounts", [])
+            if accounts:
+                apollo_org = accounts[0]
+
+    if apollo_org:
+        if apollo_org.get("industry"):
+            result["industry"] = apollo_org["industry"]
+        if apollo_org.get("estimated_num_employees"):
+            result["employee_count"] = apollo_org["estimated_num_employees"]
+        if apollo_org.get("annual_revenue"):
+            result["annual_revenue"] = apollo_org["annual_revenue"]
+        if apollo_org.get("city") and apollo_org.get("country"):
+            result["headquarters"] = f"{apollo_org['city']}, {apollo_org.get('state', '')}, {apollo_org['country']}".replace(", ,", ",")
+        if apollo_org.get("founded_year"):
+            result["founded_year"] = apollo_org["founded_year"]
+        if apollo_org.get("linkedin_url"):
+            result["linkedin_url"] = apollo_org["linkedin_url"]
+        if apollo_org.get("keywords"):
+            result["technologies"] = apollo_org["keywords"][:10]
+
+    # Extract from PDL data - PDL returns data directly at top level
+    pdl_company = pdl_data if pdl_data and pdl_data.get("name") else None
+
+    if pdl_company:
+        if pdl_company.get("industry"):
+            result["industry"] = pdl_company["industry"]
+        if pdl_company.get("employee_count"):
+            result["employee_count"] = pdl_company["employee_count"]
+        elif pdl_company.get("size"):
+            result["employee_count"] = pdl_company["size"]
+        if pdl_company.get("location"):
+            loc = pdl_company["location"]
+            if isinstance(loc, dict):
+                result["headquarters"] = f"{loc.get('locality', '')}, {loc.get('region', '')}, {loc.get('country', '')}".strip(", ")
+            elif isinstance(loc, str):
+                result["headquarters"] = loc
+        if pdl_company.get("founded"):
+            result["founded_year"] = pdl_company["founded"]
+        if pdl_company.get("linkedin_url"):
+            result["linkedin_url"] = pdl_company["linkedin_url"]
+        if pdl_company.get("tags"):
+            result["technologies"] = pdl_company["tags"][:10]
+        if pdl_company.get("type"):
+            result["target_market"] = pdl_company["type"]
+        if pdl_company.get("location") and isinstance(pdl_company["location"], dict):
+            result["geographic_reach"] = [pdl_company["location"].get("country", "Unknown")]
+
+    return result
+
+
 async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> Dict[str, Any]:
     """
     Main entry point for LLM Council validation.
     Returns validated, concise, fact-driven company data.
+    Falls back to direct extraction if council fails.
     """
+    # Always extract base data first as fallback
+    base_data = extract_base_data(company_data, apollo_data, pdl_data)
+
+    if not OPENAI_API_KEY:
+        logger.warning("OpenAI not configured, using direct extraction")
+        base_data["_council_metadata"] = {"specialists_run": 0, "specialists_total": 20, "mode": "direct_extraction"}
+        return base_data
+
     try:
         result = await run_council(company_data, apollo_data, pdl_data)
 
-        # Ensure we have minimum required fields
-        if not result.get("company_name"):
-            result["company_name"] = company_data.get("company_name", "Unknown")
-        if not result.get("domain"):
-            result["domain"] = company_data.get("domain", "Unknown")
+        # Check if council returned useful data (more than just metadata)
+        useful_fields = [k for k in result.keys() if not k.startswith("_") and result[k]]
+        if len(useful_fields) < 3:
+            logger.warning(f"Council returned minimal data ({len(useful_fields)} fields), using fallback")
+            # Merge council result with base data, preferring council values
+            merged = {**base_data, **{k: v for k, v in result.items() if v}}
+            merged["confidence_score"] = 0.65
+            return merged
+
+        # Ensure we have minimum required fields by merging with base data
+        for key, value in base_data.items():
+            if key not in result or not result.get(key):
+                result[key] = value
+
         if not result.get("confidence_score"):
-            result["confidence_score"] = 0.7
+            result["confidence_score"] = 0.8
 
         return result
 
     except Exception as e:
         logger.error(f"LLM Council error: {e}")
-        # Return basic data on failure
-        return {
-            "company_name": company_data.get("company_name", "Unknown"),
-            "domain": company_data.get("domain", "Unknown"),
-            "industry": company_data.get("industry", "Unknown"),
-            "confidence_score": 0.3,
-            "error": str(e)
-        }
+        # Return base data on failure
+        base_data["confidence_score"] = 0.5
+        base_data["_council_metadata"] = {"error": str(e), "specialists_run": 0, "mode": "fallback"}
+        return base_data
