@@ -141,7 +141,29 @@ export default function JobDetailPage() {
     );
   }
 
-  const data = job.result.validated_data;
+  // Use job.result directly for top-level fields, fallback to validated_data
+  const data = {
+    ...job.result.validated_data,
+    // Override with top-level fields if they exist
+    company_name: job.result.company_name || job.result.validated_data?.company_name,
+    domain: job.result.domain || job.result.validated_data?.domain,
+    industry: job.result.industry || job.result.validated_data?.industry,
+    sub_industry: job.result.sub_industry || job.result.validated_data?.sub_industry,
+    employee_count: job.result.employee_count || job.result.validated_data?.employee_count,
+    annual_revenue: job.result.annual_revenue || job.result.validated_data?.annual_revenue,
+    headquarters: job.result.headquarters || job.result.validated_data?.headquarters,
+    geographic_reach: job.result.geographic_reach || job.result.validated_data?.geographic_reach,
+    founded_year: job.result.founded_year || job.result.validated_data?.founded_year,
+    founders: job.result.founders || job.result.validated_data?.founders,
+    ceo: job.result.ceo || job.result.validated_data?.ceo,
+    target_market: job.result.target_market || job.result.validated_data?.target_market,
+    customer_segments: job.result.customer_segments || job.result.validated_data?.customer_segments,
+    products: job.result.products || job.result.validated_data?.products,
+    technologies: job.result.technologies || job.result.validated_data?.technologies,
+    competitors: job.result.competitors || job.result.validated_data?.competitors,
+    company_type: job.result.company_type || job.result.validated_data?.company_type,
+    linkedin_url: job.result.linkedin_url || job.result.validated_data?.linkedin_url,
+  };
 
   // Extract new intelligence sections from result
   const executiveSnapshot = job.result.executive_snapshot;

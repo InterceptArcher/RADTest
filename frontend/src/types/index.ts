@@ -52,6 +52,23 @@ export interface ProfileResult {
   confidence_score: number;
   finalize_record_id?: string;
   validated_data?: CompanyData;
+  // Core company data fields (duplicated at top level for easy access)
+  industry?: string;
+  sub_industry?: string;
+  employee_count?: number | string;
+  annual_revenue?: string;
+  headquarters?: string;
+  geographic_reach?: string[];
+  founded_year?: number | string;
+  founders?: string[];
+  ceo?: string;
+  target_market?: string;
+  customer_segments?: string[];
+  products?: string[];
+  technologies?: string[];
+  competitors?: string[];
+  company_type?: string;
+  linkedin_url?: string;
   // New expanded intelligence sections
   executive_snapshot?: ExecutiveSnapshot;
   buying_signals?: BuyingSignals;
@@ -66,14 +83,23 @@ export interface CompanyData {
   company_name: string;
   domain: string;
   industry?: string;
+  sub_industry?: string;
   employee_count?: number | string;
+  annual_revenue?: string;
   revenue?: string;
   headquarters?: string;
   founded_year?: number | string;
+  founders?: string[];
   ceo?: string;
   technology?: string[];
+  technologies?: string[];
   target_market?: string;
-  geographic_reach?: string;
+  customer_segments?: string[];
+  geographic_reach?: string[] | string;
+  products?: string[];
+  competitors?: string[];
+  company_type?: string;
+  linkedin_url?: string;
   contacts?: {
     website?: string;
     linkedin?: string;
