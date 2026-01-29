@@ -15,6 +15,10 @@ const roleTypeConfig: Record<StakeholderRoleType, { color: string; bgColor: stri
   COO: { color: 'text-emerald-700', bgColor: 'bg-emerald-100', description: 'Chief Operating Officer' },
   CFO: { color: 'text-amber-700', bgColor: 'bg-amber-100', description: 'Chief Financial Officer' },
   CPO: { color: 'text-pink-700', bgColor: 'bg-pink-100', description: 'Chief Product Officer' },
+  CEO: { color: 'text-indigo-700', bgColor: 'bg-indigo-100', description: 'Chief Executive Officer' },
+  CMO: { color: 'text-orange-700', bgColor: 'bg-orange-100', description: 'Chief Marketing Officer' },
+  VP: { color: 'text-teal-700', bgColor: 'bg-teal-100', description: 'Vice President' },
+  Director: { color: 'text-cyan-700', bgColor: 'bg-cyan-100', description: 'Director' },
   Unknown: { color: 'text-slate-700', bgColor: 'bg-slate-100', description: 'Executive' },
 };
 

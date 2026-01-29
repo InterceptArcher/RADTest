@@ -117,6 +117,77 @@ async def root():
     }
 
 
+def build_buying_signals(validated_data: dict) -> Optional[dict]:
+    """Build buying signals object from validated data with proper structure."""
+    buying_signals = validated_data.get("buying_signals", {})
+
+    # Get opportunity themes - check both locations (inside buying_signals and at top level)
+    opportunity_themes = buying_signals.get("opportunity_themes", [])
+    if not opportunity_themes:
+        opportunity_themes = validated_data.get("opportunity_themes", [])
+    # Also check if there's an opportunity_themes_analyst output
+    if not opportunity_themes:
+        opp_analyst = validated_data.get("opportunity_themes_analyst", {})
+        opportunity_themes = opp_analyst.get("opportunity_themes", [])
+
+    # Get scoops - check both locations
+    scoops = buying_signals.get("scoops", [])
+    if not scoops:
+        scoops_data = validated_data.get("scoops", {})
+        scoops = scoops_data.get("scoops", []) if isinstance(scoops_data, dict) else []
+
+    # Get intent topics
+    intent_topics = buying_signals.get("intent_topics", [])
+    if not intent_topics:
+        # Try to extract from buying indicators
+        indicators = buying_signals.get("buying_indicators", [])
+        if indicators:
+            intent_topics = indicators[:5]
+
+    # Determine signal strength based on available data
+    signal_strength = buying_signals.get("signal_strength", "medium")
+    if not signal_strength or signal_strength == "medium":
+        # Calculate signal strength based on data quality
+        score = 0
+        if intent_topics:
+            score += 1
+        if scoops:
+            score += len(scoops)
+        if opportunity_themes:
+            score += 1
+
+        if score >= 4:
+            signal_strength = "very_high"
+        elif score >= 3:
+            signal_strength = "high"
+        elif score >= 1:
+            signal_strength = "medium"
+        else:
+            signal_strength = "low"
+
+    # Calculate intent trend (based on signal patterns)
+    intent_trend = "stable"
+    if scoops:
+        # Check for recent activity indicating upward trend
+        recent_types = [s.get("type", "") for s in scoops]
+        if "funding" in recent_types or "expansion" in recent_types:
+            intent_trend = "increasing"
+        elif "executive_hire" in recent_types:
+            intent_trend = "increasing"
+
+    # Only return if we have meaningful data
+    if not intent_topics and not scoops and not opportunity_themes:
+        return None
+
+    return {
+        "intentTopics": intent_topics,
+        "signalStrength": signal_strength,
+        "intentTrend": intent_trend,
+        "scoops": scoops,
+        "opportunityThemes": opportunity_themes
+    }
+
+
 async def process_company_profile(job_id: str, company_data: dict):
     """
     Background task to process company profile with real APIs.
@@ -148,6 +219,11 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["progress"] = 45
         jobs_store[job_id]["current_step"] = "Searching for executive stakeholders..."
         stakeholders_data = await fetch_stakeholders(company_data["domain"])
+
+        # Step 2.8: If Apollo didn't find stakeholders, use Hunter.io contacts
+        if not stakeholders_data and hunter_data:
+            jobs_store[job_id]["current_step"] = "Extracting contacts from Hunter.io..."
+            stakeholders_data = extract_stakeholders_from_hunter(hunter_data)
 
         # Step 3: Store raw data in Supabase
         jobs_store[job_id]["progress"] = 50
@@ -226,12 +302,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                 "estimatedITSpend": validated_data.get("executive_snapshot", {}).get("estimated_it_spend", ""),
                 "technologyStack": validated_data.get("technology_stack", [])
             } if validated_data.get("executive_snapshot") or validated_data.get("technology_stack") else None,
-            "buying_signals": {
-                "intentTopics": validated_data.get("buying_signals", {}).get("intent_topics", []),
-                "signalStrength": validated_data.get("buying_signals", {}).get("signal_strength", "medium"),
-                "scoops": validated_data.get("buying_signals", {}).get("scoops", []),
-                "opportunityThemes": validated_data.get("opportunity_themes", [])
-            } if validated_data.get("buying_signals") or validated_data.get("opportunity_themes") else None,
+            "buying_signals": build_buying_signals(validated_data),
             "stakeholder_map": stakeholder_map_data,
             "sales_program": {
                 "intentLevel": validated_data.get("sales_program", {}).get("intent_level", "Medium"),
@@ -454,6 +525,92 @@ async def fetch_hunter_data(company_data: dict) -> dict:
     except Exception as e:
         logger.error(f"Hunter.io error: {str(e)}")
         return {}
+
+
+def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
+    """Extract stakeholder-like contacts from Hunter.io email data."""
+    if not hunter_data:
+        return []
+
+    emails = hunter_data.get("emails", [])
+    if not emails:
+        return []
+
+    stakeholders = []
+    seen_roles = set()
+
+    # Role mapping for Hunter.io positions
+    role_keywords = {
+        "CIO": ["chief information officer", "cio", "it director", "vp of it", "head of it"],
+        "CTO": ["chief technology officer", "cto", "vp of engineering", "head of engineering", "vp technology"],
+        "CISO": ["chief information security officer", "ciso", "security director", "head of security", "vp security"],
+        "COO": ["chief operating officer", "coo", "vp operations", "head of operations"],
+        "CFO": ["chief financial officer", "cfo", "vp finance", "head of finance", "finance director"],
+        "CPO": ["chief product officer", "cpo", "vp product", "head of product", "chief people officer"],
+        "CEO": ["chief executive officer", "ceo", "founder", "co-founder", "president", "managing director"],
+        "CMO": ["chief marketing officer", "cmo", "vp marketing", "head of marketing"],
+        "VP": ["vice president", "vp", "svp", "evp"],
+        "Director": ["director", "head of"],
+    }
+
+    for email_entry in emails:
+        position = (email_entry.get("position") or "").lower()
+        department = (email_entry.get("department") or "").lower()
+
+        if not position:
+            continue
+
+        # Determine role type
+        role_type = None
+        for role, keywords in role_keywords.items():
+            for keyword in keywords:
+                if keyword in position:
+                    role_type = role
+                    break
+            if role_type:
+                break
+
+        # Skip if not a significant role or already seen
+        if not role_type or role_type in seen_roles:
+            # For non-C-suite, only add directors/VPs if we have few stakeholders
+            if role_type in ["VP", "Director"] and len(stakeholders) < 3:
+                pass  # Allow it
+            else:
+                continue
+
+        # Only track C-suite as "seen" to allow multiple VPs/Directors
+        if role_type in ["CIO", "CTO", "CISO", "COO", "CFO", "CPO", "CEO", "CMO"]:
+            seen_roles.add(role_type)
+
+        first_name = email_entry.get("first_name", "")
+        last_name = email_entry.get("last_name", "")
+        name = f"{first_name} {last_name}".strip()
+
+        if not name:
+            continue
+
+        stakeholder = {
+            "name": name,
+            "title": email_entry.get("position", "Executive"),
+            "role_type": role_type,
+            "email": email_entry.get("value"),
+            "phone": email_entry.get("phone_number"),
+            "linkedin_url": email_entry.get("linkedin"),
+            "is_new_hire": False,
+            "hire_date": None,
+            "photo_url": None,
+            "source": "hunter.io",
+            "confidence": email_entry.get("confidence", 0)
+        }
+        stakeholders.append(stakeholder)
+        logger.info(f"Hunter.io: Found stakeholder {role_type}: {name} ({email_entry.get('position')})")
+
+        # Limit to 10 stakeholders
+        if len(stakeholders) >= 10:
+            break
+
+    logger.info(f"Hunter.io: Extracted {len(stakeholders)} stakeholders from contacts")
+    return stakeholders
 
 
 async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:

@@ -329,6 +329,7 @@ export interface OpportunityTheme {
 export interface BuyingSignals {
   intentTopics: string[];
   signalStrength: 'low' | 'medium' | 'high' | 'very_high';
+  intentTrend?: 'increasing' | 'stable' | 'decreasing';
   scoops: Scoop[];
   opportunityThemes: OpportunityTheme[];
 }
@@ -345,7 +346,7 @@ export interface StakeholderContact {
 /**
  * C-suite role type.
  */
-export type StakeholderRoleType = 'CIO' | 'CTO' | 'CISO' | 'COO' | 'CFO' | 'CPO' | 'Unknown';
+export type StakeholderRoleType = 'CIO' | 'CTO' | 'CISO' | 'COO' | 'CFO' | 'CPO' | 'CEO' | 'CMO' | 'VP' | 'Director' | 'Unknown';
 
 /**
  * Individual stakeholder profile.

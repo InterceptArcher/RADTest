@@ -235,24 +235,73 @@ export default function BuyingSignalsCard({ signals }: BuyingSignalsCardProps) {
               )}
             </div>
 
-            {/* Trend Chart Placeholder */}
-            <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 mb-4">
+            {/* Intent Trend Indicator */}
+            <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
               <div className="flex items-center justify-between mb-3">
                 <h4 className="text-xs font-semibold text-slate-700 uppercase tracking-wide">
-                  Intent Trend (30 Days)
+                  Intent Trend
                 </h4>
-                <span className="text-xs text-slate-500">Coming soon</span>
+                {signals.intentTrend && (
+                  <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+                    signals.intentTrend === 'increasing' ? 'bg-emerald-100 text-emerald-700' :
+                    signals.intentTrend === 'decreasing' ? 'bg-red-100 text-red-700' :
+                    'bg-slate-100 text-slate-600'
+                  }`}>
+                    {signals.intentTrend === 'increasing' && (
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                    )}
+                    {signals.intentTrend === 'decreasing' && (
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+                      </svg>
+                    )}
+                    {signals.intentTrend === 'stable' && (
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14" />
+                      </svg>
+                    )}
+                    {signals.intentTrend.charAt(0).toUpperCase() + signals.intentTrend.slice(1)}
+                  </span>
+                )}
               </div>
-              <div className="h-24 flex items-center justify-center bg-slate-100 rounded-lg">
-                <div className="text-center">
-                  <svg className="w-8 h-8 mx-auto text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z" />
-                  </svg>
-                  <p className="text-xs text-slate-500">Signal trend visualization</p>
+              <div className="flex items-center space-x-4">
+                <div className={`flex-1 h-16 rounded-lg flex items-center justify-center ${
+                  signals.intentTrend === 'increasing' ? 'bg-emerald-50' :
+                  signals.intentTrend === 'decreasing' ? 'bg-red-50' :
+                  'bg-slate-50'
+                }`}>
+                  {signals.intentTrend === 'increasing' ? (
+                    <div className="text-center">
+                      <svg className="w-8 h-8 mx-auto text-emerald-500 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                      </svg>
+                      <p className="text-xs text-emerald-700 font-medium">Buying interest rising</p>
+                    </div>
+                  ) : signals.intentTrend === 'decreasing' ? (
+                    <div className="text-center">
+                      <svg className="w-8 h-8 mx-auto text-red-500 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 17h8m0 0V9m0 8l-8-8-4 4-6-6" />
+                      </svg>
+                      <p className="text-xs text-red-700 font-medium">Interest declining</p>
+                    </div>
+                  ) : (
+                    <div className="text-center">
+                      <svg className="w-8 h-8 mx-auto text-slate-400 mb-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 12h14" />
+                      </svg>
+                      <p className="text-xs text-slate-600 font-medium">Stable interest</p>
+                    </div>
+                  )}
                 </div>
               </div>
-              <p className="text-xs text-slate-500 mt-2">
-                Shows intent signal strength over time based on content engagement and research activity.
+              <p className="text-xs text-slate-500 mt-3">
+                {signals.intentTrend === 'increasing'
+                  ? 'Recent funding, expansion, or executive changes indicate heightened buying activity.'
+                  : signals.intentTrend === 'decreasing'
+                  ? 'Reduced activity signals suggest lower immediate purchase intent.'
+                  : 'Consistent engagement levels without major buying triggers detected.'}
               </p>
             </div>
           </div>
