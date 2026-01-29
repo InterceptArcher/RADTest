@@ -998,6 +998,79 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> str:
     return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
 
 
+# Generate slideshow endpoint (on-demand)
+@app.post(
+    "/api/generate-slideshow/{job_id}",
+    status_code=status.HTTP_200_OK,
+    tags=["Slideshow"]
+)
+async def generate_slideshow_endpoint(job_id: str):
+    """
+    Generate slideshow from existing job results on-demand.
+    """
+    if job_id not in jobs_store:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    job = jobs_store[job_id]
+
+    if job["status"] != "completed":
+        raise HTTPException(status_code=400, detail="Job not completed yet")
+
+    if not job.get("result"):
+        raise HTTPException(status_code=400, detail="No results available")
+
+    result = job["result"]
+
+    try:
+        logger.info(f"Generating on-demand slideshow for job {job_id}")
+
+        if not GAMMA_API_KEY:
+            return {
+                "success": False,
+                "error": "Gamma API key not configured",
+                "slideshow_url": None
+            }
+
+        from worker.gamma_slideshow import GammaSlideshowCreator
+
+        # Initialize Gamma creator
+        gamma_creator = GammaSlideshowCreator(GAMMA_API_KEY)
+
+        # Prepare company data for slideshow
+        company_data = {
+            "company_name": result.get("company_name"),
+            "validated_data": result.get("validated_data", {}),
+            "confidence_score": result.get("confidence_score", 0.85)
+        }
+
+        # Create slideshow
+        slideshow_result = await gamma_creator.create_slideshow(company_data)
+
+        if slideshow_result.get("success"):
+            slideshow_url = slideshow_result.get("slideshow_url")
+
+            # Update job result with new slideshow URL
+            jobs_store[job_id]["result"]["slideshow_url"] = slideshow_url
+
+            logger.info(f"Slideshow generated: {slideshow_url}")
+
+            return {
+                "success": True,
+                "slideshow_url": slideshow_url,
+                "message": "Slideshow generated successfully"
+            }
+        else:
+            return {
+                "success": False,
+                "error": slideshow_result.get("error", "Unknown error"),
+                "slideshow_url": None
+            }
+
+    except Exception as e:
+        logger.error(f"Error generating slideshow: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # Profile request endpoint
 @app.post(
     "/profile-request",
