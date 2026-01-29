@@ -41,9 +41,8 @@ export default function Home() {
       setProgress(20);
       setCurrentStep('Request submitted, processing...');
 
-      // In a real implementation, you would poll for job status
-      // For now, we'll simulate the process
-      simulateProcessing(response.job_id);
+      // Poll for job status until complete
+      pollJobStatus(response.job_id);
 
     } catch (err) {
       setState('error');
@@ -56,41 +55,52 @@ export default function Home() {
   };
 
   /**
-   * Simulate processing and fetch actual results from backend.
+   * Poll job status until complete or failed.
    */
-  const simulateProcessing = async (jobId: string) => {
-    // Simulate progress updates
-    const steps = [
-      { progress: 30, step: 'Gathering intelligence from Apollo.io...' },
-      { progress: 40, step: 'Gathering intelligence from PeopleDataLabs...' },
-      { progress: 50, step: 'Storing raw data...' },
-      { progress: 60, step: 'Validating data with LLM agents...' },
-      { progress: 70, step: 'Resolving conflicts with LLM council...' },
-      { progress: 80, step: 'Finalizing validated data...' },
-      { progress: 90, step: 'Generating slideshow...' },
-      { progress: 100, step: 'Complete!' },
-    ];
+  const pollJobStatus = async (jobId: string) => {
+    const maxAttempts = 60; // Max 2 minutes (60 * 2 seconds)
+    let attempts = 0;
 
-    for (const { progress: prog, step } of steps) {
-      await new Promise((resolve) => setTimeout(resolve, 2000));
-      setProgress(prog);
-      setCurrentStep(step);
-    }
+    while (attempts < maxAttempts) {
+      try {
+        const jobStatus = await apiClient.checkJobStatus(jobId);
 
-    // Fetch actual results from backend
-    try {
-      const jobStatus = await apiClient.checkJobStatus(jobId);
+        // Update progress from actual backend status
+        if (jobStatus.progress !== undefined) {
+          setProgress(jobStatus.progress);
+        }
+        if (jobStatus.current_step) {
+          setCurrentStep(jobStatus.current_step);
+        }
 
-      if (jobStatus.status === 'completed' && jobStatus.result) {
-        setResult(jobStatus.result);
-        setState('results');
-      } else {
-        throw new Error('Job processing failed');
+        if (jobStatus.status === 'completed' && jobStatus.result) {
+          setResult(jobStatus.result);
+          setState('results');
+          return;
+        }
+
+        if (jobStatus.status === 'failed') {
+          throw new Error(jobStatus.current_step || 'Job processing failed');
+        }
+
+        // Wait 2 seconds before next poll
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        attempts++;
+
+      } catch (err) {
+        setState('error');
+        setError(
+          err instanceof Error
+            ? err.message
+            : 'Failed to retrieve results. Please try again.'
+        );
+        return;
       }
-    } catch (err) {
-      setState('error');
-      setError('Failed to retrieve results. Please try again.');
     }
+
+    // Timeout after max attempts
+    setState('error');
+    setError('Request timed out. Please try again.');
   };
 
   /**
