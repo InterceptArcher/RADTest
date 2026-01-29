@@ -97,8 +97,8 @@ export default function APIResponseDisplay({
   const isExpanded = (responseId: string): boolean =>
     expandedResponses.has(responseId);
 
-  const filteredAndSortedResponses = useMemo(() => {
-    let filtered = responses;
+  const filteredAndSortedResponses = useMemo((): APIResponseData[] => {
+    let filtered: APIResponseData[] = responses;
 
     // Apply filter
     if (filter === 'success') {
@@ -186,7 +186,7 @@ export default function APIResponseDisplay({
         </div>
       ) : (
         <div className="space-y-3">
-          {filteredAndSortedResponses.map((response) => (
+          {filteredAndSortedResponses.map((response: APIResponseData) => (
             <div
               key={response.id}
               className="border border-gray-200 rounded-lg overflow-hidden"
@@ -262,25 +262,24 @@ export default function APIResponseDisplay({
                     </code>
                   </div>
 
-                  {/* Headers */}
                   <div className="mb-4">
                     <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
                       Response Headers
                     </h4>
                     <div className="bg-gray-100 rounded-md p-3">
-                      {Object.entries(response.headers).map(([key, value]: [string, string]) => (
+                      {Object.keys(response.headers).map((key: string) => (
                         <div key={key} className="text-xs mb-1">
                           <span className="font-medium text-gray-600">
                             {key}:
                           </span>{' '}
-                          <span className="text-gray-700">{value}</span>
+                          <span className="text-gray-700">{String(response.headers[key])}</span>
                         </div>
                       ))}
                     </div>
                   </div>
 
                   {/* Request Body (if available) */}
-                  {response.requestBody && (
+                  {response.requestBody !== undefined && response.requestBody !== null && (
                     <div className="mb-4">
                       <h4 className="text-xs font-medium text-gray-500 uppercase mb-2">
                         Request Body

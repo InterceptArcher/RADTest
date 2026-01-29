@@ -250,7 +250,7 @@ export default function LLMThoughtDisplay({
                             </div>
 
                             {/* Input */}
-                            {step.input && (
+                            {step.input !== undefined && step.input !== null && (
                               <div className="mt-3">
                                 <h5 className="text-xs font-medium text-gray-500 uppercase mb-1">
                                   Input
@@ -262,7 +262,7 @@ export default function LLMThoughtDisplay({
                             )}
 
                             {/* Output */}
-                            {step.output && (
+                            {step.output !== undefined && step.output !== null && (
                               <div className="mt-3">
                                 <h5 className="text-xs font-medium text-gray-500 uppercase mb-1">
                                   Output
