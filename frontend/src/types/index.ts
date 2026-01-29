@@ -206,3 +206,68 @@ export interface DebugData {
   createdAt: string;
   completedAt?: string;
 }
+
+/**
+ * Dashboard Types
+ */
+
+/**
+ * Job with metadata for dashboard display.
+ */
+export interface JobWithMetadata {
+  jobId: string;
+  companyName: string;
+  domain: string;
+  industry?: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  progress: number;
+  currentStep: string;
+  result?: ProfileResult;
+  createdAt: string;
+  completedAt?: string;
+}
+
+/**
+ * Saved company from Supabase.
+ */
+export interface SavedCompany {
+  id: string;
+  jobId: string;
+  companyName: string;
+  domain: string;
+  validatedData: CompanyData;
+  confidenceScore: number;
+  slideshowUrl?: string;
+  savedAt: string;
+}
+
+/**
+ * Extended company data with all fields from LLM Council.
+ */
+export interface ExtendedCompanyData {
+  company_name: string;
+  domain: string;
+  industry?: string;
+  sub_industry?: string;
+  employee_count?: number | string;
+  revenue?: string;
+  annual_revenue?: string;
+  headquarters?: string;
+  founded_year?: number | string;
+  ceo?: string;
+  technology?: string[];
+  technologies?: string[];
+  target_market?: string;
+  geographic_reach?: string | string[];
+  founders?: string[];
+  customer_segments?: string[];
+  products?: string[];
+  competitors?: string[];
+  company_type?: string;
+  linkedin_url?: string;
+  contacts?: {
+    website?: string;
+    linkedin?: string;
+    email?: string;
+  };
+}
