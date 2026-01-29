@@ -1,6 +1,6 @@
 Starting Install...
 
-added 3 packages in 3s
+added 3 packages in 4s
 
 2 packages are looking for funding
   run `npm fund` for details
@@ -11,7 +11,7 @@ npm notice To update run: npm install -g npm@11.8.0
 npm notice
 package.json
 
-changed 1 package, and audited 7 packages in 2s
+up to date, audited 7 packages in 3s
 
 found 0 vulnerabilities
 Done!

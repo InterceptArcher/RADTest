@@ -990,12 +990,35 @@ async def store_validated_data(company_name: str, validated_data: dict):
 async def generate_slideshow(company_name: str, validated_data: dict) -> str:
     """Generate slideshow using Gamma API"""
     if not GAMMA_API_KEY:
-        logger.warning("Gamma API key not configured")
-        return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
+        logger.warning("Gamma API key not configured, skipping slideshow generation")
+        return None
 
-    # TODO: Implement actual Gamma API integration
-    # For now, return a placeholder URL
-    return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
+    try:
+        from worker.gamma_slideshow import GammaSlideshowCreator
+
+        # Initialize Gamma creator
+        gamma_creator = GammaSlideshowCreator(GAMMA_API_KEY)
+
+        # Prepare company data for slideshow
+        company_data = {
+            "company_name": company_name,
+            "validated_data": validated_data,
+            "confidence_score": validated_data.get("confidence_score", 0.85)
+        }
+
+        # Create slideshow
+        result = await gamma_creator.create_slideshow(company_data)
+
+        if result.get("success"):
+            logger.info(f"Slideshow created successfully: {result.get('slideshow_url')}")
+            return result.get("slideshow_url")
+        else:
+            logger.error(f"Slideshow creation failed: {result.get('error')}")
+            return None
+
+    except Exception as e:
+        logger.error(f"Error generating slideshow: {str(e)}")
+        return None
 
 
 # Profile request endpoint
