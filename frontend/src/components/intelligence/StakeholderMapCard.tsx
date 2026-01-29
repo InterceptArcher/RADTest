@@ -24,7 +24,13 @@ interface StakeholderDetailCardProps {
 }
 
 function StakeholderDetailCard({ stakeholder, onGenerateOutreach }: StakeholderDetailCardProps) {
+  if (!stakeholder) {
+    return null;
+  }
+
   const roleConfig = roleTypeConfig[stakeholder.roleType] || roleTypeConfig.Unknown;
+  const contact = stakeholder.contact || {};
+  const strategicPriorities = Array.isArray(stakeholder.strategicPriorities) ? stakeholder.strategicPriorities : [];
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
@@ -67,31 +73,31 @@ function StakeholderDetailCard({ stakeholder, onGenerateOutreach }: StakeholderD
         <div>
           <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">Contact Information</h5>
           <div className="grid grid-cols-1 gap-2">
-            {stakeholder.contact.email && (
+            {contact.email && (
               <a
-                href={`mailto:${stakeholder.contact.email}`}
+                href={`mailto:${contact.email}`}
                 className="flex items-center text-sm text-primary-600 hover:text-primary-700"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                 </svg>
-                {stakeholder.contact.email}
+                {contact.email}
               </a>
             )}
-            {stakeholder.contact.phone && (
+            {contact.phone && (
               <a
-                href={`tel:${stakeholder.contact.phone}`}
+                href={`tel:${contact.phone}`}
                 className="flex items-center text-sm text-primary-600 hover:text-primary-700"
               >
                 <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
                 </svg>
-                {stakeholder.contact.phone}
+                {contact.phone}
               </a>
             )}
-            {stakeholder.contact.linkedinUrl && (
+            {contact.linkedinUrl && (
               <a
-                href={stakeholder.contact.linkedinUrl}
+                href={contact.linkedinUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center text-sm text-primary-600 hover:text-primary-700"
@@ -102,18 +108,18 @@ function StakeholderDetailCard({ stakeholder, onGenerateOutreach }: StakeholderD
                 LinkedIn Profile
               </a>
             )}
-            {!stakeholder.contact.email && !stakeholder.contact.phone && !stakeholder.contact.linkedinUrl && (
+            {!contact.email && !contact.phone && !contact.linkedinUrl && (
               <p className="text-sm text-slate-400">Contact information not available</p>
             )}
           </div>
         </div>
 
         {/* Strategic Priorities */}
-        {stakeholder.strategicPriorities && stakeholder.strategicPriorities.length > 0 && (
+        {strategicPriorities.length > 0 && (
           <div>
             <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">Strategic Priorities</h5>
             <ul className="space-y-1.5">
-              {stakeholder.strategicPriorities.map((priority, index) => (
+              {strategicPriorities.map((priority, index) => (
                 <li key={index} className="flex items-start text-sm text-slate-600">
                   <span className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold mr-2 flex-shrink-0 mt-0.5">
                     {index + 1}
@@ -160,10 +166,17 @@ function StakeholderDetailCard({ stakeholder, onGenerateOutreach }: StakeholderD
 
 export default function StakeholderMapCard({ stakeholderMap, onGenerateOutreach }: StakeholderMapCardProps) {
   const [expanded, setExpanded] = useState(false);
-  const stakeholderCount = stakeholderMap.stakeholders?.length || 0;
+
+  // Null safety for stakeholder map data
+  if (!stakeholderMap) {
+    return null;
+  }
+
+  const stakeholders = Array.isArray(stakeholderMap.stakeholders) ? stakeholderMap.stakeholders : [];
+  const stakeholderCount = stakeholders.length;
 
   // Get preview stakeholders (first 3)
-  const previewStakeholders = stakeholderMap.stakeholders?.slice(0, 3) || [];
+  const previewStakeholders = stakeholders.slice(0, 3);
 
   return (
     <div className="card overflow-hidden">
@@ -248,7 +261,7 @@ export default function StakeholderMapCard({ stakeholderMap, onGenerateOutreach 
 
             {stakeholderCount > 0 ? (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                {stakeholderMap.stakeholders.map((stakeholder, index) => (
+                {stakeholders.map((stakeholder, index) => (
                   <StakeholderDetailCard
                     key={`${stakeholder.name}-${index}`}
                     stakeholder={stakeholder}

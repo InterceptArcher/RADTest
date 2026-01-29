@@ -59,8 +59,14 @@ const targetRoles: StakeholderRoleType[] = ['CIO', 'CTO', 'CISO', 'COO', 'CFO', 
 
 export default function SalesProgramCard({ program, onGenerateOutreach }: SalesProgramCardProps) {
   const [expanded, setExpanded] = useState(false);
+
+  // Null safety for program data
+  if (!program) {
+    return null;
+  }
+
   const config = intentLevelConfig[program.intentLevel] || intentLevelConfig['Low'];
-  const normalizedScore = Math.min(100, Math.max(0, program.intentScore));
+  const normalizedScore = Math.min(100, Math.max(0, program.intentScore || 0));
 
   return (
     <div className="card overflow-hidden">

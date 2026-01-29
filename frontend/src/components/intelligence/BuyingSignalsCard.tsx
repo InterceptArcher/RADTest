@@ -103,9 +103,15 @@ function groupScoopsByType(scoops: Scoop[]) {
 
 export default function BuyingSignalsCard({ signals }: BuyingSignalsCardProps) {
   const [expanded, setExpanded] = useState(false);
+
+  // Null safety for signals data
+  if (!signals) {
+    return null;
+  }
+
   const strength = signalStrengthConfig[signals.signalStrength] || signalStrengthConfig.low;
-  const groupedScoops = signals.scoops ? groupScoopsByType(signals.scoops) : {};
-  const topIntentTopics = signals.intentTopics?.slice(0, 3) || [];
+  const groupedScoops = signals.scoops && Array.isArray(signals.scoops) ? groupScoopsByType(signals.scoops) : {};
+  const topIntentTopics = Array.isArray(signals.intentTopics) ? signals.intentTopics.slice(0, 3) : [];
 
   return (
     <div className="card overflow-hidden">

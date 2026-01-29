@@ -59,8 +59,16 @@ export default function ExecutiveSnapshotCard({
   industry,
 }: ExecutiveSnapshotCardProps) {
   const [expanded, setExpanded] = useState(false);
+
+  // Null safety for snapshot data
+  if (!snapshot) {
+    return null;
+  }
+
   const classification = classificationConfig[snapshot.companyClassification] || classificationConfig.Unknown;
-  const groupedTech = snapshot.technologyStack ? groupTechByCategory(snapshot.technologyStack) : {};
+  const groupedTech = snapshot.technologyStack && Array.isArray(snapshot.technologyStack)
+    ? groupTechByCategory(snapshot.technologyStack)
+    : {};
 
   return (
     <div className="card overflow-hidden">
