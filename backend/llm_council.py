@@ -230,34 +230,38 @@ Your job is to:
 6. Remove any fluff or marketing language
 
 CRITICAL OUTPUT RULES:
-- geographic_reach: List actual country names (max 20), NOT "190 countries worldwide"
+- CAPITALIZATION: Use Proper Title Case for all names (company names, person names, cities, countries, industries). Example: "Microsoft Corporation", "Satya Nadella", "San Francisco, California, United States"
+- geographic_reach: List actual country names with proper capitalization (max 20), NOT "190 countries worldwide"
 - employee_count: Use a number or specific range, NOT "large workforce"
-- revenue: Use specific figures, NOT "significant revenue"
+- annual_revenue: Use specific figures like "$198.3 billion" or "$50M-$100M", NOT "significant revenue" or null
+- ceo: Full name with proper capitalization like "Tim Cook" or "Satya Nadella", NOT lowercase or null
 - target_market: List specific segments, NOT "various industries"
 - technologies: List actual tech names, NOT "modern technology stack"
 
+IMPORTANT: For annual_revenue and ceo fields, you MUST provide a value if ANY data source mentions it. Look carefully in the Apollo and PDL data for revenue figures and executive names.
+
 Output a clean JSON object with these fields:
-{
-    "company_name": "...",
-    "domain": "...",
-    "industry": "...",
-    "sub_industry": "...",
+{{
+    "company_name": "Proper Case Name",
+    "domain": "example.com",
+    "industry": "Proper Case Industry",
+    "sub_industry": "Proper Case Sub-Industry",
     "employee_count": number or "X-Y",
-    "annual_revenue": "specific figure or estimate",
+    "annual_revenue": "$X billion/million or range",
     "headquarters": "City, State, Country",
-    "geographic_reach": ["Country1", "Country2", ...],
+    "geographic_reach": ["United States", "United Kingdom", ...],
     "founded_year": number,
-    "founders": ["Name1", "Name2"],
-    "ceo": "Name",
+    "founders": ["First Last", "First Last"],
+    "ceo": "First Last",
     "target_market": "B2B/B2C/B2G",
     "customer_segments": ["Segment1", "Segment2"],
     "products": ["Product1", "Product2"],
     "technologies": ["Tech1", "Tech2"],
     "competitors": ["Competitor1", "Competitor2"],
     "company_type": "Public/Private/Subsidiary",
-    "linkedin_url": "...",
+    "linkedin_url": "https://linkedin.com/company/...",
     "confidence_score": 0.0-1.0
-}
+}}
 
 SPECIALIST INPUTS:
 {specialist_inputs}
@@ -520,6 +524,45 @@ def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> 
     return result
 
 
+def apply_formatting(data: Dict[str, Any]) -> Dict[str, Any]:
+    """Apply proper formatting (capitalization, etc.) to the final output."""
+    result = data.copy()
+
+    # Fields that should have title case
+    title_case_fields = [
+        "company_name", "industry", "sub_industry", "headquarters",
+        "ceo", "target_market", "company_type"
+    ]
+
+    for field in title_case_fields:
+        if result.get(field) and isinstance(result[field], str):
+            result[field] = title_case_name(result[field])
+
+    # Handle list fields that should have title case
+    list_title_case_fields = ["founders", "customer_segments", "geographic_reach", "competitors"]
+    for field in list_title_case_fields:
+        if result.get(field) and isinstance(result[field], list):
+            result[field] = [title_case_name(item) if isinstance(item, str) else item for item in result[field]]
+
+    # Ensure revenue has proper formatting
+    if result.get("annual_revenue"):
+        revenue = result["annual_revenue"]
+        if isinstance(revenue, str):
+            # Make sure it starts with $ if it's a monetary value
+            if revenue and revenue[0].isdigit():
+                result["annual_revenue"] = f"${revenue}"
+        elif isinstance(revenue, (int, float)):
+            # Format large numbers
+            if revenue >= 1_000_000_000:
+                result["annual_revenue"] = f"${revenue / 1_000_000_000:.1f} Billion"
+            elif revenue >= 1_000_000:
+                result["annual_revenue"] = f"${revenue / 1_000_000:.1f} Million"
+            else:
+                result["annual_revenue"] = f"${revenue:,.0f}"
+
+    return result
+
+
 async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict) -> Dict[str, Any]:
     """
     Main entry point for LLM Council validation.
@@ -532,7 +575,7 @@ async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data:
     if not OPENAI_API_KEY:
         logger.warning("OpenAI not configured, using direct extraction")
         base_data["_council_metadata"] = {"specialists_run": 0, "specialists_total": 20, "mode": "direct_extraction"}
-        return base_data
+        return apply_formatting(base_data)
 
     try:
         result = await run_council(company_data, apollo_data, pdl_data)
@@ -544,7 +587,7 @@ async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data:
             # Merge council result with base data, preferring council values
             merged = {**base_data, **{k: v for k, v in result.items() if v}}
             merged["confidence_score"] = 0.65
-            return merged
+            return apply_formatting(merged)
 
         # Ensure we have minimum required fields by merging with base data
         for key, value in base_data.items():
@@ -554,11 +597,11 @@ async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data:
         if not result.get("confidence_score"):
             result["confidence_score"] = 0.8
 
-        return result
+        return apply_formatting(result)
 
     except Exception as e:
         logger.error(f"LLM Council error: {e}")
         # Return base data on failure
         base_data["confidence_score"] = 0.5
         base_data["_council_metadata"] = {"error": str(e), "specialists_run": 0, "mode": "fallback"}
-        return base_data
+        return apply_formatting(base_data)
