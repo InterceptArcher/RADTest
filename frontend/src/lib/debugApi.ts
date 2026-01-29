@@ -28,6 +28,35 @@ interface GetAPIResponsesOptions {
 }
 
 /**
+ * Convert snake_case string to camelCase.
+ */
+const snakeToCamel = (str: string): string =>
+  str.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+
+/**
+ * Recursively transform all keys in an object from snake_case to camelCase.
+ */
+const transformKeys = (obj: unknown): unknown => {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+
+  if (Array.isArray(obj)) {
+    return obj.map(transformKeys);
+  }
+
+  if (typeof obj === 'object') {
+    const transformed: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
+      transformed[snakeToCamel(key)] = transformKeys(value);
+    }
+    return transformed;
+  }
+
+  return obj;
+};
+
+/**
  * Debug API client class for fetching debug information.
  */
 class DebugAPIClient {
@@ -46,14 +75,15 @@ class DebugAPIClient {
    */
   async getDebugData(jobId: string): Promise<DebugData> {
     try {
-      const response = await axios.get<DebugData>(
+      const response = await axios.get(
         `${this.baseURL}/debug-data/${jobId}`,
         {
           timeout: 30000,
         }
       );
 
-      return response.data;
+      // Transform snake_case keys from backend to camelCase for frontend
+      return transformKeys(response.data) as DebugData;
     } catch (error) {
       if (axios.isAxiosError(error)) {
         const axiosError = error as AxiosError<ErrorResponse>;
