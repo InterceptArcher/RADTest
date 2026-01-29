@@ -149,7 +149,7 @@ export default function Home() {
           )}
 
           {state === 'results' && result && (
-            <ResultsDisplay result={result} onReset={handleReset} />
+            <ResultsDisplay result={result} onReset={handleReset} jobId={jobId ?? undefined} />
           )}
 
           {state === 'error' && (

@@ -5,16 +5,19 @@
 
 'use client';
 
+import Link from 'next/link';
 import type { ProfileResult } from '@/types';
 
 interface ResultsDisplayProps {
   result: ProfileResult;
   onReset: () => void;
+  jobId?: string;
 }
 
 export default function ResultsDisplay({
   result,
   onReset,
+  jobId,
 }: ResultsDisplayProps) {
   const {
     company_name,
@@ -285,6 +288,41 @@ export default function ResultsDisplay({
           multiple sources and LLM-based conflict resolution.
         </p>
       </div>
+
+      {/* Debug Mode Link */}
+      {jobId && (
+        <div className="p-4 bg-gray-50 border border-gray-200 rounded-lg">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-sm font-medium text-gray-900">
+                Debug Mode
+              </h4>
+              <p className="text-xs text-gray-600 mt-0.5">
+                Inspect the process pipeline, API responses, and LLM decisions
+              </p>
+            </div>
+            <Link
+              href={`/debug-mode?jobId=${jobId}`}
+              className="inline-flex items-center px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500"
+            >
+              <svg
+                className="w-4 h-4 mr-2"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
+                />
+              </svg>
+              View Debug Mode
+            </Link>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

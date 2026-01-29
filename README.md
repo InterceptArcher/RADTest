@@ -324,6 +324,141 @@ Advanced multi-agent decision making for data conflict resolution:
 
 ---
 
+## Debug Mode Features (018-021)
+
+### Feature 018: Debugging UI for Process Inspection
+
+**Implementation**: `frontend/src/components/debug/DebugPanel.tsx`, `frontend/src/app/debug-mode/page.tsx`
+
+Created a comprehensive Debug Mode interface that allows users to inspect each element of the processing pipeline:
+
+**Key Features**:
+- **Process Step Visualization**: Each pipeline step displayed with status indicators (pending, in_progress, completed, failed)
+- **Expandable/Collapsible Sections**: Click to reveal detailed information about each step
+- **Timing Information**: Start/end times and duration for completed steps
+- **Metadata Display**: Technical metadata for debugging and audit purposes
+- **Expand All/Collapse All**: Quick navigation controls
+
+**Access**: Available via `/debug-mode?jobId={job_id}` route after job completion
+
+**Methodology**:
+- **Test-Driven Development**: All components have comprehensive test suites
+- **React Hooks**: useState and useCallback for efficient state management
+- **Accessibility**: Keyboard navigation and ARIA labels for screen readers
+
+---
+
+### Feature 019: Display API Return Values in Debug UI
+
+**Implementation**: `frontend/src/components/debug/APIResponseDisplay.tsx`, `backend/src/services/debug_service.py`
+
+Enhanced Debug UI to display all API responses with intelligent data masking:
+
+**Key Features**:
+- **Complete API Response Display**: URL, method, status code, headers, request/response bodies
+- **Sensitive Data Masking**: API keys, tokens, and credentials automatically masked
+- **Status Indicators**: Color-coded success (2xx) and error (4xx/5xx) responses
+- **Filtering & Sorting**: Filter by status type, sort by timestamp
+- **Copy to Clipboard**: Quick export of response data
+
+**Security**:
+- Sensitive fields (api_key, authorization, tokens) masked with `********`
+- Masking can be configured via API parameter
+- Fields flagged as sensitive in metadata for audit purposes
+
+**Methodology**:
+- **OWASP Guidelines**: Data protection following security best practices
+- **Lazy Loading**: Responses loaded on-demand for performance
+- **Responsive Design**: Works on all screen sizes
+
+---
+
+### Feature 020: Display ChatGPT Thought Process
+
+**Implementation**: `frontend/src/components/debug/LLMThoughtDisplay.tsx`
+
+Visualization of LLM decision-making process during conflict resolution:
+
+**Key Features**:
+- **Step-by-Step Reasoning**: Each LLM thought process step displayed with action and reasoning
+- **Confidence Scores**: Visual indicators (color-coded) showing confidence levels
+- **Input/Output Data**: Complete data flow visibility for each step
+- **Final Decision Highlighting**: Prominent display of resolution outcomes
+- **Discrepancy Tracking**: List of resolved data conflicts
+- **Tooltips**: Complex terms explained with hover tooltips
+
+**Displayed Information**:
+- Task name and model used (e.g., gpt-4)
+- Timestamps for start/end of process
+- Sequential reasoning steps
+- Confidence scores (0-100%)
+- Final decision with justification
+- List of discrepancies resolved
+
+**Methodology**:
+- **User-Friendly Format**: Technical reasoning presented in accessible format
+- **Accessibility**: Screen reader support and keyboard navigation
+- **Interactive Exploration**: Expand/collapse for managing information density
+
+---
+
+### Feature 021: Visualize Process to Output Flow
+
+**Implementation**: `frontend/src/components/debug/ProcessFlowVisualization.tsx`
+
+Dashboard-style flowchart visualization of the complete processing pipeline:
+
+**Key Features**:
+- **Interactive Flowchart**: Visual representation of process flow from request to output
+- **Node Types**: Different visual styles for:
+  - Start/End nodes
+  - Process nodes (data operations)
+  - API nodes (external calls)
+  - LLM nodes (AI processing)
+  - Decision nodes (branching logic)
+- **Status Visualization**: Color-coded status for each node
+- **Active Node Animation**: Pulsing animation for in-progress steps
+- **Node Details**: Click to view detailed information about each step
+- **Zoom Controls**: Zoom in/out and reset for large flows
+- **Legend**: Visual guide to node types
+
+**Interactive Features**:
+- Click on nodes to view details
+- Keyboard navigation between nodes (arrow keys)
+- Edge labels for decision branches (Yes/No)
+- Duration display on completed nodes
+
+**Accessibility**:
+- WCAG compliant with proper ARIA attributes
+- Keyboard navigable
+- Screen reader descriptions
+- Fallback view for non-JS environments
+
+**Methodology**:
+- **Responsive Design**: Adapts to container size
+- **Performance Optimization**: Efficient rendering with React memoization
+- **Cross-Browser Compatibility**: Tested on Chrome, Firefox, Safari, Edge
+
+---
+
+### Debug Mode API Endpoints
+
+**Backend Endpoints** (`backend/src/main.py`):
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/debug-data/{job_id}` | GET | Complete debug data for a job |
+| `/debug-data/{job_id}` | HEAD | Check if debug data available |
+| `/debug-data/{job_id}/process-steps` | GET | Process steps only |
+| `/debug-data/{job_id}/api-responses` | GET | API responses with optional masking |
+| `/debug-data/{job_id}/llm-processes` | GET | LLM thought processes |
+| `/debug-data/{job_id}/process-flow` | GET | Process flow visualization data |
+
+**Query Parameters**:
+- `mask_sensitive` (boolean, default: true): Whether to mask sensitive data in API responses
+
+---
+
 ## Project Structure
 
 ```
@@ -333,18 +468,28 @@ RADTest/
 │   │   ├── app/
 │   │   │   ├── layout.tsx            # Root layout
 │   │   │   ├── page.tsx              # Main application page
+│   │   │   ├── debug-mode/           # Debug Mode route (Feature 018-021)
+│   │   │   │   └── page.tsx          # Debug Mode page
 │   │   │   └── globals.css           # Global styles
 │   │   ├── components/
 │   │   │   ├── ProfileRequestForm.tsx # Form component
 │   │   │   ├── ResultsDisplay.tsx     # Results component
 │   │   │   ├── LoadingSpinner.tsx     # Loading state
+│   │   │   ├── debug/                 # Debug Mode components
+│   │   │   │   ├── DebugPanel.tsx           # Process inspection (018)
+│   │   │   │   ├── APIResponseDisplay.tsx   # API responses (019)
+│   │   │   │   ├── LLMThoughtDisplay.tsx    # LLM thought process (020)
+│   │   │   │   ├── ProcessFlowVisualization.tsx  # Flow visualization (021)
+│   │   │   │   ├── index.ts                 # Barrel export
+│   │   │   │   └── __tests__/               # Debug component tests
 │   │   │   └── __tests__/             # Component tests
 │   │   ├── lib/
 │   │   │   ├── api.ts                 # API client
+│   │   │   ├── debugApi.ts            # Debug API client (018-021)
 │   │   │   ├── validation.ts          # Form validation
 │   │   │   └── __tests__/             # Library tests
 │   │   └── types/
-│   │       └── index.ts               # TypeScript definitions
+│   │       └── index.ts               # TypeScript definitions (incl. debug types)
 │   ├── public/                        # Static assets
 │   ├── package.json
 │   ├── tsconfig.json
@@ -354,13 +499,15 @@ RADTest/
 │   └── README.md
 ├── backend/
 │   ├── src/
-│   │   ├── main.py                    # FastAPI application
+│   │   ├── main.py                    # FastAPI application (incl. debug endpoints)
 │   │   ├── config.py                  # Environment configuration
 │   │   ├── models/
-│   │   │   └── profile.py            # Pydantic models
+│   │   │   ├── profile.py            # Pydantic models
+│   │   │   └── debug.py              # Debug data models (018-021)
 │   │   └── services/
 │   │       ├── railway_client.py     # Railway HTTP client
-│   │       └── railway_graphql.py    # Railway GraphQL client
+│   │       ├── railway_graphql.py    # Railway GraphQL client
+│   │       └── debug_service.py      # Debug data service (018-021)
 │   ├── worker/
 │   │   ├── main.py                   # Worker orchestrator
 │   │   ├── intelligence_gatherer.py  # Parallel API calls
@@ -372,10 +519,15 @@ RADTest/
 │   │   └── requirements.txt         # Worker dependencies
 │   ├── tests/
 │   │   ├── test_profile_endpoint.py
-│   │   └── test_railway_graphql.py
+│   │   ├── test_railway_graphql.py
+│   │   └── test_debug_endpoints.py   # Debug endpoint tests (018-021)
 │   ├── requirements.txt
 │   └── pytest.ini
 ├── docs/                            # Feature specifications
+│   ├── 018-create-debugging-ui-for-process-inspection.md
+│   ├── 019-display-api-return-values.md
+│   ├── 020-display-chatgpt-thought-process.md
+│   └── 021-visualize-process-to-output-flow.md
 ├── setup/
 │   └── stack.json                   # Stack configuration
 └── README.md
@@ -718,6 +870,12 @@ curl -X POST http://localhost:8000/profile-request \
 - ✅ Feature 007: LLM data validation
 - ✅ Feature 008: Gamma slideshow creation
 - ✅ Feature 009: LLM council and revolver resolution
+
+### Debug Mode Features 018-021 ✅ Implemented
+- ✅ Feature 018: Debugging UI for Process Inspection
+- ✅ Feature 019: Display API Return Values
+- ✅ Feature 020: Display ChatGPT Thought Process
+- ✅ Feature 021: Visualize Process to Output Flow
 
 ### Deployment Scripts ✅ Created
 - ✅ Frontend deployment script (executed successfully)

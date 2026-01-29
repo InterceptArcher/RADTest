@@ -85,3 +85,118 @@ export interface FormErrors {
   industry?: string;
   requested_by?: string;
 }
+
+/**
+ * Debug Mode Types - Features 018-021
+ */
+
+/**
+ * Process step status.
+ */
+export type ProcessStepStatus = 'pending' | 'in_progress' | 'completed' | 'failed';
+
+/**
+ * Individual process step in the pipeline.
+ */
+export interface ProcessStep {
+  id: string;
+  name: string;
+  description: string;
+  status: ProcessStepStatus;
+  startTime?: string;
+  endTime?: string;
+  duration?: number;
+  metadata?: Record<string, unknown>;
+}
+
+/**
+ * API response data for debug display.
+ */
+export interface APIResponseData {
+  id: string;
+  apiName: string;
+  url: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH';
+  statusCode: number;
+  statusText: string;
+  headers: Record<string, string>;
+  requestBody?: unknown;
+  responseBody: unknown;
+  timestamp: string;
+  duration: number;
+  isSensitive?: boolean;
+  maskedFields?: string[];
+}
+
+/**
+ * LLM thought process step.
+ */
+export interface LLMThoughtStep {
+  id: string;
+  step: number;
+  action: string;
+  reasoning: string;
+  input?: unknown;
+  output?: unknown;
+  confidence?: number;
+}
+
+/**
+ * LLM thought process for decision-making.
+ */
+export interface LLMThoughtProcess {
+  id: string;
+  taskName: string;
+  model: string;
+  startTime: string;
+  endTime?: string;
+  steps: LLMThoughtStep[];
+  finalDecision: string;
+  discrepanciesResolved?: string[];
+}
+
+/**
+ * Process flow node for visualization.
+ */
+export interface ProcessFlowNode {
+  id: string;
+  label: string;
+  type: 'start' | 'process' | 'decision' | 'api' | 'llm' | 'end';
+  status: ProcessStepStatus;
+  details?: string;
+  duration?: number;
+}
+
+/**
+ * Process flow connection.
+ */
+export interface ProcessFlowEdge {
+  id: string;
+  source: string;
+  target: string;
+  label?: string;
+}
+
+/**
+ * Complete process flow data.
+ */
+export interface ProcessFlow {
+  nodes: ProcessFlowNode[];
+  edges: ProcessFlowEdge[];
+}
+
+/**
+ * Complete debug data for a job.
+ */
+export interface DebugData {
+  jobId: string;
+  companyName: string;
+  domain: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  processSteps: ProcessStep[];
+  apiResponses: APIResponseData[];
+  llmThoughtProcesses: LLMThoughtProcess[];
+  processFlow: ProcessFlow;
+  createdAt: string;
+  completedAt?: string;
+}

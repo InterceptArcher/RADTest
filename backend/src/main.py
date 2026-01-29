@@ -2,7 +2,8 @@
 FastAPI main application for RADTest backend.
 Handles profile requests and coordinates with Railway workers.
 """
-from fastapi import FastAPI, Request, HTTPException, status
+from typing import List, Optional
+from fastapi import FastAPI, Request, HTTPException, status, Query, Response
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 import logging
@@ -13,10 +14,18 @@ from .models.profile import (
     ProfileRequestResponse,
     ErrorResponse
 )
+from .models.debug import (
+    DebugData,
+    ProcessStep,
+    APIResponseData,
+    LLMThoughtProcess,
+    ProcessFlow,
+)
 from .services.railway_client import (
     forward_to_worker,
     RailwayClientError
 )
+from .services.debug_service import debug_service
 from .config import settings
 
 # Configure logging
@@ -177,6 +186,220 @@ async def root():
         "endpoints": {
             "health": "/health",
             "profile_request": "/profile-request",
+            "debug_data": "/debug-data/{job_id}",
             "docs": "/docs"
         }
     }
+
+
+# ============================================================================
+# Debug Mode Endpoints (Features 018-021)
+# ============================================================================
+
+@app.get(
+    "/debug-data/{job_id}",
+    response_model=DebugData,
+    tags=["Debug"],
+    responses={
+        200: {"description": "Debug data retrieved successfully"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+        403: {"model": ErrorResponse, "description": "Unauthorized access"},
+    }
+)
+async def get_debug_data(job_id: str):
+    """
+    Get complete debug data for a job.
+
+    Feature 018: Debugging UI for Process Inspection
+
+    Returns all debug information including:
+    - Process steps with timing and status
+    - API responses with masked sensitive data
+    - LLM thought processes and decisions
+    - Process flow visualization data
+
+    Args:
+        job_id: Unique job identifier
+
+    Returns:
+        Complete DebugData object
+    """
+    logger.info(f"Debug data requested for job: {job_id}")
+
+    debug_data = debug_service.get_debug_data(job_id)
+
+    if not debug_data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Debug data not found for job"}
+        )
+
+    return debug_data
+
+
+@app.head(
+    "/debug-data/{job_id}",
+    tags=["Debug"],
+    responses={
+        200: {"description": "Debug data available"},
+        404: {"description": "Debug data not available"},
+    }
+)
+async def check_debug_data_available(job_id: str, response: Response):
+    """
+    Check if debug data is available for a job.
+
+    Returns 200 if available, 404 if not.
+    """
+    is_available = debug_service.check_debug_available(job_id)
+
+    if not is_available:
+        response.status_code = status.HTTP_404_NOT_FOUND
+
+    return None
+
+
+@app.get(
+    "/debug-data/{job_id}/process-steps",
+    response_model=List[ProcessStep],
+    tags=["Debug"],
+    responses={
+        200: {"description": "Process steps retrieved successfully"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+    }
+)
+async def get_process_steps(job_id: str):
+    """
+    Get process steps for a job.
+
+    Feature 018: Debugging UI for Process Inspection
+
+    Returns the pipeline steps with their status, timing, and metadata.
+
+    Args:
+        job_id: Unique job identifier
+
+    Returns:
+        List of ProcessStep objects
+    """
+    process_steps = debug_service.get_process_steps(job_id)
+
+    if process_steps is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Process steps not found for job"}
+        )
+
+    return process_steps
+
+
+@app.get(
+    "/debug-data/{job_id}/api-responses",
+    response_model=List[APIResponseData],
+    tags=["Debug"],
+    responses={
+        200: {"description": "API responses retrieved successfully"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+    }
+)
+async def get_api_responses(
+    job_id: str,
+    mask_sensitive: bool = Query(
+        default=True,
+        description="Whether to mask sensitive data in responses"
+    )
+):
+    """
+    Get API responses for a job.
+
+    Feature 019: Display API Return Values
+
+    Returns all API responses with optional sensitive data masking.
+    Sensitive fields like API keys and tokens are masked by default.
+
+    Args:
+        job_id: Unique job identifier
+        mask_sensitive: Whether to mask sensitive data (default: True)
+
+    Returns:
+        List of APIResponseData objects
+    """
+    api_responses = debug_service.get_api_responses(job_id, mask_sensitive)
+
+    if api_responses is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "API responses not found for job"}
+        )
+
+    return api_responses
+
+
+@app.get(
+    "/debug-data/{job_id}/llm-processes",
+    response_model=List[LLMThoughtProcess],
+    tags=["Debug"],
+    responses={
+        200: {"description": "LLM thought processes retrieved successfully"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+    }
+)
+async def get_llm_thought_processes(job_id: str):
+    """
+    Get LLM thought processes for a job.
+
+    Feature 020: Display ChatGPT Thought Process
+
+    Returns the decision-making insights and reasoning steps
+    from LLM agents during data validation and conflict resolution.
+
+    Args:
+        job_id: Unique job identifier
+
+    Returns:
+        List of LLMThoughtProcess objects
+    """
+    llm_processes = debug_service.get_llm_thought_processes(job_id)
+
+    if llm_processes is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "LLM thought processes not found for job"}
+        )
+
+    return llm_processes
+
+
+@app.get(
+    "/debug-data/{job_id}/process-flow",
+    response_model=ProcessFlow,
+    tags=["Debug"],
+    responses={
+        200: {"description": "Process flow retrieved successfully"},
+        404: {"model": ErrorResponse, "description": "Job not found"},
+    }
+)
+async def get_process_flow(job_id: str):
+    """
+    Get process flow visualization data for a job.
+
+    Feature 021: Visualize Process to Output Flow
+
+    Returns nodes and edges for rendering a flowchart or timeline
+    showing the process pipeline from request to output.
+
+    Args:
+        job_id: Unique job identifier
+
+    Returns:
+        ProcessFlow object with nodes and edges
+    """
+    process_flow = debug_service.get_process_flow(job_id)
+
+    if process_flow is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error": "Process flow not found for job"}
+        )
+
+    return process_flow
