@@ -190,6 +190,9 @@ class GammaSlideshowCreator:
                 "tone": "professional",
                 "audience": "business stakeholders",
                 "language": "en"
+            },
+            "sharingOptions": {
+                "externalAccess": "view"
             }
         }
 
