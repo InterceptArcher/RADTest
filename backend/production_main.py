@@ -1517,6 +1517,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
     apollo_data = job_data.get("apollo_data", {})
     pdl_data = job_data.get("pdl_data", {})
     hunter_data = job_data.get("hunter_data", {})
+    news_data = job_data.get("news_data", {})
     result = job_data.get("result", {})
     validated_data = result.get("validated_data", {})
 
@@ -1746,6 +1747,32 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "duration": 320,
                 "is_sensitive": True,
                 "masked_fields": ["api_key"]
+            },
+            {
+                "id": "api-2c",
+                "api_name": "GNews API - Recent Company News",
+                "url": "https://gnews.io/api/v4/search",
+                "method": "GET",
+                "status_code": 200 if news_data and news_data.get("success") else 404,
+                "status_text": "OK" if news_data and news_data.get("success") else "No news found",
+                "headers": {"content-type": "application/json"},
+                "request_body": {"q": company_name, "lang": "en", "max": 10, "sortby": "publishedAt"},
+                "response_body": {
+                    "articles_count": news_data.get("articles_count", 0) if news_data else 0,
+                    "date_range": news_data.get("date_range", "Last 90 days") if news_data else "N/A",
+                    "categories": {
+                        "executive_changes": len(news_data.get("categories", {}).get("executive_changes", [])) if news_data else 0,
+                        "funding": len(news_data.get("categories", {}).get("funding", [])) if news_data else 0,
+                        "partnerships": len(news_data.get("categories", {}).get("partnerships", [])) if news_data else 0,
+                        "expansions": len(news_data.get("categories", {}).get("expansions", [])) if news_data else 0
+                    },
+                    "summaries": news_data.get("summaries", {}) if news_data else {},
+                    "raw_articles": news_data.get("raw_articles", [])[:5] if news_data else []
+                },
+                "timestamp": (base_time + timedelta(seconds=3, milliseconds=500)).isoformat() + "Z",
+                "duration": 280,
+                "is_sensitive": True,
+                "masked_fields": ["token", "api_key"]
             },
             {
                 "id": "api-3",
