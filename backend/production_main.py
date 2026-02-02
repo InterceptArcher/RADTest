@@ -244,7 +244,11 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Step 2.9: Fetch recent news for sales intelligence
         jobs_store[job_id]["progress"] = 48
         jobs_store[job_id]["current_step"] = "Gathering recent news and buying signals..."
-        news_data = await fetch_company_news(company_data["company_name"], company_data.get("domain"))
+        try:
+            news_data = await fetch_company_news(company_data["company_name"], company_data.get("domain"))
+        except Exception as e:
+            logger.warning(f"News gathering failed: {e}")
+            news_data = None
 
         # Step 3: Store raw data in Supabase
         jobs_store[job_id]["progress"] = 50
