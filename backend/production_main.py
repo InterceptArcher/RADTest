@@ -349,7 +349,17 @@ async def process_company_profile(job_id: str, company_data: dict):
                 "intentLevel": validated_data.get("sales_program", {}).get("intent_level", "Medium"),
                 "intentScore": validated_data.get("sales_program", {}).get("intent_score", 50),
                 "strategyText": validated_data.get("sales_program", {}).get("strategy_text", "")
-            } if validated_data.get("sales_program") else None
+            } if validated_data.get("sales_program") else None,
+            # News intelligence section (NEW - does not replace anything)
+            "news_intelligence": {
+                "executiveChanges": validated_data.get("executive_hires", "No recent executive changes found"),
+                "funding": validated_data.get("funding_news", "No recent funding announcements found"),
+                "partnerships": validated_data.get("partnership_news", "No recent partnership or acquisition news found"),
+                "expansions": validated_data.get("expansion_news", "No recent expansion news found"),
+                "articlesCount": news_data.get("articles_count", 0) if news_data else 0,
+                "dateRange": news_data.get("date_range", "Last 90 days") if news_data else "N/A",
+                "lastUpdated": news_data.get("raw_articles", [{}])[0].get("publishedAt", "") if news_data and news_data.get("raw_articles") else ""
+            } if news_data and news_data.get("success") else None
         }
         # Store raw API data for debug mode
         jobs_store[job_id]["apollo_data"] = apollo_data
