@@ -58,7 +58,8 @@ class CompanyProfileRequest(BaseModel):
 class ProfileRequestResponse(BaseModel):
     status: str
     job_id: str
-    message: Optional[str] = None    company_data: Dict[str, Any]
+    message: Optional[str] = None
+    company_data: Dict[str, Any]
     progress: int
     current_step: str
     created_at: str
