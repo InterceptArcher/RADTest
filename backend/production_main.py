@@ -208,6 +208,9 @@ async def process_company_profile(job_id: str, company_data: dict):
     """
     Background task to process company profile with real APIs.
     """
+    # Initialize news_data to avoid NameError if exception occurs before news gathering
+    news_data = None
+
     try:
         logger.info(f"Starting processing for job {job_id}: {company_data['company_name']}")
 
