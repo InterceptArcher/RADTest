@@ -823,13 +823,7 @@ def apply_formatting(data: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 result["annual_revenue"] = f"${revenue:,.0f}"
 
-    # Add news summaries if available
-    if news_data and news_data.get("success"):
-        news_summaries = news_data.get("summaries", {})
-        result["executive_hires"] = news_summaries.get("executive_hires", "No recent executive changes found")
-        result["funding_news"] = news_summaries.get("funding_news", "No recent funding announcements found")
-        result["partnership_news"] = news_summaries.get("partnership_news", "No recent partnership or acquisition news found")
-        result["expansion_news"] = news_summaries.get("expansion_news", "No recent expansion news found")
+    # News summaries are already added in extract_base_data, no need to add them here
 
     return result
 
