@@ -77,7 +77,7 @@ class NewsGatherer:
 
             logger.info(f"Fetching news for {company_name} from GNews (last {self.days_back} days)")
 
-            async with httpx.AsyncClient(timeout=30) as client:
+            async with httpx.AsyncClient(timeout=10) as client:  # 10 second timeout
                 response = await client.get(self.api_url, params=params)
                 response.raise_for_status()
                 data = response.json()
@@ -101,6 +101,10 @@ class NewsGatherer:
                     "raw_articles": articles
                 }
 
+        except httpx.TimeoutException:
+            logger.warning(f"GNews API timeout after 10s for {company_name}")
+            return self._empty_response(error="GNews API timeout (10s)")
+
         except httpx.HTTPStatusError as e:
             error_detail = ""
             try:
@@ -108,7 +112,7 @@ class NewsGatherer:
             except:
                 pass
             logger.error(f"GNews API HTTP error: {e.response.status_code} - {error_detail}")
-            return self._empty_response(error=f"GNews API error: {e.response.status_code}")
+            return self._empty_response(error=f"GNews API HTTP {e.response.status_code}")
 
         except Exception as e:
             logger.error(f"Error fetching news: {e}")

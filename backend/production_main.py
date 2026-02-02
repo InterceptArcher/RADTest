@@ -1779,11 +1779,13 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "api_name": "GNews API - Recent Company News",
                 "url": "https://gnews.io/api/v4/search",
                 "method": "GET",
-                "status_code": 200 if news_data and news_data.get("success") else 404,
-                "status_text": "OK" if news_data and news_data.get("success") else "No news found",
+                "status_code": 200 if news_data and news_data.get("success") else (503 if news_data and news_data.get("error") else 404),
+                "status_text": news_data.get("error", "No news API configured") if news_data and not news_data.get("success") else ("OK" if news_data and news_data.get("success") else "Not attempted"),
                 "headers": {"content-type": "application/json"},
                 "request_body": {"q": company_name, "lang": "en", "max": 10, "sortby": "publishedAt"},
                 "response_body": {
+                    "success": news_data.get("success", False) if news_data else False,
+                    "error": news_data.get("error") if news_data and not news_data.get("success") else None,
                     "articles_count": news_data.get("articles_count", 0) if news_data else 0,
                     "date_range": news_data.get("date_range", "Last 90 days") if news_data else "N/A",
                     "categories": {
