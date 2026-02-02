@@ -410,7 +410,7 @@ class GammaSlideshowCreator:
             "inputText": markdown_content,
             "textMode": "preserve",
             "format": "presentation",
-            "numCards": 10,
+            "numCards": 7,  # Exactly 7 slides in our template
             "textOptions": {
                 "tone": "professional",
                 "audience": "enterprise sales and business intelligence",
@@ -422,7 +422,8 @@ class GammaSlideshowCreator:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=120) as client:
+            # Increased timeout for complex presentations
+            async with httpx.AsyncClient(timeout=300) as client:
                 # Create generation
                 logger.info("Sending request to Gamma API")
                 response = await client.post(
@@ -439,10 +440,12 @@ class GammaSlideshowCreator:
                     raise Exception("No generationId returned from Gamma API")
 
                 logger.info(f"Generation started with ID: {generation_id}")
+                logger.info(f"Markdown length: {len(markdown_content)} characters")
 
-                # Poll for completion (max 120 seconds)
-                max_attempts = 60
+                # Poll for completion (max 5 minutes for complex presentations)
+                max_attempts = 150  # 150 attempts * 2 seconds = 5 minutes
                 attempt = 0
+                last_logged_time = 0
 
                 while attempt < max_attempts:
                     await asyncio.sleep(2)
@@ -458,7 +461,12 @@ class GammaSlideshowCreator:
                         status_data = status_response.json()
 
                         status = status_data.get("status")
-                        logger.info(f"Generation status (attempt {attempt}/{max_attempts}): {status}")
+
+                        # Log every 10 seconds to avoid spam
+                        if attempt % 5 == 0 or status in ["completed", "failed"]:
+                            elapsed = attempt * 2
+                            logger.info(f"Generation status after {elapsed}s (attempt {attempt}/{max_attempts}): {status}")
+
                         logger.debug(f"Full status response: {status_data}")
 
                         if status == "completed":
