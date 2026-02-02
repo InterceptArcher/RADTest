@@ -216,47 +216,128 @@ class GammaSlideshowCreator:
         # SLIDE 5: Role Profiles
         markdown += "# Role Profiles\n\n"
 
-        # Get leadership/contacts data
-        leadership = validated_data.get('leadership', {})
-        contacts = validated_data.get('contacts', {})
+        # Get stakeholder profiles from LLM council and raw stakeholder data
+        stakeholder_profiles = validated_data.get('stakeholder_profiles', {})
+
+        # Get the first C-level stakeholder with actual contact info
+        # Priority order: CTO, CIO, CISO, COO, CFO, CPO
+        target_roles = ['CTO', 'CIO', 'CISO', 'COO', 'CFO', 'CPO']
+        selected_profile = None
+        selected_role = None
+
+        # Try to find a matching profile from stakeholder_profiles
+        if isinstance(stakeholder_profiles, list):
+            for profile in stakeholder_profiles:
+                role_type = profile.get('role_type', '').upper()
+                if any(role in role_type for role in target_roles):
+                    selected_profile = profile
+                    selected_role = role_type
+                    break
+        elif isinstance(stakeholder_profiles, dict):
+            # If it's a dict, try to find by key
+            for role in target_roles:
+                if role in stakeholder_profiles:
+                    selected_profile = stakeholder_profiles[role]
+                    selected_role = role
+                    break
+
+        # Get contact info from Hunter contacts if available
+        hunter_contacts = validated_data.get('hunter_contacts', [])
+        contact_info = None
+        contact_name = None
+
+        if hunter_contacts and isinstance(hunter_contacts, list):
+            # Find first C-level contact
+            for contact in hunter_contacts:
+                position = (contact.get('position') or '').lower()
+                if any(role.lower() in position for role in target_roles):
+                    contact_info = contact
+                    first_name = contact.get('first_name', '')
+                    last_name = contact.get('last_name', '')
+                    contact_name = f"{first_name} {last_name}".strip()
+                    if not selected_role:
+                        selected_role = contact.get('position', 'Executive')
+                    break
+
+        # Fallback to basic company info if no specific contact found
+        if not contact_name:
+            ceo = validated_data.get('ceo', '')
+            if ceo:
+                contact_name = ceo
+                selected_role = 'CEO'
 
         markdown += "## Role\n"
-        markdown += "**CIO / CTO / CISO / COO / CFO / CPO**\n\n"
+        if selected_role:
+            markdown += f"**{selected_role}**\n\n"
+        else:
+            markdown += "**CIO / CTO / CISO / COO / CFO / CPO**\n\n"
 
         markdown += "## Representative Contact\n"
-        contact_name = leadership.get('cto', leadership.get('cio', 'Contact Name, Title'))
-        markdown += f"{contact_name}\n\n"
+        if contact_name:
+            markdown += f"{contact_name}\n\n"
+        else:
+            markdown += f"Contact Name, {selected_role or 'Title'}\n\n"
 
         markdown += "## About\n"
-        markdown += "Technology leader responsible for digital transformation and IT strategy.\n\n"
+        if selected_profile and selected_profile.get('bio'):
+            markdown += f"{selected_profile['bio']}\n\n"
+        else:
+            markdown += "Technology leader responsible for digital transformation and IT strategy.\n\n"
 
-        # Contact Details table
+        # Contact Details table - use actual data from Hunter.io
         markdown += "## Contact Details\n\n"
-        email = contacts.get('email', 'contact@company.com')
-        phone = contacts.get('phone', '+1 (555) 000-0000')
-        linkedin = contacts.get('linkedin', 'linkedin.com/in/contact')
 
-        markdown += f"| Channel | Details |\n"
-        markdown += f"|---------|----------|\n"
-        markdown += f"| Email | {email} |\n"
-        markdown += f"| Telephone | {phone} |\n"
-        markdown += f"| LinkedIn | {linkedin} |\n\n"
+        email = None
+        phone = None
+        linkedin = None
+
+        if contact_info:
+            email = contact_info.get('value') or contact_info.get('email')
+            phone = contact_info.get('phone_number') or contact_info.get('phone')
+            linkedin = contact_info.get('linkedin')
+
+        # Only show table if we have at least one real contact method
+        if email or phone or linkedin:
+            markdown += f"| Channel | Details |\n"
+            markdown += f"|---------|----------|\n"
+            if email:
+                markdown += f"| Email | {email} |\n"
+            if phone:
+                markdown += f"| Telephone | {phone} |\n"
+            if linkedin:
+                markdown += f"| LinkedIn | {linkedin} |\n"
+            markdown += "\n"
+        else:
+            markdown += "*Contact details available through company research channels*\n\n"
 
         markdown += "## Communication Preference\n"
-        markdown += "Email / LinkedIn / Phone / Events\n\n"
+        if selected_profile and selected_profile.get('communication_preference'):
+            comm_pref = selected_profile['communication_preference']
+            markdown += f"**{comm_pref.title()}** communication style\n\n"
+        else:
+            markdown += "Email / LinkedIn / Phone / Events\n\n"
 
         markdown += "## Strategic Priorities\n"
-        strategic_priorities = validated_data.get('strategic_priorities', [
-            'Infrastructure modernization',
-            'Cost optimization',
-            'Security enhancement'
-        ])
-        for priority in strategic_priorities[:3]:
-            markdown += f"- {priority}\n"
-        markdown += "\n"
+        if selected_profile and selected_profile.get('strategic_priorities'):
+            priorities_list = selected_profile['strategic_priorities']
+            for priority in priorities_list[:3]:
+                markdown += f"- {priority}\n"
+            markdown += "\n"
+        else:
+            strategic_priorities = validated_data.get('strategic_priorities', [
+                'Infrastructure modernization',
+                'Cost optimization',
+                'Security enhancement'
+            ])
+            for priority in strategic_priorities[:3]:
+                markdown += f"- {priority}\n"
+            markdown += "\n"
 
         markdown += "## Recommended Talking Points\n"
-        markdown += "1-2 sentences of persona-tailored language highlighting how HP solutions address their specific challenges and strategic goals.\n\n"
+        if selected_profile and selected_profile.get('recommended_approach'):
+            markdown += f"{selected_profile['recommended_approach']}\n\n"
+        else:
+            markdown += "Highlight how HP solutions address their specific challenges and strategic goals through proven ROI, deployment support, and enterprise scalability.\n\n"
 
         markdown += "---\n\n"
 
