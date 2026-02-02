@@ -59,6 +59,10 @@ class ProfileRequestResponse(BaseModel):
     status: str
     job_id: str
     message: Optional[str] = None
+    company_data: Dict[str, Any]
+    progress: int
+    current_step: str
+    created_at: str
 
 
 class JobStatus(BaseModel):
@@ -67,6 +71,13 @@ class JobStatus(BaseModel):
     progress: Optional[int] = None
     current_step: Optional[str] = None
     result: Optional[dict] = None
+    apollo_data: Optional[dict] = None
+    pdl_data: Optional[dict] = None
+    hunter_data: Optional[dict] = None
+    stakeholders_data: Optional[List[dict]] = None
+    council_metadata: Optional[dict] = None
+    slideshow_data: Optional[dict] = None
+    created_at: Optional[str] = None
 
 
 # Get environment variables (try both naming conventions)
@@ -253,7 +264,10 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Step 6: Generate slideshow
         jobs_store[job_id]["progress"] = 90
         jobs_store[job_id]["current_step"] = "Generating slideshow..."
-        slideshow_url = await generate_slideshow(company_data["company_name"], validated_data)
+        slideshow_result = await generate_slideshow(company_data["company_name"], validated_data)
+
+        # Store complete slideshow data
+        jobs_store[job_id]["slideshow_data"] = slideshow_result
 
         # Complete
         jobs_store[job_id]["status"] = "completed"
@@ -296,7 +310,8 @@ async def process_company_profile(job_id: str, company_data: dict):
             "success": True,
             "company_name": validated_data.get("company_name", company_data["company_name"]),
             "domain": validated_data.get("domain", company_data["domain"]),
-            "slideshow_url": slideshow_url,
+            "slideshow_url": slideshow_result.get("slideshow_url"),
+            "slideshow_id": slideshow_result.get("slideshow_id"),
             "confidence_score": validated_data.get("confidence_score", 0.85),
             # Core company data fields for the overview
             "industry": validated_data.get("industry"),
@@ -991,11 +1006,16 @@ async def store_validated_data(company_name: str, validated_data: dict):
         logger.error(f"Supabase storage error: {str(e)}")
 
 
-async def generate_slideshow(company_name: str, validated_data: dict) -> str:
+async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[str, Any]:
     """Generate slideshow using Gamma API"""
     if not GAMMA_API_KEY:
         logger.warning("Gamma API key not configured")
-        return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
+        return {
+            "success": False,
+            "slideshow_url": f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile",
+            "slideshow_id": None,
+            "error": "Gamma API key not configured"
+        }
 
     try:
         # Import and initialize Gamma slideshow creator
@@ -1016,17 +1036,26 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> str:
         result = await gamma_creator.create_slideshow(company_data)
 
         if result.get("success"):
-            slideshow_url = result.get("slideshow_url")
-            logger.info(f"Slideshow generated successfully: {slideshow_url}")
-            return slideshow_url
+            logger.info(f"Slideshow generated successfully: {result.get('slideshow_url')}")
+            return result
         else:
             logger.error(f"Slideshow generation failed: {result.get('error')}")
-            return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
+            return {
+                "success": False,
+                "slideshow_url": f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile",
+                "slideshow_id": None,
+                "error": result.get("error", "Unknown error")
+            }
 
     except Exception as e:
         logger.error(f"Error generating slideshow: {str(e)}")
-        # Return placeholder on error
-        return f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile"
+        # Return error info on exception
+        return {
+            "success": False,
+            "slideshow_url": f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile",
+            "slideshow_id": None,
+            "error": str(e)
+        }
 
 
 # Generate slideshow endpoint (on-demand)
@@ -1079,22 +1108,27 @@ async def generate_slideshow_endpoint(job_id: str):
 
         if slideshow_result.get("success"):
             slideshow_url = slideshow_result.get("slideshow_url")
+            slideshow_id = slideshow_result.get("slideshow_id")
 
-            # Update job result with new slideshow URL
+            # Update job result with complete slideshow data
             jobs_store[job_id]["result"]["slideshow_url"] = slideshow_url
+            jobs_store[job_id]["result"]["slideshow_id"] = slideshow_id
+            jobs_store[job_id]["slideshow_data"] = slideshow_result
 
             logger.info(f"Slideshow generated: {slideshow_url}")
 
             return {
                 "success": True,
                 "slideshow_url": slideshow_url,
+                "slideshow_id": slideshow_id,
                 "message": "Slideshow generated successfully"
             }
         else:
             return {
                 "success": False,
                 "error": slideshow_result.get("error", "Unknown error"),
-                "slideshow_url": None
+                "slideshow_url": None,
+                "slideshow_id": None
             }
 
     except Exception as e:
@@ -1148,7 +1182,11 @@ async def create_profile_request(
     return ProfileRequestResponse(
         status="success",
         job_id=job_id,
-        message="Profile request submitted successfully (production mode)"
+        message="Profile request submitted successfully (production mode)",
+        company_data=company_data,
+        progress=0,
+        current_step="Queued...",
+        created_at=jobs_store[job_id]["created_at"]
     )
 
 
@@ -1173,7 +1211,14 @@ async def get_job_status(job_id: str):
         status=job["status"],
         progress=job.get("progress", 0),
         current_step=job.get("current_step", "Unknown"),
-        result=job.get("result")
+        result=job.get("result"),
+        apollo_data=job.get("apollo_data"),
+        pdl_data=job.get("pdl_data"),
+        hunter_data=job.get("hunter_data"),
+        stakeholders_data=job.get("stakeholders_data"),
+        council_metadata=job.get("council_metadata"),
+        slideshow_data=job.get("slideshow_data"),
+        created_at=job.get("created_at")
     )
 
 
