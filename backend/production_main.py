@@ -58,8 +58,7 @@ class CompanyProfileRequest(BaseModel):
 class ProfileRequestResponse(BaseModel):
     status: str
     job_id: str
-    message: Optional[str] = None
-    company_data: Dict[str, Any]
+    message: Optional[str] = None    company_data: Dict[str, Any]
     progress: int
     current_step: str
     created_at: str
@@ -77,6 +76,7 @@ class JobStatus(BaseModel):
     stakeholders_data: Optional[List[dict]] = None
     council_metadata: Optional[dict] = None
     slideshow_data: Optional[dict] = None
+    news_data: Optional[dict] = None
     created_at: Optional[str] = None
 
 
@@ -240,6 +240,11 @@ async def process_company_profile(job_id: str, company_data: dict):
             jobs_store[job_id]["current_step"] = "Extracting contacts from Hunter.io..."
             stakeholders_data = extract_stakeholders_from_hunter(hunter_data)
 
+        # Step 2.9: Fetch recent news for sales intelligence
+        jobs_store[job_id]["progress"] = 48
+        jobs_store[job_id]["current_step"] = "Gathering recent news and buying signals..."
+        news_data = await fetch_company_news(company_data["company_name"], company_data.get("domain"))
+
         # Step 3: Store raw data in Supabase
         jobs_store[job_id]["progress"] = 50
         jobs_store[job_id]["current_step"] = "Storing raw data..."
@@ -248,7 +253,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Step 4: Validate with LLM Council (28 specialists + 1 aggregator)
         jobs_store[job_id]["progress"] = 60
         jobs_store[job_id]["current_step"] = "Running LLM Council (28 specialists)..."
-        validated_data = await validate_with_council(company_data, apollo_data, pdl_data, hunter_data, stakeholders_data)
+        validated_data = await validate_with_council(company_data, apollo_data, pdl_data, hunter_data, stakeholders_data, news_data)
 
         # Extract council metadata for debug mode
         council_metadata = validated_data.pop("_council_metadata", {})
@@ -351,6 +356,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["pdl_data"] = pdl_data
         jobs_store[job_id]["hunter_data"] = hunter_data
         jobs_store[job_id]["stakeholders_data"] = stakeholders_data
+        jobs_store[job_id]["news_data"] = news_data
 
         logger.info(f"Completed processing for job {job_id}")
 
@@ -884,6 +890,38 @@ def extract_data_from_apis(company_data: dict, apollo_data: dict, pdl_data: dict
     return result
 
 
+async def fetch_company_news(company_name: str, domain: Optional[str] = None) -> dict:
+    """Fetch recent company news using GNews API"""
+    try:
+        # Import news gatherer
+        import sys
+        sys.path.insert(0, 'worker')
+        from news_gatherer import gather_company_news
+
+        logger.info(f"Fetching recent news for {company_name}")
+        news_data = await gather_company_news(company_name, domain)
+
+        if news_data.get("success"):
+            logger.info(f"Found {news_data.get('articles_count', 0)} news articles for {company_name}")
+        else:
+            logger.warning(f"News gathering failed: {news_data.get('error', 'Unknown error')}")
+
+        return news_data
+
+    except Exception as e:
+        logger.error(f"Error fetching news: {e}")
+        return {
+            "success": False,
+            "error": str(e),
+            "summaries": {
+                "executive_hires": "No news data available",
+                "funding_news": "No news data available",
+                "partnership_news": "No news data available",
+                "expansion_news": "No news data available"
+            }
+        }
+
+
 async def store_raw_data(company_name: str, apollo_data: dict, pdl_data: dict, hunter_data: dict = None):
     """Store raw data in Supabase"""
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -1218,6 +1256,7 @@ async def get_job_status(job_id: str):
         stakeholders_data=job.get("stakeholders_data"),
         council_metadata=job.get("council_metadata"),
         slideshow_data=job.get("slideshow_data"),
+        news_data=job.get("news_data"),
         created_at=job.get("created_at")
     )
 
