@@ -133,6 +133,22 @@ async def root():
     }
 
 
+def _build_news_intelligence_section(validated_data: dict, news_data: Optional[dict]) -> Optional[dict]:
+    """Build news intelligence section safely handling None news_data."""
+    if not news_data or not news_data.get("success"):
+        return None
+
+    return {
+        "executiveChanges": validated_data.get("executive_hires", "No recent executive changes found"),
+        "funding": validated_data.get("funding_news", "No recent funding announcements found"),
+        "partnerships": validated_data.get("partnership_news", "No recent partnership or acquisition news found"),
+        "expansions": validated_data.get("expansion_news", "No recent expansion news found"),
+        "articlesCount": news_data.get("articles_count", 0),
+        "dateRange": news_data.get("date_range", "Last 90 days"),
+        "lastUpdated": news_data.get("raw_articles", [{}])[0].get("publishedAt", "") if news_data.get("raw_articles") else ""
+    }
+
+
 def build_buying_signals(validated_data: dict) -> Optional[dict]:
     """Build buying signals object from validated data with proper structure."""
     buying_signals = validated_data.get("buying_signals", {})
@@ -359,15 +375,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                 "strategyText": validated_data.get("sales_program", {}).get("strategy_text", "")
             } if validated_data.get("sales_program") else None,
             # News intelligence section (NEW - does not replace anything)
-            "news_intelligence": {
-                "executiveChanges": validated_data.get("executive_hires", "No recent executive changes found"),
-                "funding": validated_data.get("funding_news", "No recent funding announcements found"),
-                "partnerships": validated_data.get("partnership_news", "No recent partnership or acquisition news found"),
-                "expansions": validated_data.get("expansion_news", "No recent expansion news found"),
-                "articlesCount": news_data.get("articles_count", 0) if news_data else 0,
-                "dateRange": news_data.get("date_range", "Last 90 days") if news_data else "N/A",
-                "lastUpdated": news_data.get("raw_articles", [{}])[0].get("publishedAt", "") if news_data and news_data.get("raw_articles") else ""
-            } if news_data and news_data.get("success") else None
+            "news_intelligence": _build_news_intelligence_section(validated_data, news_data)
         }
         # Store raw API data for debug mode
         jobs_store[job_id]["apollo_data"] = apollo_data
