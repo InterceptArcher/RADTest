@@ -258,23 +258,24 @@ Intelligent data validation using LLM agents with three validation cases:
 
 **Implementation**: `backend/worker/gamma_slideshow.py`
 
-Automated slideshow generation from finalized company data:
-- Retrieves validated data from Supabase
-- Formats as structured markdown with sections:
-  - Company Overview
-  - Key Metrics
-  - Leadership
-  - Technology Stack
-  - Market Presence
-  - Contact Information
-  - Data Quality
-- Sends to Gamma API for professional slideshow generation
-- Returns slideshow URL
+Automated slideshow generation from finalized company data using HP-branded Account Intelligence Report template:
+
+**Slide Structure** (Based on HP template in `/template` directory):
+1. **Title Slide** - Account Intelligence Report with company name and date
+2. **Executive Snapshot** - Company overview, account type, industry, estimated IT spend, and installed technologies
+3. **Active Buying Signals** - Top 3 intent topics, partner mentions, and news triggers (executive hires, funding, expansions, partnerships)
+4. **Opportunity Themes** - Emerging priorities, pain point summary, and recommended focus areas
+5. **Role Profiles** - C-level contact details with strategic priorities and recommended talking points
+6. **Next Steps and Toolkit** - Intent level assessment, recommended actions, and supporting assets
+7. **Supporting Assets** - Email templates with personalized outreach copy
 
 **Methodology**:
-- **Template-based markdown**: Consistent structure across all profiles
-- **Data quality indicators**: Confidence scores displayed in slideshow
-- **Professional theming**: Uses Gamma's professional theme with auto-layout
+- **HP-branded template structure**: Professional sales intelligence format designed for enterprise B2B sales
+- **Sales-focused content**: Intent signals, buying signals, and persona-based recommendations
+- **Contact intelligence**: C-level profiles with communication preferences and talking points
+- **Actionable insights**: Specific next steps, email templates, and engagement strategies
+- **Data quality indicators**: Confidence scores and source attribution displayed in footer
+- **Professional theming**: Enterprise sales presentation optimized for "enterprise sales and business intelligence" audience
 - **Batch support**: Can generate multiple slideshows efficiently
 
 **Frontend Integration**:
