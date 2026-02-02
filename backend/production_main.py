@@ -224,8 +224,12 @@ async def process_company_profile(job_id: str, company_data: dict):
     """
     Background task to process company profile with real APIs.
     """
-    # Initialize news_data to avoid NameError if exception occurs before news gathering
+    # Initialize ALL variables at function start to prevent NameError
     news_data = None
+    apollo_data = {}
+    pdl_data = {}
+    hunter_data = {}
+    stakeholders_data = []
 
     try:
         logger.info(f"Starting processing for job {job_id}: {company_data['company_name']}")
@@ -388,12 +392,20 @@ async def process_company_profile(job_id: str, company_data: dict):
 
     except Exception as e:
         logger.error(f"Error processing job {job_id}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         jobs_store[job_id]["status"] = "failed"
         jobs_store[job_id]["current_step"] = f"Error: {str(e)}"
         jobs_store[job_id]["result"] = {
             "success": False,
             "error": str(e)
         }
+        # Store whatever data we gathered
+        jobs_store[job_id]["apollo_data"] = apollo_data
+        jobs_store[job_id]["pdl_data"] = pdl_data
+        jobs_store[job_id]["hunter_data"] = hunter_data
+        jobs_store[job_id]["stakeholders_data"] = stakeholders_data
+        jobs_store[job_id]["news_data"] = news_data
 
 
 async def fetch_apollo_data(company_data: dict) -> dict:
