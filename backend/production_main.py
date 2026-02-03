@@ -212,6 +212,93 @@ def _build_news_intelligence_section(validated_data: dict, news_data: Optional[d
     }
 
 
+def _build_executive_snapshot(validated_data: dict, company_data: dict) -> Optional[dict]:
+    """Build executive snapshot from nested structure or flat data as fallback."""
+    # Check if we have nested executive_snapshot
+    es = validated_data.get("executive_snapshot", {})
+    tech_stack = validated_data.get("technology_stack", {})
+
+    # Get company overview - try multiple sources
+    company_overview = (
+        es.get("company_overview") or
+        validated_data.get("company_overview") or
+        validated_data.get("summary") or
+        ""
+    )
+
+    # Build technology list from various sources
+    technologies = validated_data.get("technologies", [])
+    installed_techs = es.get("installed_technologies", [])
+
+    # If we have flat technologies list, convert to installed_technologies format
+    if technologies and not installed_techs:
+        installed_techs = [{"name": t, "category": "Unknown"} for t in technologies[:10]]
+
+    # Determine company classification
+    company_type = validated_data.get("company_type", "").lower()
+    classification = "Private"
+    if "public" in company_type:
+        classification = "Public"
+    elif "government" in company_type or "gov" in company_type:
+        classification = "Government"
+
+    # Build the snapshot - always return something if we have any data
+    has_data = (
+        company_overview or
+        technologies or
+        validated_data.get("industry") or
+        validated_data.get("employee_count") or
+        tech_stack
+    )
+
+    if not has_data:
+        return None
+
+    return {
+        "accountName": es.get("account_name") or validated_data.get("company_name") or company_data.get("company_name", ""),
+        "companyOverview": company_overview or f"{validated_data.get('company_name', 'This company')} operates in the {validated_data.get('industry', 'technology')} industry.",
+        "accountType": es.get("account_type") or ("Public Sector" if classification == "Government" else "Private Sector"),
+        "companyClassification": es.get("company_classification") or classification,
+        "estimatedITSpend": es.get("estimated_it_spend") or validated_data.get("estimated_it_spend") or "",
+        "installedTechnologies": installed_techs,
+        "technologyStack": tech_stack if isinstance(tech_stack, dict) else {}
+    }
+
+
+def _build_opportunity_themes_from_flat(validated_data: dict) -> dict:
+    """Build opportunity themes from flat data if nested structure not available."""
+    # Try to extract from buying_signals.opportunity_themes
+    buying_signals = validated_data.get("buying_signals", {})
+    opp_themes = buying_signals.get("opportunity_themes", [])
+
+    if opp_themes:
+        pain_points = []
+        sales_opps = []
+        solutions = []
+
+        for theme in opp_themes[:3]:
+            if isinstance(theme, dict):
+                challenge = theme.get("challenge", "")
+                solution = theme.get("solution_category", "") or theme.get("solutionCategory", "")
+                value_prop = theme.get("value_proposition", "")
+
+                if challenge:
+                    pain_points.append(challenge)
+                if value_prop:
+                    sales_opps.append(value_prop)
+                if solution:
+                    solutions.append(f"Consider {solution} solutions to address this challenge.")
+
+        if pain_points or sales_opps or solutions:
+            return {
+                "pain_points": pain_points,
+                "sales_opportunities": sales_opps,
+                "recommended_solution_areas": solutions
+            }
+
+    return {}
+
+
 def build_buying_signals(validated_data: dict) -> Optional[dict]:
     """Build buying signals object from validated data with proper structure."""
     buying_signals = validated_data.get("buying_signals", {})
@@ -478,17 +565,10 @@ async def process_company_profile(job_id: str, company_data: dict):
             "linkedin_url": validated_data.get("linkedin_url"),
             "validated_data": validated_data,
             # New intelligence sections at top level for frontend
-            "executive_snapshot": {
-                "accountName": validated_data.get("executive_snapshot", {}).get("account_name", validated_data.get("company_name", "")),
-                "companyOverview": validated_data.get("executive_snapshot", {}).get("company_overview", ""),
-                "accountType": validated_data.get("executive_snapshot", {}).get("account_type", "Private Sector"),
-                "companyClassification": validated_data.get("executive_snapshot", {}).get("company_classification", "Private"),
-                "estimatedITSpend": validated_data.get("executive_snapshot", {}).get("estimated_it_spend", ""),
-                "installedTechnologies": validated_data.get("executive_snapshot", {}).get("installed_technologies", []),
-                "technologyStack": validated_data.get("technology_stack", {})
-            } if validated_data.get("executive_snapshot") or validated_data.get("technology_stack") else None,
+            # Build executive_snapshot from nested or flat data
+            "executive_snapshot": _build_executive_snapshot(validated_data, company_data),
             "buying_signals": build_buying_signals(validated_data),
-            "opportunity_themes": validated_data.get("opportunity_themes_detailed", {}),
+            "opportunity_themes": validated_data.get("opportunity_themes_detailed", {}) or _build_opportunity_themes_from_flat(validated_data),
             "stakeholder_map": stakeholder_map_data,
             "stakeholder_profiles": validated_data.get("stakeholder_profiles", {}),
             "supporting_assets": validated_data.get("supporting_assets", {}),
