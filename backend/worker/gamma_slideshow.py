@@ -126,6 +126,42 @@ class GammaSlideshowCreator:
         markdown = ""
 
         # ============================================================
+        # DESIGN INSTRUCTIONS FOR GAMMA (will be interpreted by AI)
+        # ============================================================
+        markdown += """<!--
+CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
+
+1. DESIGN STYLE: Create a professional consulting-style presentation deck
+   - Clean, corporate aesthetic similar to McKinsey/BCG/Bain decks
+   - Consistent slide sizes throughout - all cards should be the same dimensions
+   - Use large card format to fit more content per slide
+   - Minimal, professional color palette (blues, grays, whites)
+
+2. NO AI-GENERATED IMAGES: Do NOT add any AI-generated images, stock photos,
+   or decorative imagery. This is a data-driven business intelligence report.
+   The only visuals should be:
+   - Charts and graphs (bar charts, pie charts for data)
+   - Tables for structured data
+   - Icons only if absolutely necessary for navigation
+
+3. DATA VISUALIZATION PRIORITY:
+   - Render all tables as actual data tables
+   - Convert intent score data to bar charts where applicable
+   - Use clean data visualizations instead of decorative elements
+
+4. TYPOGRAPHY & LAYOUT:
+   - Professional business fonts
+   - Clear hierarchy with headers
+   - Adequate whitespace
+   - Left-aligned text for readability
+
+5. HP BRANDING: This is an HP enterprise document - maintain professional,
+   corporate appearance appropriate for Fortune 500 sales materials.
+-->
+
+"""
+
+        # ============================================================
         # SLIDE 1: Title Slide
         # ============================================================
         markdown += f"# Account Intelligence Report: {company_name}\n\n"
@@ -216,7 +252,8 @@ class GammaSlideshowCreator:
                 {'topic': 'AI & Machine Learning Solutions', 'score': 72}
             ]
 
-        # Format for chart visualization
+        # Format data for chart visualization
+        markdown += "**[RENDER AS HORIZONTAL BAR CHART]**\n\n"
         markdown += "| Intent Topic | Score |\n"
         markdown += "|-------------|-------|\n"
         for i, topic in enumerate(intent_topics[:3], 1):
@@ -229,8 +266,8 @@ class GammaSlideshowCreator:
             markdown += f"| {topic_name} | {topic_score}% |\n"
         markdown += "\n"
 
-        # Intent Score Chart description (Gamma will render)
-        markdown += "*Intent scores based on digital behavior analysis and research activity*\n\n"
+        # Intent Score explanation
+        markdown += "*Intent scores based on digital behavior analysis and research activity. Higher scores indicate stronger buying intent.*\n\n"
 
         # Top Partner Mentions
         markdown += "## Top Partner Mentions or Keywords\n\n"
@@ -599,22 +636,37 @@ class GammaSlideshowCreator:
             markdown += "---\n\n"
 
         # ============================================================
-        # LAST SLIDE: Feedback and Questions
+        # LAST SLIDE: Thank You, Feedback and Questions
         # ============================================================
-        markdown += "# Feedback and Questions\n\n"
+        markdown += "# Thank You\n\n"
 
-        markdown += "## Let Us Know What You Think\n\n"
-        markdown += "Your feedback helps us make future reports even more relevant and useful.\n\n"
+        markdown += "## We Value Your Feedback\n\n"
+        markdown += "Your feedback helps us make future reports even more relevant and useful for your sales efforts.\n\n"
 
         markdown += "## Share Your Thoughts\n\n"
-        markdown += "If you have any questions about this report, contact the HP RAD Intelligence Desk.\n\n"
+        markdown += "If you have any questions about this report or would like additional intelligence on this account:\n\n"
+        markdown += "**Contact the HP RAD Intelligence Desk**\n\n"
+
+        markdown += "## What Would Make This Report More Useful?\n\n"
+        markdown += "- Additional stakeholder profiles?\n"
+        markdown += "- Deeper competitive analysis?\n"
+        markdown += "- More detailed technology stack information?\n"
+        markdown += "- Custom research on specific initiatives?\n\n"
 
         markdown += "---\n\n"
 
         # Footer with metadata
+        markdown += "## Report Metadata\n\n"
         confidence_score = company_data.get("confidence_score", 0.85)
         sources_count = len(validated_data.get('sources', ['Apollo', 'PDL', 'Hunter', 'GNews']))
-        markdown += f"*Data Confidence Score: {confidence_score:.0%} | Data Sources: {sources_count} | Generated: {current_date}*\n"
+        markdown += f"| Metric | Value |\n"
+        markdown += f"|--------|-------|\n"
+        markdown += f"| Data Confidence Score | {confidence_score:.0%} |\n"
+        markdown += f"| Data Sources Used | {sources_count} |\n"
+        markdown += f"| Report Generated | {current_date} |\n"
+        markdown += f"| Prepared By | HP RAD Intelligence Desk |\n\n"
+
+        markdown += "*Confidential - For Internal HP Use Only*\n"
 
         return markdown
 
@@ -642,13 +694,19 @@ class GammaSlideshowCreator:
             "Content-Type": "application/json"
         }
 
-        # Use only documented Gamma API options
-        # Note: Image/design options may not be supported - keeping payload simple
+        # Professional HP consulting deck configuration
+        # Prioritize data visualization over decorative images
         payload = {
             "inputText": markdown_content,
             "textMode": "preserve",  # Keep text exactly as provided - no AI rewriting
             "format": "presentation",
             "numCards": num_cards,
+            # Professional design settings
+            "imageStyle": "none",  # Disable AI-generated images for professional look
+            "cardSize": "large",   # Larger cards to accommodate more information
+            "style": "professional",  # Professional/corporate theme
+            "theme": "corporate",  # Corporate design theme
+            "includeCharts": True,  # Enable chart rendering for data tables
             "sharingOptions": {
                 "externalAccess": "view"
             }
