@@ -144,10 +144,47 @@ async def root():
         "data_sources": ["Apollo.io", "PeopleDataLabs", "OpenAI", "Gamma API"],
         "endpoints": {
             "health": "/health",
+            "debug_env": "/debug-env",
             "profile_request": "/profile-request",
             "job_status": "/job-status/{job_id}",
             "docs": "/docs"
         }
+    }
+
+
+# Debug endpoint to check env vars at runtime
+@app.get("/debug-env", tags=["Debug"])
+async def debug_env():
+    """Debug endpoint to check environment variable status at runtime."""
+    def mask(val):
+        if not val:
+            return "NOT SET"
+        if len(val) <= 8:
+            return f"SET ({len(val)} chars)"
+        return f"{val[:4]}...{val[-4:]} ({len(val)} chars)"
+
+    return {
+        "global_vars": {
+            "APOLLO_API_KEY": mask(APOLLO_API_KEY),
+            "PEOPLEDATALABS_API_KEY": mask(PEOPLEDATALABS_API_KEY),
+            "HUNTER_API_KEY": mask(HUNTER_API_KEY),
+            "OPENAI_API_KEY": mask(OPENAI_API_KEY),
+            "GNEWS_API_KEY": mask(GNEWS_API_KEY),
+            "SUPABASE_URL": mask(SUPABASE_URL),
+            "SUPABASE_KEY": mask(SUPABASE_KEY),
+            "GAMMA_API_KEY": mask(GAMMA_API_KEY),
+        },
+        "runtime_getenv": {
+            "APOLLO_API_KEY": mask(os.getenv("APOLLO_API_KEY")),
+            "PEOPLEDATALABS_API_KEY": mask(os.getenv("PEOPLEDATALABS_API_KEY")),
+            "HUNTER_API_KEY": mask(os.getenv("HUNTER_API_KEY")),
+            "OPENAI_API_KEY": mask(os.getenv("OPENAI_API_KEY")),
+            "GNEWS_API_KEY": mask(os.getenv("GNEWS_API_KEY")),
+            "SUPABASE_URL": mask(os.getenv("SUPABASE_URL")),
+            "SUPABASE_KEY": mask(os.getenv("SUPABASE_KEY")),
+            "GAMMA_API_KEY": mask(os.getenv("GAMMA_API_KEY")),
+        },
+        "note": "global_vars set at module load, runtime_getenv checks at request time"
     }
 
 
