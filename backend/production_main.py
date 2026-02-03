@@ -432,7 +432,12 @@ async def fetch_apollo_data(company_data: dict) -> dict:
             logger.info(f"Apollo: Trying organizations/enrich for {company_data['domain']}")
             response = await client.post(
                 "https://api.apollo.io/v1/organizations/enrich",
-                headers={"Content-Type": "application/json", "Cache-Control": "no-cache"},
+                headers={
+                    "Content-Type": "application/json",
+                    "Cache-Control": "no-cache",
+                    "User-Agent": "RADTest/1.0 (Sales Intelligence Platform)",
+                    "Accept": "application/json"
+                },
                 json={
                     "api_key": APOLLO_API_KEY,
                     "domain": company_data["domain"]
@@ -447,15 +452,25 @@ async def fetch_apollo_data(company_data: dict) -> dict:
                     result = data
                 else:
                     logger.warning(f"Apollo.io returned empty organization data")
+            elif response.status_code == 401:
+                logger.error(f"Apollo.io 401 Unauthorized - API key is invalid or expired. Get a new key at https://app.apollo.io/settings/integrations/api")
+            elif response.status_code == 403:
+                logger.error(f"Apollo.io 403 Forbidden - Request blocked. Response: {response.text[:200]}")
+            elif response.status_code == 422:
+                logger.error(f"Apollo.io 422 Unprocessable - Invalid request: {response.text[:200]}")
             else:
-                logger.warning(f"Apollo.io organizations/enrich returned {response.status_code}")
+                logger.warning(f"Apollo.io organizations/enrich returned {response.status_code}: {response.text[:200]}")
 
             # Try 2: If no result, try mixed_people/search to find CEO
             if not result or not result.get("organization"):
                 logger.info(f"Apollo: Trying mixed_people/search for CEO at {company_data['domain']}")
                 response2 = await client.post(
                     "https://api.apollo.io/v1/mixed_people/search",
-                    headers={"Content-Type": "application/json"},
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": "RADTest/1.0 (Sales Intelligence Platform)",
+                        "Accept": "application/json"
+                    },
                     json={
                         "api_key": APOLLO_API_KEY,
                         "q_organization_domains": company_data["domain"],
@@ -726,7 +741,11 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
             logger.info(f"Apollo: Searching for C-suite stakeholders at {domain}")
             response = await client.post(
                 "https://api.apollo.io/v1/mixed_people/search",
-                headers={"Content-Type": "application/json"},
+                headers={
+                    "Content-Type": "application/json",
+                    "User-Agent": "RADTest/1.0 (Sales Intelligence Platform)",
+                    "Accept": "application/json"
+                },
                 json={
                     "api_key": APOLLO_API_KEY,
                     "q_organization_domains": domain,
