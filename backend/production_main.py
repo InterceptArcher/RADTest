@@ -134,18 +134,26 @@ async def root():
 
 
 def _build_news_intelligence_section(validated_data: dict, news_data: Optional[dict]) -> Optional[dict]:
-    """Build news intelligence section safely handling None news_data."""
-    if not news_data or not news_data.get("success"):
+    """Build news intelligence section from council-aggregated data and raw news_data."""
+    # Check if we have news data from either source
+    council_news = validated_data.get("news_intelligence", {})
+    has_council_news = bool(council_news and any(council_news.values()))
+    has_raw_news = news_data and news_data.get("success")
+
+    if not has_council_news and not has_raw_news:
         return None
 
+    # Prefer council-aggregated insights, fallback to raw news summaries
     return {
-        "executiveChanges": validated_data.get("executive_hires", "No recent executive changes found"),
-        "funding": validated_data.get("funding_news", "No recent funding announcements found"),
-        "partnerships": validated_data.get("partnership_news", "No recent partnership or acquisition news found"),
-        "expansions": validated_data.get("expansion_news", "No recent expansion news found"),
-        "articlesCount": news_data.get("articles_count", 0),
-        "dateRange": news_data.get("date_range", "Last 90 days"),
-        "lastUpdated": news_data.get("raw_articles", [{}])[0].get("publishedAt", "") if news_data.get("raw_articles") else ""
+        "executiveChanges": council_news.get("executive_changes") or validated_data.get("executive_hires", "No recent executive changes found"),
+        "funding": council_news.get("funding_news") or validated_data.get("funding_news", "No recent funding announcements found"),
+        "partnerships": council_news.get("partnership_news") or validated_data.get("partnership_news", "No recent partnership or acquisition news found"),
+        "expansions": council_news.get("expansion_news") or validated_data.get("expansion_news", "No recent expansion news found"),
+        "keyInsights": council_news.get("key_insights", []),
+        "salesImplications": council_news.get("sales_implications", ""),
+        "articlesCount": council_news.get("articles_analyzed") or (news_data.get("articles_count", 0) if news_data else 0),
+        "dateRange": news_data.get("date_range", "Last 90 days") if news_data else "Last 90 days",
+        "lastUpdated": news_data.get("raw_articles", [{}])[0].get("publishedAt", "") if news_data and news_data.get("raw_articles") else ""
     }
 
 
@@ -1702,6 +1710,28 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                     "source": "Hunter.io",
                     "fields_retrieved": hunter_extracted,
                     "status": "success" if hunter_data else "no_data"
+                }
+            },
+            {
+                "id": "step-3c",
+                "name": "GNews Intelligence Collection",
+                "description": "Gathering recent company news from GNews API (last 90 days)",
+                "status": "completed" if news_data and news_data.get("success") else ("failed" if news_data and news_data.get("error") else "skipped"),
+                "start_time": (base_time + timedelta(seconds=3, milliseconds=500)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
+                "duration": 500,
+                "metadata": {
+                    "source": "GNews API",
+                    "articles_found": news_data.get("articles_count", 0) if news_data else 0,
+                    "date_range": news_data.get("date_range", "Last 90 days") if news_data else "N/A",
+                    "categories_found": {
+                        "executive_changes": len(news_data.get("categories", {}).get("executive_changes", [])) if news_data else 0,
+                        "funding": len(news_data.get("categories", {}).get("funding", [])) if news_data else 0,
+                        "partnerships": len(news_data.get("categories", {}).get("partnerships", [])) if news_data else 0,
+                        "expansions": len(news_data.get("categories", {}).get("expansions", [])) if news_data else 0,
+                        "products": len(news_data.get("categories", {}).get("products", [])) if news_data else 0
+                    },
+                    "status": "success" if news_data and news_data.get("success") else (news_data.get("error", "not_configured") if news_data else "not_configured")
                 }
             },
             {

@@ -187,6 +187,45 @@ export default function NewsIntelligenceCard({
             })}
           </div>
 
+          {/* Key Insights from LLM Analysis */}
+          {newsIntelligence.keyInsights && newsIntelligence.keyInsights.length > 0 && (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center">
+                <svg className="w-4 h-4 mr-2 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
+                </svg>
+                Key Insights from News Analysis
+              </h3>
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                <ul className="space-y-2">
+                  {newsIntelligence.keyInsights.map((insight, index) => (
+                    <li key={index} className="flex items-start">
+                      <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-amber-200 text-amber-700 text-xs font-medium mr-2 flex-shrink-0 mt-0.5">
+                        {index + 1}
+                      </span>
+                      <span className="text-sm text-slate-700">{insight}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          )}
+
+          {/* Sales Implications */}
+          {newsIntelligence.salesImplications && (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center">
+                <svg className="w-4 h-4 mr-2 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+                Sales Implications
+              </h3>
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
+                <p className="text-sm text-slate-700">{newsIntelligence.salesImplications}</p>
+              </div>
+            </div>
+          )}
+
           {/* No News State */}
           {!hasNews && (
             <div className="mt-6 bg-slate-50 rounded-xl p-6 text-center">

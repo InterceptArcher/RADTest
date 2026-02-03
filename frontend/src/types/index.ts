@@ -415,13 +415,15 @@ export interface SalesProgram {
 }
 
 /**
- * News Intelligence - Recent company news and events.
+ * News Intelligence - Recent company news and events analyzed by LLM Council.
  */
 export interface NewsIntelligence {
   executiveChanges: string;
   funding: string;
   partnerships: string;
   expansions: string;
+  keyInsights?: string[];
+  salesImplications?: string;
   articlesCount: number;
   dateRange: string;
   lastUpdated?: string;

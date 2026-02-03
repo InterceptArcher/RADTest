@@ -373,10 +373,36 @@ Output JSON: {
     }
 }"""
     },
+    {
+        "id": "news_intelligence_analyst",
+        "name": "News Intelligence Analyst",
+        "focus": "news_intelligence",
+        "prompt": """You are a news intelligence analyst. Analyze recent company news to extract actionable sales intelligence:
+
+From the news data provided, identify and summarize:
+1. EXECUTIVE CHANGES: New hires, departures, promotions (especially C-suite) - these indicate org changes and new priorities
+2. FUNDING NEWS: Recent funding rounds, valuations, investor information - indicates growth capital and spending capacity
+3. PARTNERSHIPS & M&A: Strategic partnerships, acquisitions, mergers - indicates strategic direction and integration needs
+4. EXPANSION NEWS: New offices, market expansion, geographic growth - indicates infrastructure and scaling needs
+5. PRODUCT LAUNCHES: New products, services, major updates - indicates innovation focus and potential tech needs
+
+For each category, provide a clear summary suitable for sales intelligence briefings.
+
+Output JSON: {
+    "news_executive_changes": "Summary of executive changes and their implications for sales...",
+    "news_funding": "Summary of funding news and spending implications...",
+    "news_partnerships": "Summary of partnership/M&A activity and opportunities...",
+    "news_expansions": "Summary of expansion news and infrastructure needs...",
+    "news_product_launches": "Summary of product news and innovation focus...",
+    "news_key_insights": ["Key insight 1", "Key insight 2", "Key insight 3"],
+    "news_sales_implications": "Overall sales implications from recent news...",
+    "news_timing_signals": "Best timing indicators from news for outreach..."
+}"""
+    },
 ]
 
 # Aggregator prompt
-AGGREGATOR_PROMPT = """You are the Chief Data Aggregator. You have received analyses from 28 specialist LLMs about a company.
+AGGREGATOR_PROMPT = """You are the Chief Data Aggregator. You have received analyses from 29 specialist LLMs about a company.
 
 Your job is to:
 1. Synthesize all specialist inputs into a single, authoritative company profile with EXPANDED INTELLIGENCE
@@ -385,6 +411,7 @@ Your job is to:
 4. List specifics instead of generalizations (e.g., list actual country names, not "operates globally")
 5. Use actual numbers, not ranges when possible
 6. Remove any fluff or marketing language
+7. INTEGRATE NEWS DATA: Use recent news to inform buying signals, scoops, and sales strategy
 
 CRITICAL OUTPUT RULES:
 - CAPITALIZATION: Use Proper Title Case for all names (company names, person names, cities, countries, industries)
@@ -394,6 +421,7 @@ CRITICAL OUTPUT RULES:
 - ceo: Full name with proper capitalization
 - target_market: List specific segments
 - technologies: List actual tech names
+- NEWS INTEGRATION: Recent news should directly influence buying_signals.scoops and sales timing
 
 Output a clean JSON object with BOTH original and EXPANDED fields:
 {{
@@ -427,11 +455,21 @@ Output a clean JSON object with BOTH original and EXPANDED fields:
         "intent_topics": ["Topic 1", "Topic 2", "Topic 3"],
         "signal_strength": "low/medium/high/very_high",
         "scoops": [
-            {{"type": "executive_hire/funding/expansion/ma", "title": "...", "date": "YYYY-MM-DD or null", "details": "..."}}
+            {{"type": "executive_hire/funding/expansion/merger_acquisition/product_launch", "title": "...", "date": "YYYY-MM-DD or null", "details": "..."}}
         ],
         "opportunity_themes": [
             {{"challenge": "...", "solution_category": "...", "value_proposition": "..."}}
         ]
+    }},
+
+    "news_intelligence": {{
+        "executive_changes": "Summary of recent executive hires/departures from news",
+        "funding_news": "Summary of recent funding/investment news",
+        "partnership_news": "Summary of recent partnerships/M&A from news",
+        "expansion_news": "Summary of recent expansion/growth news",
+        "key_insights": ["Actionable insight 1 from news", "Actionable insight 2"],
+        "sales_implications": "How recent news affects sales approach",
+        "articles_analyzed": number
     }},
 
     "technology_stack": {{
@@ -448,7 +486,7 @@ Output a clean JSON object with BOTH original and EXPANDED fields:
     "sales_program": {{
         "intent_level": "Low/Medium/High/Very High",
         "intent_score": 0.0-1.0,
-        "strategy_text": "Sales strategy based on intent level"
+        "strategy_text": "Sales strategy based on intent level and recent news"
     }}
 }}
 
