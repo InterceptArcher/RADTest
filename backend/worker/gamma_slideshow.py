@@ -642,29 +642,13 @@ class GammaSlideshowCreator:
             "Content-Type": "application/json"
         }
 
+        # Use only documented Gamma API options
+        # Note: Image/design options may not be supported - keeping payload simple
         payload = {
             "inputText": markdown_content,
-            "textMode": "preserve",  # Keep text exactly as provided
+            "textMode": "preserve",  # Keep text exactly as provided - no AI rewriting
             "format": "presentation",
             "numCards": num_cards,
-            "textOptions": {
-                "tone": "professional",
-                "audience": "enterprise B2B sales professionals",
-                "language": "en"
-            },
-            "imageOptions": {
-                "source": "none",  # NO AI generated images
-                "style": "none"    # Disable image generation
-            },
-            "designOptions": {
-                "style": "professional",  # Corporate/professional design
-                "colorScheme": "blue",    # HP blue theming
-                "layout": "clean"         # Clean, data-focused layout
-            },
-            "chartOptions": {
-                "enabled": True,  # Enable charts for data visualization
-                "style": "professional"
-            },
             "sharingOptions": {
                 "externalAccess": "view"
             }

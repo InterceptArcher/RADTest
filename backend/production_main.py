@@ -1537,7 +1537,7 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
         logger.warning("Gamma API key not configured")
         return {
             "success": False,
-            "slideshow_url": f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile",
+            "slideshow_url": None,  # Don't return fake URLs
             "slideshow_id": None,
             "error": "Gamma API key not configured"
         }
@@ -1561,23 +1561,34 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
         result = await gamma_creator.create_slideshow(company_data)
 
         if result.get("success"):
-            logger.info(f"Slideshow generated successfully: {result.get('slideshow_url')}")
-            return result
+            slideshow_url = result.get('slideshow_url')
+            # Validate the URL format
+            if slideshow_url and slideshow_url.startswith('https://gamma.app/'):
+                logger.info(f"Slideshow generated successfully: {slideshow_url}")
+                return result
+            else:
+                logger.error(f"Invalid slideshow URL returned: {slideshow_url}")
+                return {
+                    "success": False,
+                    "slideshow_url": None,
+                    "slideshow_id": None,
+                    "error": f"Invalid slideshow URL: {slideshow_url}"
+                }
         else:
             logger.error(f"Slideshow generation failed: {result.get('error')}")
             return {
                 "success": False,
-                "slideshow_url": f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile",
+                "slideshow_url": None,  # Don't return fake URLs
                 "slideshow_id": None,
                 "error": result.get("error", "Unknown error")
             }
 
     except Exception as e:
         logger.error(f"Error generating slideshow: {str(e)}")
-        # Return error info on exception
+        # Return error info on exception - no fake URLs
         return {
             "success": False,
-            "slideshow_url": f"https://gamma.app/docs/{company_name.lower().replace(' ', '-')}-profile",
+            "slideshow_url": None,
             "slideshow_id": None,
             "error": str(e)
         }
