@@ -4,3 +4,4 @@ export { default as StakeholderMapCard } from './StakeholderMapCard';
 export { default as SalesProgramCard } from './SalesProgramCard';
 export { default as OutreachGeneratorModal } from './OutreachGeneratorModal';
 export { default as NewsIntelligenceCard } from './NewsIntelligenceCard';
+export { default as OpportunityThemesCard } from './OpportunityThemesCard';

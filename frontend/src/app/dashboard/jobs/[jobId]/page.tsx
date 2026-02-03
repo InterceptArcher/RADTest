@@ -11,6 +11,7 @@ import {
   SalesProgramCard,
   OutreachGeneratorModal,
   NewsIntelligenceCard,
+  OpportunityThemesCard,
 } from '@/components/intelligence';
 import type { StakeholderRoleType } from '@/types';
 
@@ -169,6 +170,7 @@ export default function JobDetailPage() {
   // Extract new intelligence sections from result
   const executiveSnapshot = job.result.executive_snapshot;
   const buyingSignals = job.result.buying_signals;
+  const opportunityThemes = job.result.opportunity_themes;
   const stakeholderMap = job.result.stakeholder_map;
   const salesProgram = job.result.sales_program;
   const newsIntelligence = job.result.news_intelligence;
@@ -270,6 +272,11 @@ export default function JobDetailPage() {
           {/* Buying Signals - New Intelligence Section */}
           {buyingSignals && (
             <BuyingSignalsCard signals={buyingSignals} />
+          )}
+
+          {/* Opportunity Themes - New Intelligence Section */}
+          {opportunityThemes && (
+            <OpportunityThemesCard themes={opportunityThemes} />
           )}
 
           {/* News Intelligence - New Intelligence Section */}

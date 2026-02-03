@@ -19,6 +19,9 @@ load_dotenv()
 # Import LLM Council for 20-specialist validation
 from llm_council import validate_with_council, SPECIALISTS
 
+# Import Orchestrator for intelligent API routing
+from orchestrator import analyze_and_plan, OrchestratorResult, should_query_api
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -78,6 +81,7 @@ class JobStatus(BaseModel):
     council_metadata: Optional[dict] = None
     slideshow_data: Optional[dict] = None
     news_data: Optional[dict] = None
+    orchestrator_data: Optional[dict] = None
     created_at: Optional[str] = None
 
 
@@ -176,13 +180,25 @@ def build_buying_signals(validated_data: dict) -> Optional[dict]:
         scoops_data = validated_data.get("scoops", {})
         scoops = scoops_data.get("scoops", []) if isinstance(scoops_data, dict) else []
 
-    # Get intent topics
+    # Get intent topics (simple list)
     intent_topics = buying_signals.get("intent_topics", [])
     if not intent_topics:
         # Try to extract from buying indicators
         indicators = buying_signals.get("buying_indicators", [])
         if indicators:
             intent_topics = indicators[:5]
+
+    # Get enhanced intent topics with detailed descriptions
+    intent_topics_detailed = buying_signals.get("intent_topics_detailed", [])
+
+    # Get interest over time data
+    interest_over_time = buying_signals.get("interest_over_time", {})
+
+    # Get top partner mentions
+    top_partner_mentions = buying_signals.get("top_partner_mentions", [])
+
+    # Get key signals with news paragraphs
+    key_signals = buying_signals.get("key_signals", {})
 
     # Determine signal strength based on available data
     signal_strength = buying_signals.get("signal_strength", "medium")
@@ -194,6 +210,8 @@ def build_buying_signals(validated_data: dict) -> Optional[dict]:
         if scoops:
             score += len(scoops)
         if opportunity_themes:
+            score += 1
+        if intent_topics_detailed:
             score += 1
 
         if score >= 4:
@@ -216,11 +234,15 @@ def build_buying_signals(validated_data: dict) -> Optional[dict]:
             intent_trend = "increasing"
 
     # Only return if we have meaningful data
-    if not intent_topics and not scoops and not opportunity_themes:
+    if not intent_topics and not scoops and not opportunity_themes and not intent_topics_detailed:
         return None
 
     return {
         "intentTopics": intent_topics,
+        "intentTopicsDetailed": intent_topics_detailed,
+        "interestOverTime": interest_over_time,
+        "topPartnerMentions": top_partner_mentions,
+        "keySignals": key_signals,
         "signalStrength": signal_strength,
         "intentTrend": intent_trend,
         "scoops": scoops,
@@ -238,6 +260,7 @@ async def process_company_profile(job_id: str, company_data: dict):
     pdl_data = {}
     hunter_data = {}
     stakeholders_data = []
+    orchestrator_plan = None
 
     try:
         logger.info(f"Starting processing for job {job_id}: {company_data['company_name']}")
@@ -247,20 +270,47 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["progress"] = 10
         jobs_store[job_id]["current_step"] = "Initializing..."
 
-        # Step 1: Gather intelligence from Apollo.io
+        # Step 0.5: Run Orchestrator to determine optimal API routing
+        jobs_store[job_id]["progress"] = 15
+        jobs_store[job_id]["current_step"] = "Running Orchestrator LLM for intelligent API routing..."
+        orchestrator_plan = await analyze_and_plan(company_data)
+        logger.info(f"Orchestrator plan: APIs to query = {orchestrator_plan.apis_to_query}, reasoning = {orchestrator_plan.reasoning[:100]}...")
+
+        # Store orchestrator data for debug mode
+        jobs_store[job_id]["orchestrator_data"] = {
+            "apis_to_query": orchestrator_plan.apis_to_query,
+            "priority_order": orchestrator_plan.priority_order,
+            "data_point_mapping": orchestrator_plan.data_point_api_mapping,
+            "reasoning": orchestrator_plan.reasoning,
+            "timestamp": orchestrator_plan.timestamp
+        }
+
+        # Step 1: Gather intelligence from Apollo.io (if orchestrator selected it)
         jobs_store[job_id]["progress"] = 20
-        jobs_store[job_id]["current_step"] = "Querying Apollo.io..."
-        apollo_data = await fetch_apollo_data(company_data)
+        if should_query_api("apollo", orchestrator_plan):
+            jobs_store[job_id]["current_step"] = "Querying Apollo.io..."
+            apollo_data = await fetch_apollo_data(company_data)
+        else:
+            logger.info("Orchestrator skipped Apollo.io - not needed for required data points")
+            jobs_store[job_id]["current_step"] = "Skipped Apollo.io (not in orchestrator plan)..."
 
-        # Step 2: Gather intelligence from PeopleDataLabs
+        # Step 2: Gather intelligence from PeopleDataLabs (if orchestrator selected it)
         jobs_store[job_id]["progress"] = 30
-        jobs_store[job_id]["current_step"] = "Querying PeopleDataLabs..."
-        pdl_data = await fetch_pdl_data(company_data)
+        if should_query_api("pdl", orchestrator_plan):
+            jobs_store[job_id]["current_step"] = "Querying PeopleDataLabs..."
+            pdl_data = await fetch_pdl_data(company_data)
+        else:
+            logger.info("Orchestrator skipped PeopleDataLabs - not needed for required data points")
+            jobs_store[job_id]["current_step"] = "Skipped PeopleDataLabs (not in orchestrator plan)..."
 
-        # Step 2.5: Gather intelligence from Hunter.io
+        # Step 2.5: Gather intelligence from Hunter.io (if orchestrator selected it)
         jobs_store[job_id]["progress"] = 40
-        jobs_store[job_id]["current_step"] = "Querying Hunter.io..."
-        hunter_data = await fetch_hunter_data(company_data)
+        if should_query_api("hunter", orchestrator_plan):
+            jobs_store[job_id]["current_step"] = "Querying Hunter.io..."
+            hunter_data = await fetch_hunter_data(company_data)
+        else:
+            logger.info("Orchestrator skipped Hunter.io - not needed for required data points")
+            jobs_store[job_id]["current_step"] = "Skipped Hunter.io (not in orchestrator plan)..."
 
         # Step 2.75: Fetch stakeholders from Apollo
         jobs_store[job_id]["progress"] = 45
@@ -272,14 +322,18 @@ async def process_company_profile(job_id: str, company_data: dict):
             jobs_store[job_id]["current_step"] = "Extracting contacts from Hunter.io..."
             stakeholders_data = extract_stakeholders_from_hunter(hunter_data)
 
-        # Step 2.9: Fetch recent news for sales intelligence
+        # Step 2.9: Fetch recent news for sales intelligence (if orchestrator selected it)
         jobs_store[job_id]["progress"] = 48
-        jobs_store[job_id]["current_step"] = "Gathering recent news and buying signals..."
-        try:
-            news_data = await fetch_company_news(company_data["company_name"], company_data.get("domain"))
-        except Exception as e:
-            logger.warning(f"News gathering failed: {e}")
-            news_data = None
+        if should_query_api("gnews", orchestrator_plan):
+            jobs_store[job_id]["current_step"] = "Gathering recent news and buying signals..."
+            try:
+                news_data = await fetch_company_news(company_data["company_name"], company_data.get("domain"))
+            except Exception as e:
+                logger.warning(f"News gathering failed: {e}")
+                news_data = None
+        else:
+            logger.info("Orchestrator skipped GNews - not needed for required data points")
+            jobs_store[job_id]["current_step"] = "Skipped GNews (not in orchestrator plan)..."
 
         # Step 3: Store raw data in Supabase
         jobs_store[job_id]["progress"] = 50
@@ -374,13 +428,19 @@ async def process_company_profile(job_id: str, company_data: dict):
             "validated_data": validated_data,
             # New intelligence sections at top level for frontend
             "executive_snapshot": {
+                "accountName": validated_data.get("executive_snapshot", {}).get("account_name", validated_data.get("company_name", "")),
                 "companyOverview": validated_data.get("executive_snapshot", {}).get("company_overview", ""),
+                "accountType": validated_data.get("executive_snapshot", {}).get("account_type", "Private Sector"),
                 "companyClassification": validated_data.get("executive_snapshot", {}).get("company_classification", "Private"),
                 "estimatedITSpend": validated_data.get("executive_snapshot", {}).get("estimated_it_spend", ""),
-                "technologyStack": validated_data.get("technology_stack", [])
+                "installedTechnologies": validated_data.get("executive_snapshot", {}).get("installed_technologies", []),
+                "technologyStack": validated_data.get("technology_stack", {})
             } if validated_data.get("executive_snapshot") or validated_data.get("technology_stack") else None,
             "buying_signals": build_buying_signals(validated_data),
+            "opportunity_themes": validated_data.get("opportunity_themes_detailed", {}),
             "stakeholder_map": stakeholder_map_data,
+            "stakeholder_profiles": validated_data.get("stakeholder_profiles", {}),
+            "supporting_assets": validated_data.get("supporting_assets", {}),
             "sales_program": {
                 "intentLevel": validated_data.get("sales_program", {}).get("intent_level", "Medium"),
                 "intentScore": validated_data.get("sales_program", {}).get("intent_score", 50),
@@ -395,6 +455,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["hunter_data"] = hunter_data
         jobs_store[job_id]["stakeholders_data"] = stakeholders_data
         jobs_store[job_id]["news_data"] = news_data
+        # orchestrator_data already stored during orchestration step
 
         logger.info(f"Completed processing for job {job_id}")
 
@@ -1584,6 +1645,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
     pdl_data = job_data.get("pdl_data", {})
     hunter_data = job_data.get("hunter_data", {})
     news_data = job_data.get("news_data", {})
+    orchestrator_data = job_data.get("orchestrator_data", {})
     result = job_data.get("result", {})
     validated_data = result.get("validated_data", {})
 
@@ -1691,52 +1753,68 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "metadata": {"request_id": job_id, "company": company_name, "domain": domain}
             },
             {
+                "id": "step-1b",
+                "name": "Orchestrator LLM Analysis",
+                "description": "Intelligent API routing - analyzing required data points and selecting optimal APIs",
+                "status": "completed" if orchestrator_data else "skipped",
+                "start_time": (base_time + timedelta(milliseconds=500)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(milliseconds=900)).isoformat() + "Z",
+                "duration": 400,
+                "metadata": {
+                    "model": "gpt-4o-mini",
+                    "apis_selected": orchestrator_data.get("apis_to_query", ["apollo", "pdl", "hunter", "gnews"]),
+                    "priority_order": orchestrator_data.get("priority_order", []),
+                    "data_point_mapping": orchestrator_data.get("data_point_mapping", {}),
+                    "reasoning": orchestrator_data.get("reasoning", "Default plan: querying all APIs")
+                }
+            },
+            {
                 "id": "step-2",
                 "name": "Apollo.io Data Collection",
                 "description": "Gathering data from Apollo.io API",
-                "status": "completed" if apollo_data else "failed",
+                "status": "completed" if apollo_data else ("skipped" if orchestrator_data and "apollo" not in orchestrator_data.get("apis_to_query", []) else "failed"),
                 "start_time": (base_time + timedelta(seconds=1)).isoformat() + "Z",
                 "end_time": (base_time + timedelta(seconds=3)).isoformat() + "Z",
                 "duration": 2000,
                 "metadata": {
                     "source": "Apollo.io",
                     "fields_retrieved": apollo_extracted,
-                    "status": "success" if apollo_org else "no_data"
+                    "status": "success" if apollo_org else ("skipped_by_orchestrator" if orchestrator_data and "apollo" not in orchestrator_data.get("apis_to_query", []) else "no_data")
                 }
             },
             {
                 "id": "step-3",
                 "name": "PeopleDataLabs Data Collection",
                 "description": "Gathering data from PeopleDataLabs API",
-                "status": "completed" if pdl_data else "failed",
+                "status": "completed" if pdl_data else ("skipped" if orchestrator_data and "pdl" not in orchestrator_data.get("apis_to_query", []) else "failed"),
                 "start_time": (base_time + timedelta(seconds=1)).isoformat() + "Z",
                 "end_time": (base_time + timedelta(seconds=2, milliseconds=500)).isoformat() + "Z",
                 "duration": 1500,
                 "metadata": {
                     "source": "PeopleDataLabs",
                     "fields_retrieved": pdl_extracted,
-                    "status": "success" if pdl_company else "no_data"
+                    "status": "success" if pdl_company else ("skipped_by_orchestrator" if orchestrator_data and "pdl" not in orchestrator_data.get("apis_to_query", []) else "no_data")
                 }
             },
             {
                 "id": "step-3b",
                 "name": "Hunter.io Data Collection",
                 "description": "Gathering domain and contact data from Hunter.io API",
-                "status": "completed" if hunter_data else "skipped",
+                "status": "completed" if hunter_data else ("skipped" if orchestrator_data and "hunter" not in orchestrator_data.get("apis_to_query", []) else "failed"),
                 "start_time": (base_time + timedelta(seconds=2, milliseconds=500)).isoformat() + "Z",
                 "end_time": (base_time + timedelta(seconds=3, milliseconds=500)).isoformat() + "Z",
                 "duration": 1000,
                 "metadata": {
                     "source": "Hunter.io",
                     "fields_retrieved": hunter_extracted,
-                    "status": "success" if hunter_data else "no_data"
+                    "status": "success" if hunter_data else ("skipped_by_orchestrator" if orchestrator_data and "hunter" not in orchestrator_data.get("apis_to_query", []) else "no_data")
                 }
             },
             {
                 "id": "step-3c",
                 "name": "GNews Intelligence Collection",
                 "description": "Gathering recent company news from GNews API (last 90 days)",
-                "status": "completed" if news_data and news_data.get("success") else ("failed" if news_data and news_data.get("error") else "skipped"),
+                "status": "completed" if news_data and news_data.get("success") else ("skipped" if orchestrator_data and "gnews" not in orchestrator_data.get("apis_to_query", []) else ("failed" if news_data and news_data.get("error") else "skipped")),
                 "start_time": (base_time + timedelta(seconds=3, milliseconds=500)).isoformat() + "Z",
                 "end_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
                 "duration": 500,
@@ -1751,7 +1829,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                         "expansions": len(news_data.get("categories", {}).get("expansions", [])) if news_data else 0,
                         "products": len(news_data.get("categories", {}).get("products", [])) if news_data else 0
                     },
-                    "status": "success" if news_data and news_data.get("success") else (news_data.get("error", "not_configured") if news_data else "not_configured")
+                    "status": "success" if news_data and news_data.get("success") else ("skipped_by_orchestrator" if orchestrator_data and "gnews" not in orchestrator_data.get("apis_to_query", []) else (news_data.get("error", "not_configured") if news_data else "not_configured"))
                 }
             },
             {

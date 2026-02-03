@@ -412,6 +412,7 @@ Your job is to:
 5. Use actual numbers, not ranges when possible
 6. Remove any fluff or marketing language
 7. INTEGRATE NEWS DATA: Use recent news to inform buying signals, scoops, and sales strategy
+8. PERSPECTIVE: You are analyzing this company from the perspective of HP trying to sell to them
 
 CRITICAL OUTPUT RULES:
 - CAPITALIZATION: Use Proper Title Case for all names (company names, person names, cities, countries, industries)
@@ -422,6 +423,7 @@ CRITICAL OUTPUT RULES:
 - target_market: List specific segments
 - technologies: List actual tech names
 - NEWS INTEGRATION: Recent news should directly influence buying_signals.scoops and sales timing
+- PARAGRAPHS: For detailed fields, provide substantive 2-4 sentence paragraphs, not one-liners
 
 Output a clean JSON object with BOTH original and EXPANDED fields:
 {{
@@ -446,12 +448,38 @@ Output a clean JSON object with BOTH original and EXPANDED fields:
     "confidence_score": 0.0-1.0,
 
     "executive_snapshot": {{
-        "company_overview": "2-3 sentence overview of the company",
+        "account_name": "Company Name",
+        "company_overview": "Detailed paragraph overview of the organization - who they are, what they do, their market position, and key differentiators",
+        "account_type": "Public Sector/Private Sector",
         "company_classification": "Public/Private/Government",
-        "estimated_it_spend": "$X-$Y million"
+        "estimated_it_spend": "$X-$Y million annually",
+        "installed_technologies": [
+            {{"name": "Salesforce", "category": "CRM", "last_seen": "2024-01"}}
+        ]
     }},
 
     "buying_signals": {{
+        "intent_topics_detailed": [
+            {{"topic": "Cloud Migration", "description": "Detailed paragraph explaining their interest in this topic and specific indicators"}},
+            {{"topic": "Security Enhancement", "description": "Detailed paragraph on security initiatives"}},
+            {{"topic": "AI/ML Adoption", "description": "Detailed paragraph on AI initiatives"}}
+        ],
+        "interest_over_time": {{
+            "technologies": [
+                {{"name": "Cloud Computing", "score": 85, "trend": "increasing"}},
+                {{"name": "Cybersecurity", "score": 78, "trend": "stable"}}
+            ],
+            "summary": "Paragraph summarizing their technology interest trends"
+        }},
+        "top_partner_mentions": ["Partner1", "Partner2", "Partner3"],
+        "key_signals": {{
+            "news_paragraphs": [
+                "First paragraph based on recent news and what it indicates about buying readiness",
+                "Second paragraph on another key news signal",
+                "Third paragraph on additional signal"
+            ],
+            "implications": "Paragraph on what these signals mean for sales approach"
+        }},
         "intent_topics": ["Topic 1", "Topic 2", "Topic 3"],
         "signal_strength": "low/medium/high/very_high",
         "scoops": [
@@ -459,6 +487,24 @@ Output a clean JSON object with BOTH original and EXPANDED fields:
         ],
         "opportunity_themes": [
             {{"challenge": "...", "solution_category": "...", "value_proposition": "..."}}
+        ]
+    }},
+
+    "opportunity_themes_detailed": {{
+        "pain_points": [
+            "First paragraph describing a specific pain point the company faces",
+            "Second paragraph on another operational challenge",
+            "Third paragraph on a strategic challenge"
+        ],
+        "sales_opportunities": [
+            "First paragraph on where HP can provide value",
+            "Second paragraph on another sales opportunity",
+            "Third paragraph on additional opportunity"
+        ],
+        "recommended_solution_areas": [
+            "First paragraph recommending a solution area based on pain points",
+            "Second paragraph on another solution recommendation",
+            "Third paragraph on additional solution area"
         ]
     }},
 
@@ -481,6 +527,42 @@ Output a clean JSON object with BOTH original and EXPANDED fields:
         "collaboration": ["Tool1"],
         "security": ["Tool1"],
         "other": ["Tool1"]
+    }},
+
+    "stakeholder_profiles": {{
+        "CIO": {{
+            "bio": "1 paragraph bio - if they are a new hire, call out and include the date",
+            "strategic_priorities": [
+                {{"priority": "Priority 1", "description": "Description of this priority"}},
+                {{"priority": "Priority 2", "description": "Description"}},
+                {{"priority": "Priority 3", "description": "Description"}}
+            ],
+            "communication_preference": "Email/LinkedIn/Phone/Events",
+            "conversation_starters": "1-2 sentences of persona-tailored conversation openers",
+            "recommended_next_steps": [
+                "Introduce emerging trends and thought leadership to build awareness",
+                "Highlight business challenges and frame HP solutions as ways to address them",
+                "Reinforce proof points with case studies and demonstrate integration value",
+                "Emphasize ROI, deployment support, and ease of scaling with HP solutions"
+            ]
+        }},
+        "CTO": {{ "bio": "...", "strategic_priorities": [...], "communication_preference": "...", "conversation_starters": "...", "recommended_next_steps": [...] }},
+        "CISO": {{ "bio": "...", "strategic_priorities": [...], "communication_preference": "...", "conversation_starters": "...", "recommended_next_steps": [...] }},
+        "CFO": {{ "bio": "...", "strategic_priorities": [...], "communication_preference": "...", "conversation_starters": "...", "recommended_next_steps": [...] }},
+        "COO": {{ "bio": "...", "strategic_priorities": [...], "communication_preference": "...", "conversation_starters": "...", "recommended_next_steps": [...] }},
+        "CPO": {{ "bio": "...", "strategic_priorities": [...], "communication_preference": "...", "conversation_starters": "...", "recommended_next_steps": [...] }}
+    }},
+
+    "supporting_assets": {{
+        "contacts": [
+            {{
+                "role": "CIO",
+                "name": "Executive Name",
+                "email_template": "Subject and body of personalized email template for this contact",
+                "linkedin_outreach": "Personalized LinkedIn connection request/message",
+                "call_script": "Opening and key talking points for a phone call"
+            }}
+        ]
     }},
 
     "sales_program": {{

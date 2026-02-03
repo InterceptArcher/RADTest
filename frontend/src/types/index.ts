@@ -72,7 +72,10 @@ export interface ProfileResult {
   // New expanded intelligence sections
   executive_snapshot?: ExecutiveSnapshot;
   buying_signals?: BuyingSignals;
+  opportunity_themes?: OpportunityThemesDetailed;
   stakeholder_map?: StakeholderMap;
+  stakeholder_profiles?: StakeholderProfiles;
+  supporting_assets?: SupportingAssets;
   sales_program?: SalesProgram;
   news_intelligence?: NewsIntelligence;
 }
@@ -224,6 +227,17 @@ export interface ProcessFlow {
 }
 
 /**
+ * Orchestrator Plan - API routing decisions from the orchestrator LLM.
+ */
+export interface OrchestratorPlan {
+  apis_to_query: string[];
+  priority_order: string[];
+  data_point_mapping: Record<string, string[]>;
+  reasoning: string;
+  timestamp: string;
+}
+
+/**
  * Complete debug data for a job.
  */
 export interface DebugData {
@@ -235,6 +249,7 @@ export interface DebugData {
   apiResponses: APIResponseData[];
   llmThoughtProcesses: LLMThoughtProcess[];
   processFlow: ProcessFlow;
+  orchestratorPlan?: OrchestratorPlan;
   createdAt: string;
   completedAt?: string;
 }
@@ -324,13 +339,39 @@ export interface TechnologyItem {
 }
 
 /**
+ * Installed technology item with last seen date.
+ */
+export interface InstalledTechnology {
+  name: string;
+  category: string;
+  last_seen?: string;
+}
+
+/**
+ * Technology stack organized by category.
+ */
+export interface TechnologyStack {
+  crm?: string[];
+  marketing_automation?: string[];
+  sales_tools?: string[];
+  infrastructure?: string[];
+  analytics?: string[];
+  collaboration?: string[];
+  security?: string[];
+  other?: string[];
+}
+
+/**
  * Executive Snapshot - Company overview and classification.
  */
 export interface ExecutiveSnapshot {
+  accountName?: string;
   companyOverview: string;
+  accountType?: 'Public Sector' | 'Private Sector';
   companyClassification: 'Public' | 'Private' | 'Government' | 'Unknown';
   estimatedITSpend?: string;
-  technologyStack: TechnologyItem[];
+  installedTechnologies?: InstalledTechnology[];
+  technologyStack?: TechnologyStack | TechnologyItem[];
 }
 
 /**
@@ -349,6 +390,40 @@ export interface Scoop {
 export interface OpportunityTheme {
   challenge: string;
   solutionCategory: string;
+  value_proposition?: string;
+}
+
+/**
+ * Detailed intent topic with full description.
+ */
+export interface IntentTopicDetailed {
+  topic: string;
+  description: string;
+}
+
+/**
+ * Technology interest with score and trend.
+ */
+export interface TechnologyInterest {
+  name: string;
+  score: number;
+  trend: 'increasing' | 'stable' | 'decreasing';
+}
+
+/**
+ * Interest over time data.
+ */
+export interface InterestOverTime {
+  technologies: TechnologyInterest[];
+  summary: string;
+}
+
+/**
+ * Key signals from news.
+ */
+export interface KeySignals {
+  news_paragraphs: string[];
+  implications: string;
 }
 
 /**
@@ -356,6 +431,10 @@ export interface OpportunityTheme {
  */
 export interface BuyingSignals {
   intentTopics: string[];
+  intentTopicsDetailed?: IntentTopicDetailed[];
+  interestOverTime?: InterestOverTime;
+  topPartnerMentions?: string[];
+  keySignals?: KeySignals;
   signalStrength: 'low' | 'medium' | 'high' | 'very_high';
   intentTrend?: 'increasing' | 'stable' | 'decreasing';
   scoops: Scoop[];
@@ -387,9 +466,43 @@ export interface Stakeholder {
   isNewHire: boolean;
   hireDate?: string;
   contact: StakeholderContact;
-  strategicPriorities: string[];
+  strategicPriorities: string[] | StrategicPriority[];
   communicationPreference?: string;
   recommendedPlay?: string;
+  conversationStarters?: string;
+  recommendedNextSteps?: string[];
+}
+
+/**
+ * Strategic priority with description.
+ */
+export interface StrategicPriority {
+  priority: string;
+  description: string;
+}
+
+/**
+ * LLM-generated stakeholder profile for a role.
+ */
+export interface StakeholderProfile {
+  bio: string;
+  strategic_priorities: StrategicPriority[];
+  communication_preference: string;
+  conversation_starters: string;
+  recommended_next_steps: string[];
+}
+
+/**
+ * Map of stakeholder profiles by role.
+ */
+export interface StakeholderProfiles {
+  CIO?: StakeholderProfile;
+  CTO?: StakeholderProfile;
+  CISO?: StakeholderProfile;
+  CFO?: StakeholderProfile;
+  COO?: StakeholderProfile;
+  CPO?: StakeholderProfile;
+  [key: string]: StakeholderProfile | undefined;
 }
 
 /**
@@ -398,6 +511,34 @@ export interface Stakeholder {
 export interface StakeholderMap {
   stakeholders: Stakeholder[];
   lastUpdated?: string;
+  searchPerformed?: boolean;
+}
+
+/**
+ * Opportunity Themes Detailed - Pain points, sales opportunities, solution areas.
+ */
+export interface OpportunityThemesDetailed {
+  pain_points: string[];
+  sales_opportunities: string[];
+  recommended_solution_areas: string[];
+}
+
+/**
+ * Supporting asset for a contact (email template, LinkedIn outreach, call script).
+ */
+export interface ContactSupportingAsset {
+  role: string;
+  name: string;
+  email_template: string;
+  linkedin_outreach: string;
+  call_script: string;
+}
+
+/**
+ * Supporting Assets - Outreach templates per contact.
+ */
+export interface SupportingAssets {
+  contacts: ContactSupportingAsset[];
 }
 
 /**
