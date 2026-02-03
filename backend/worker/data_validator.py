@@ -577,18 +577,28 @@ class DataValidator:
                 logger.warning(f"Filtering out suspicious stakeholder: {name}")
                 continue
 
-            # Check 2: For known companies, only allow verified executives
+            # Check 2: For known companies, reject stakeholders claiming executive roles
+            # that don't match our verified list (e.g., someone claiming to be CEO who isn't)
             if known_executives:
-                known_names = [exec["name"].lower().strip() for exec in known_executives]
-                is_known = any(
-                    name_lower == known_name or
-                    name_lower in known_name or
-                    known_name in name_lower
-                    for known_name in known_names
-                )
-                if not is_known:
-                    logger.warning(f"Filtering out unverified stakeholder for {domain}: {name}")
-                    continue
+                person_title = person.get("title", "").lower()
+                person_role = person.get("role", "").lower()
+
+                # Check if this person claims to be a C-suite executive
+                executive_titles = ["ceo", "cfo", "coo", "cto", "cpo", "cmo", "chief", "president", "chairman"]
+                claims_executive_role = any(title in person_title or title in person_role for title in executive_titles)
+
+                if claims_executive_role:
+                    # Verify against known executives
+                    known_names = [exec["name"].lower().strip() for exec in known_executives]
+                    is_verified = any(
+                        name_lower == known_name or
+                        name_lower in known_name or
+                        known_name in name_lower
+                        for known_name in known_names
+                    )
+                    if not is_verified:
+                        logger.warning(f"Filtering out unverified executive for {domain}: {name} ({person_title})")
+                        continue
 
             valid_stakeholders.append(person)
 
