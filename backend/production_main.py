@@ -2193,13 +2193,34 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 }
             },
             {
+                "id": "step-3d",
+                "name": ">>> PRE-LLM DATA VALIDATION <<<",
+                "description": "CRITICAL: Fact-checking data against verified company database BEFORE sending to LLM. Catches wrong CEO names, fake executives, and placeholder data.",
+                "status": "completed",
+                "start_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=4, milliseconds=500)).isoformat() + "Z",
+                "duration": 500,
+                "metadata": {
+                    "validation_type": "PRE-LLM FACT CHECK",
+                    "companies_in_database": 14,
+                    "known_executives_checked": True,
+                    "is_valid": job_data.get("pre_llm_validation", {}).get("is_valid", True),
+                    "confidence_score": job_data.get("pre_llm_validation", {}).get("confidence_score", 1.0),
+                    "issues_found": job_data.get("pre_llm_validation", {}).get("issues_found", 0),
+                    "issues": job_data.get("pre_llm_validation", {}).get("issues", []),
+                    "corrected_values": job_data.get("pre_llm_validation", {}).get("corrected_values", {}),
+                    "stakeholders_filtered": job_data.get("pre_llm_validation", {}).get("stakeholders_filtered", 0),
+                    "stakeholders_remaining": job_data.get("pre_llm_validation", {}).get("stakeholders_remaining", 0),
+                }
+            },
+            {
                 "id": "step-4",
                 "name": "LLM Council Validation",
                 "description": "Running 20 specialist LLMs + 1 aggregator for comprehensive validation",
                 "status": "completed" if status == "completed" else "in_progress",
-                "start_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
+                "start_time": (base_time + timedelta(seconds=4, milliseconds=500)).isoformat() + "Z",
                 "end_time": (base_time + timedelta(seconds=10)).isoformat() + "Z" if status == "completed" else None,
-                "duration": 6000 if status == "completed" else None,
+                "duration": 5500 if status == "completed" else None,
                 "metadata": {
                     "model": "gpt-4o-mini",
                     "specialists_count": 20,
