@@ -429,17 +429,18 @@ async def fetch_apollo_data(company_data: dict) -> dict:
     try:
         async with httpx.AsyncClient() as client:
             # Try 1: Organization enrich by domain
+            # Note: Apollo API now requires key in X-Api-Key header, not body
             logger.info(f"Apollo: Trying organizations/enrich for {company_data['domain']}")
             response = await client.post(
                 "https://api.apollo.io/v1/organizations/enrich",
                 headers={
                     "Content-Type": "application/json",
                     "Cache-Control": "no-cache",
+                    "X-Api-Key": APOLLO_API_KEY,
                     "User-Agent": "RADTest/1.0 (Sales Intelligence Platform)",
                     "Accept": "application/json"
                 },
                 json={
-                    "api_key": APOLLO_API_KEY,
                     "domain": company_data["domain"]
                 },
                 timeout=30.0
@@ -468,11 +469,11 @@ async def fetch_apollo_data(company_data: dict) -> dict:
                     "https://api.apollo.io/v1/mixed_people/search",
                     headers={
                         "Content-Type": "application/json",
+                        "X-Api-Key": APOLLO_API_KEY,
                         "User-Agent": "RADTest/1.0 (Sales Intelligence Platform)",
                         "Accept": "application/json"
                     },
                     json={
-                        "api_key": APOLLO_API_KEY,
                         "q_organization_domains": company_data["domain"],
                         "person_titles": ["CEO", "Chief Executive Officer", "Founder", "Co-Founder"],
                         "page": 1,
@@ -743,11 +744,11 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                 "https://api.apollo.io/v1/mixed_people/search",
                 headers={
                     "Content-Type": "application/json",
+                    "X-Api-Key": APOLLO_API_KEY,
                     "User-Agent": "RADTest/1.0 (Sales Intelligence Platform)",
                     "Accept": "application/json"
                 },
                 json={
-                    "api_key": APOLLO_API_KEY,
                     "q_organization_domains": domain,
                     "person_titles": target_titles,
                     "page": 1,
