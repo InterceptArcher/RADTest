@@ -1,10 +1,11 @@
 'use client';
 
 import { useState } from 'react';
-import type { StakeholderMap, Stakeholder, StakeholderRoleType } from '@/types';
+import type { StakeholderMap, Stakeholder, StakeholderRoleType, SupportingAssets, ContactSupportingAsset } from '@/types';
 
 interface StakeholderMapCardProps {
   stakeholderMap: StakeholderMap;
+  supportingAssets?: SupportingAssets;
   onGenerateOutreach?: (roleType: StakeholderRoleType, stakeholderName?: string) => void;
 }
 
@@ -24,10 +25,13 @@ const roleTypeConfig: Record<StakeholderRoleType, { color: string; bgColor: stri
 
 interface StakeholderDetailCardProps {
   stakeholder: Stakeholder;
+  supportingAsset?: ContactSupportingAsset;
   onGenerateOutreach?: (roleType: StakeholderRoleType, stakeholderName?: string) => void;
 }
 
-function StakeholderDetailCard({ stakeholder, onGenerateOutreach }: StakeholderDetailCardProps) {
+function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreach }: StakeholderDetailCardProps) {
+  const [showAssets, setShowAssets] = useState(false);
+
   if (!stakeholder) {
     return null;
   }
@@ -152,11 +156,120 @@ function StakeholderDetailCard({ stakeholder, onGenerateOutreach }: StakeholderD
           </div>
         )}
 
-        {/* Recommended Play */}
-        {stakeholder.recommendedPlay && (
+        {/* Conversation Starters */}
+        {stakeholder.conversationStarters && (
+          <div className="bg-amber-50 rounded-lg p-3">
+            <h5 className="text-xs font-semibold text-amber-700 mb-2 uppercase tracking-wide flex items-center">
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+              </svg>
+              Conversation Starters
+            </h5>
+            <p className="text-sm text-amber-900 italic leading-relaxed">&ldquo;{stakeholder.conversationStarters}&rdquo;</p>
+          </div>
+        )}
+
+        {/* Recommended Next Steps */}
+        {stakeholder.recommendedNextSteps && stakeholder.recommendedNextSteps.length > 0 && (
+          <div className="bg-emerald-50 rounded-lg p-3">
+            <h5 className="text-xs font-semibold text-emerald-700 mb-2 uppercase tracking-wide flex items-center">
+              <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
+              Recommended Next Steps
+            </h5>
+            <ol className="space-y-2">
+              {stakeholder.recommendedNextSteps.map((step, index) => (
+                <li key={index} className="flex items-start text-sm text-emerald-900">
+                  <span className="w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-xs font-bold mr-2 flex-shrink-0 mt-0.5">
+                    {index + 1}
+                  </span>
+                  <span className="leading-relaxed">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+
+        {/* Recommended Play (fallback if no next steps) */}
+        {stakeholder.recommendedPlay && (!stakeholder.recommendedNextSteps || stakeholder.recommendedNextSteps.length === 0) && (
           <div className="bg-primary-50 rounded-lg p-3">
             <h5 className="text-xs font-semibold text-primary-700 mb-1 uppercase tracking-wide">Recommended Play</h5>
             <p className="text-sm text-primary-900">{stakeholder.recommendedPlay}</p>
+          </div>
+        )}
+
+        {/* Supporting Assets Section */}
+        {supportingAsset && (
+          <div className="border-t border-slate-200 pt-4">
+            <button
+              onClick={() => setShowAssets(!showAssets)}
+              className="w-full flex items-center justify-between text-left"
+            >
+              <h5 className="text-xs font-semibold text-slate-700 uppercase tracking-wide flex items-center">
+                <svg className="w-4 h-4 mr-2 text-purple-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+                Supporting Assets
+              </h5>
+              <svg
+                className={`w-4 h-4 text-slate-400 transition-transform ${showAssets ? 'rotate-180' : ''}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+
+            {showAssets && (
+              <div className="mt-3 space-y-3">
+                {/* Email Template */}
+                {supportingAsset.email_template && (
+                  <div className="bg-blue-50 rounded-lg p-3">
+                    <h6 className="text-xs font-semibold text-blue-700 mb-2 flex items-center">
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                      </svg>
+                      Email Template
+                    </h6>
+                    <pre className="text-xs text-blue-900 whitespace-pre-wrap font-sans leading-relaxed bg-white/50 rounded p-2 max-h-40 overflow-y-auto">
+                      {supportingAsset.email_template}
+                    </pre>
+                  </div>
+                )}
+
+                {/* LinkedIn Outreach */}
+                {supportingAsset.linkedin_outreach && (
+                  <div className="bg-indigo-50 rounded-lg p-3">
+                    <h6 className="text-xs font-semibold text-indigo-700 mb-2 flex items-center">
+                      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
+                      </svg>
+                      LinkedIn Outreach
+                    </h6>
+                    <pre className="text-xs text-indigo-900 whitespace-pre-wrap font-sans leading-relaxed bg-white/50 rounded p-2 max-h-40 overflow-y-auto">
+                      {supportingAsset.linkedin_outreach}
+                    </pre>
+                  </div>
+                )}
+
+                {/* Call Script */}
+                {supportingAsset.call_script && (
+                  <div className="bg-green-50 rounded-lg p-3">
+                    <h6 className="text-xs font-semibold text-green-700 mb-2 flex items-center">
+                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                      </svg>
+                      Call Script
+                    </h6>
+                    <pre className="text-xs text-green-900 whitespace-pre-wrap font-sans leading-relaxed bg-white/50 rounded p-2 max-h-40 overflow-y-auto">
+                      {supportingAsset.call_script}
+                    </pre>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -177,7 +290,7 @@ function StakeholderDetailCard({ stakeholder, onGenerateOutreach }: StakeholderD
   );
 }
 
-export default function StakeholderMapCard({ stakeholderMap, onGenerateOutreach }: StakeholderMapCardProps) {
+export default function StakeholderMapCard({ stakeholderMap, supportingAssets, onGenerateOutreach }: StakeholderMapCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   // Null safety for stakeholder map data
@@ -190,6 +303,15 @@ export default function StakeholderMapCard({ stakeholderMap, onGenerateOutreach 
 
   // Get preview stakeholders (first 3)
   const previewStakeholders = stakeholders.slice(0, 3);
+
+  // Helper to find matching supporting asset for a stakeholder
+  const findSupportingAsset = (stakeholder: Stakeholder): ContactSupportingAsset | undefined => {
+    if (!supportingAssets?.contacts) return undefined;
+    return supportingAssets.contacts.find(
+      asset => asset.name?.toLowerCase() === stakeholder.name?.toLowerCase() ||
+               asset.role?.toLowerCase() === stakeholder.roleType?.toLowerCase()
+    );
+  };
 
   return (
     <div className="card overflow-hidden">
@@ -278,6 +400,7 @@ export default function StakeholderMapCard({ stakeholderMap, onGenerateOutreach 
                   <StakeholderDetailCard
                     key={`${stakeholder.name}-${index}`}
                     stakeholder={stakeholder}
+                    supportingAsset={findSupportingAsset(stakeholder)}
                     onGenerateOutreach={onGenerateOutreach}
                   />
                 ))}

@@ -70,6 +70,22 @@ export default function ExecutiveSnapshotCard({
     ? groupTechByCategory(snapshot.technologyStack)
     : {};
 
+  // Also check for installedTechnologies as alternative source
+  const installedTechGrouped = snapshot.installedTechnologies && Array.isArray(snapshot.installedTechnologies)
+    ? groupTechByCategory(snapshot.installedTechnologies.map(t => ({
+        name: t.name,
+        category: t.category,
+        lastSeen: t.last_seen
+      })))
+    : {};
+
+  // Merge both tech sources
+  const finalGroupedTech = Object.keys(groupedTech).length > 0 ? groupedTech : installedTechGrouped;
+
+  // Account type display
+  const accountType = snapshot.accountType || (snapshot.companyClassification === 'Government' ? 'Public Sector' : 'Private Sector');
+  const displayName = snapshot.accountName || companyName;
+
   return (
     <div className="card overflow-hidden">
       {/* Clickable Header */}
@@ -106,10 +122,14 @@ export default function ExecutiveSnapshotCard({
 
         {/* Preview when collapsed */}
         {!expanded && (
-          <div className="mt-4 grid grid-cols-2 md:grid-cols-4 gap-4">
+          <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-4">
             <div className="bg-slate-50 rounded-lg p-3">
-              <p className="text-xs text-slate-500">Company</p>
-              <p className="text-sm font-medium text-slate-900 truncate">{companyName}</p>
+              <p className="text-xs text-slate-500">Account Name</p>
+              <p className="text-sm font-medium text-slate-900 truncate">{displayName}</p>
+            </div>
+            <div className="bg-slate-50 rounded-lg p-3">
+              <p className="text-xs text-slate-500">Account Type</p>
+              <p className="text-sm font-medium text-slate-900 truncate">{accountType}</p>
             </div>
             {industry && (
               <div className="bg-slate-50 rounded-lg p-3">
@@ -123,7 +143,7 @@ export default function ExecutiveSnapshotCard({
             </div>
             {snapshot.estimatedITSpend && (
               <div className="bg-emerald-50 rounded-lg p-3">
-                <p className="text-xs text-emerald-600">Est. IT Spend</p>
+                <p className="text-xs text-emerald-600">Est. IT Budget</p>
                 <p className="text-sm font-semibold text-emerald-700">{snapshot.estimatedITSpend}</p>
               </div>
             )}
@@ -157,10 +177,14 @@ export default function ExecutiveSnapshotCard({
               </svg>
               Key Firmographics
             </h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
               <div className="bg-white border border-slate-200 rounded-xl p-4">
-                <p className="text-xs text-slate-500 mb-1">Company Name</p>
-                <p className="text-sm font-semibold text-slate-900">{companyName}</p>
+                <p className="text-xs text-slate-500 mb-1">Account Name</p>
+                <p className="text-sm font-semibold text-slate-900">{displayName}</p>
+              </div>
+              <div className="bg-white border border-slate-200 rounded-xl p-4">
+                <p className="text-xs text-slate-500 mb-1">Account Type</p>
+                <p className="text-sm font-semibold text-slate-900">{accountType}</p>
               </div>
               <div className="bg-white border border-slate-200 rounded-xl p-4">
                 <p className="text-xs text-slate-500 mb-1">Sector</p>
@@ -171,7 +195,7 @@ export default function ExecutiveSnapshotCard({
                 <p className="text-sm font-semibold text-slate-900">{industry || 'Not specified'}</p>
               </div>
               <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4">
-                <p className="text-xs text-emerald-600 mb-1">Est. Annual IT Spend</p>
+                <p className="text-xs text-emerald-600 mb-1">Est. Annual IT Budget</p>
                 <p className="text-sm font-semibold text-emerald-700">{snapshot.estimatedITSpend || 'Not available'}</p>
               </div>
             </div>
@@ -186,9 +210,9 @@ export default function ExecutiveSnapshotCard({
               Technology Install Base
             </h3>
 
-            {Object.keys(groupedTech).length > 0 ? (
+            {Object.keys(finalGroupedTech).length > 0 ? (
               <div className="space-y-4">
-                {Object.entries(groupedTech).map(([category, techs]) => {
+                {Object.entries(finalGroupedTech).map(([category, techs]) => {
                   const categoryConfig = getTechCategoryConfig(category);
                   return (
                     <div key={category} className="bg-white border border-slate-200 rounded-xl p-4">

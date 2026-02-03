@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { BuyingSignals, Scoop } from '@/types';
+import type { BuyingSignals, Scoop, IntentTopicDetailed, TechnologyInterest, InterestOverTime, KeySignals } from '@/types';
 
 interface BuyingSignalsCardProps {
   signals: BuyingSignals;
@@ -209,14 +209,32 @@ export default function BuyingSignalsCard({ signals }: BuyingSignalsCardProps) {
               </p>
             </div>
 
-            {/* Top Intent Topics */}
+            {/* Top 3 Intent Topics - Detailed with Paragraphs */}
             <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
               <h4 className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wide">
-                Top Intent Topics
+                Top 3 Intent Topics
               </h4>
-              {signals.intentTopics && signals.intentTopics.length > 0 ? (
+              {signals.intentTopicsDetailed && signals.intentTopicsDetailed.length > 0 ? (
+                <div className="space-y-4">
+                  {signals.intentTopicsDetailed.slice(0, 3).map((topicDetail, index) => (
+                    <div key={index} className="border-l-4 border-amber-400 pl-4 py-2">
+                      <div className="flex items-center mb-2">
+                        <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-3 ${
+                          index === 0 ? 'bg-amber-500 text-white' :
+                          index === 1 ? 'bg-amber-400 text-white' :
+                          'bg-amber-300 text-amber-800'
+                        }`}>
+                          {index + 1}
+                        </span>
+                        <span className="text-sm font-semibold text-slate-900">{topicDetail.topic}</span>
+                      </div>
+                      <p className="text-sm text-slate-600 leading-relaxed">{topicDetail.description}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : signals.intentTopics && signals.intentTopics.length > 0 ? (
                 <div className="space-y-2">
-                  {signals.intentTopics.map((topic, index) => (
+                  {signals.intentTopics.slice(0, 3).map((topic, index) => (
                     <div key={index} className="flex items-center">
                       <span className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold mr-3 ${
                         index === 0 ? 'bg-amber-500 text-white' :
@@ -234,6 +252,105 @@ export default function BuyingSignalsCard({ signals }: BuyingSignalsCardProps) {
                 <p className="text-sm text-slate-500">No intent topics detected</p>
               )}
             </div>
+
+            {/* Interest Over Time */}
+            {signals.interestOverTime && (
+              <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+                <h4 className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wide">
+                  Interest Over Time
+                </h4>
+                {signals.interestOverTime.technologies && signals.interestOverTime.technologies.length > 0 && (
+                  <div className="space-y-3 mb-4">
+                    {signals.interestOverTime.technologies.map((tech, index) => (
+                      <div key={index} className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <span className="text-sm font-medium text-slate-900">{tech.name}</span>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+                            tech.trend === 'increasing' ? 'bg-emerald-100 text-emerald-700' :
+                            tech.trend === 'decreasing' ? 'bg-red-100 text-red-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {tech.trend === 'increasing' && '↑'}
+                            {tech.trend === 'decreasing' && '↓'}
+                            {tech.trend === 'stable' && '→'}
+                            {' '}{tech.trend}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <div className="w-24 bg-slate-100 rounded-full h-2">
+                            <div
+                              className={`h-2 rounded-full ${
+                                tech.score >= 70 ? 'bg-emerald-500' :
+                                tech.score >= 40 ? 'bg-amber-500' :
+                                'bg-slate-400'
+                              }`}
+                              style={{ width: `${Math.min(100, tech.score)}%` }}
+                            />
+                          </div>
+                          <span className="text-xs font-semibold text-slate-700 w-8">{tech.score}%</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {signals.interestOverTime.summary && (
+                  <div className="bg-amber-50 rounded-lg p-3 mt-3">
+                    <p className="text-sm text-amber-900 leading-relaxed">{signals.interestOverTime.summary}</p>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Top Partner Mentions */}
+            {signals.topPartnerMentions && signals.topPartnerMentions.length > 0 && (
+              <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+                <h4 className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wide">
+                  Top Partner Mentions
+                </h4>
+                <div className="flex flex-wrap gap-2">
+                  {signals.topPartnerMentions.map((partner, index) => (
+                    <span
+                      key={index}
+                      className="inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20"
+                    >
+                      {partner}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Key Signals - News and Triggers */}
+            {signals.keySignals && (
+              <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">
+                <h4 className="text-xs font-semibold text-slate-700 mb-3 uppercase tracking-wide flex items-center">
+                  <svg className="w-4 h-4 mr-2 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 20H5a2 2 0 01-2-2V6a2 2 0 012-2h10a2 2 0 012 2v1m2 13a2 2 0 01-2-2V7m2 13a2 2 0 002-2V9a2 2 0 00-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z" />
+                  </svg>
+                  Key Signals (News & Triggers)
+                </h4>
+                {signals.keySignals.news_paragraphs && signals.keySignals.news_paragraphs.length > 0 && (
+                  <div className="space-y-3 mb-4">
+                    {signals.keySignals.news_paragraphs.map((paragraph, index) => (
+                      <div key={index} className="bg-slate-50 rounded-lg p-3">
+                        <div className="flex items-start">
+                          <span className="w-6 h-6 rounded-full bg-amber-100 text-amber-700 flex items-center justify-center text-xs font-bold mr-3 flex-shrink-0 mt-0.5">
+                            {index + 1}
+                          </span>
+                          <p className="text-sm text-slate-700 leading-relaxed">{paragraph}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {signals.keySignals.implications && (
+                  <div className="bg-primary-50 rounded-lg p-4 border border-primary-100">
+                    <h5 className="text-xs font-semibold text-primary-700 mb-2 uppercase tracking-wide">What This Means</h5>
+                    <p className="text-sm text-primary-900 leading-relaxed">{signals.keySignals.implications}</p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Intent Trend Indicator */}
             <div className="bg-white border border-slate-200 rounded-xl p-4 mb-4">

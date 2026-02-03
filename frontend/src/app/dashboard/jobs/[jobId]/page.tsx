@@ -172,6 +172,7 @@ export default function JobDetailPage() {
   const buyingSignals = job.result.buying_signals;
   const opportunityThemes = job.result.opportunity_themes;
   const stakeholderMap = job.result.stakeholder_map;
+  const supportingAssets = job.result.supporting_assets;
   const salesProgram = job.result.sales_program;
   const newsIntelligence = job.result.news_intelligence;
 
@@ -291,6 +292,7 @@ export default function JobDetailPage() {
           {stakeholderMap && (
             <StakeholderMapCard
               stakeholderMap={stakeholderMap}
+              supportingAssets={supportingAssets}
               onGenerateOutreach={handleGenerateOutreach}
             />
           )}
