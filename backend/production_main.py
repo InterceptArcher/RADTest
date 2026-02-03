@@ -22,6 +22,9 @@ from llm_council import validate_with_council, SPECIALISTS
 # Import Orchestrator for intelligent API routing
 from orchestrator import analyze_and_plan, OrchestratorResult, should_query_api
 
+# Import Data Validator for pre-LLM fact-checking
+from worker.data_validator import DataValidator, get_validator
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -618,6 +621,73 @@ async def process_company_profile(job_id: str, company_data: dict):
         if not stakeholders_data and hunter_data:
             jobs_store[job_id]["current_step"] = "Extracting contacts from Hunter.io..."
             stakeholders_data = extract_stakeholders_from_hunter(hunter_data)
+
+        # Step 2.85: PRE-LLM DATA VALIDATION - Fact-check BEFORE sending to LLM Council
+        # This catches egregiously wrong data like fake CEO names, unverified executives
+        jobs_store[job_id]["progress"] = 47
+        jobs_store[job_id]["current_step"] = ">>> PRE-LLM VALIDATION: Fact-checking against verified database..."
+
+        data_validator = get_validator()
+        domain = company_data.get("domain", "")
+
+        # Validate company-level data (CEO, company name, etc.)
+        company_validation_data = {
+            "ceo": apollo_data.get("ceo") or pdl_data.get("ceo"),
+            "company_name": company_data.get("company_name"),
+            "headquarters": apollo_data.get("headquarters") or pdl_data.get("headquarters"),
+            "industry": apollo_data.get("industry") or pdl_data.get("industry"),
+            "founded_year": apollo_data.get("founded_year") or pdl_data.get("founded_year"),
+            "stakeholders": stakeholders_data or [],
+        }
+
+        validation_result = data_validator.validate_company_data(
+            domain=domain,
+            data=company_validation_data,
+            source="combined_apis"
+        )
+
+        # Store validation results for debug mode
+        jobs_store[job_id]["pre_llm_validation"] = {
+            "is_valid": validation_result.is_valid,
+            "confidence_score": validation_result.confidence_score,
+            "issues_found": len(validation_result.issues),
+            "issues": [
+                {
+                    "field": issue.field_name,
+                    "value": str(issue.provided_value),
+                    "expected": str(issue.expected_values),
+                    "severity": issue.severity,
+                    "message": issue.message
+                }
+                for issue in validation_result.issues
+            ],
+            "corrected_values": validation_result.corrected_values,
+            "validated_at": validation_result.validated_at
+        }
+
+        # Apply corrections to apollo_data if CEO was wrong
+        if "ceo" in validation_result.corrected_values:
+            corrected_ceo = validation_result.corrected_values["ceo"]
+            logger.warning(f"PRE-LLM VALIDATION: Corrected CEO from '{company_validation_data.get('ceo')}' to '{corrected_ceo}'")
+            apollo_data["ceo"] = corrected_ceo
+            if pdl_data:
+                pdl_data["ceo"] = corrected_ceo
+
+        # CRITICAL: Filter out invalid stakeholders BEFORE they go to LLM Council
+        original_stakeholder_count = len(stakeholders_data) if stakeholders_data else 0
+        if stakeholders_data:
+            stakeholders_data = data_validator.filter_invalid_stakeholders(
+                domain=domain,
+                stakeholders=stakeholders_data,
+                source="combined_apis"
+            )
+            filtered_count = original_stakeholder_count - len(stakeholders_data)
+            if filtered_count > 0:
+                logger.warning(f"PRE-LLM VALIDATION: Filtered out {filtered_count} unverified stakeholders")
+                jobs_store[job_id]["pre_llm_validation"]["stakeholders_filtered"] = filtered_count
+                jobs_store[job_id]["pre_llm_validation"]["stakeholders_remaining"] = len(stakeholders_data)
+
+        logger.info(f"PRE-LLM VALIDATION complete: {len(validation_result.issues)} issues found, confidence={validation_result.confidence_score:.2f}")
 
         # Step 2.9: Fetch recent news for sales intelligence (if orchestrator selected it)
         jobs_store[job_id]["progress"] = 48
