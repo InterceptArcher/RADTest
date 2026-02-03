@@ -98,31 +98,47 @@ class DebugService:
             ),
             ProcessStep(
                 id="step-5",
+                name="Pre-LLM Data Validation",
+                description="Fact-checking data against known company facts before LLM processing. Catches egregiously wrong data like incorrect CEO names.",
+                status=ProcessStepStatus.COMPLETED,
+                start_time=(base_time + timedelta(seconds=5)).isoformat() + "Z",
+                end_time=(base_time + timedelta(seconds=6)).isoformat() + "Z",
+                duration=1000,
+                metadata={
+                    "known_facts_checked": True,
+                    "companies_in_db": 14,
+                    "issues_found": 1,
+                    "issues_corrected": 1,
+                    "confidence_adjustment": -0.3
+                }
+            ),
+            ProcessStep(
+                id="step-6",
                 name="LLM Validation",
                 description="Validating aggregated data using LLM agents for accuracy",
                 status=ProcessStepStatus.COMPLETED,
-                start_time=(base_time + timedelta(seconds=5)).isoformat() + "Z",
-                end_time=(base_time + timedelta(seconds=10)).isoformat() + "Z",
+                start_time=(base_time + timedelta(seconds=6)).isoformat() + "Z",
+                end_time=(base_time + timedelta(seconds=11)).isoformat() + "Z",
                 duration=5000,
                 metadata={"model": "gpt-4", "validators": 3}
             ),
             ProcessStep(
-                id="step-6",
-                name="Conflict Resolution",
+                id="step-7",
+                name="LLM Council Resolution",
                 description="Resolving data discrepancies using LLM council consensus",
                 status=ProcessStepStatus.COMPLETED if status == "completed" else ProcessStepStatus.IN_PROGRESS,
-                start_time=(base_time + timedelta(seconds=11)).isoformat() + "Z",
-                end_time=(base_time + timedelta(seconds=14)).isoformat() + "Z" if status == "completed" else None,
+                start_time=(base_time + timedelta(seconds=12)).isoformat() + "Z",
+                end_time=(base_time + timedelta(seconds=15)).isoformat() + "Z" if status == "completed" else None,
                 duration=3000 if status == "completed" else None,
                 metadata={"discrepancies_found": 2, "resolved": 2}
             ),
             ProcessStep(
-                id="step-7",
+                id="step-8",
                 name="Slideshow Generation",
                 description="Generating company profile slideshow using Gamma API",
                 status=ProcessStepStatus.COMPLETED if status == "completed" else ProcessStepStatus.PENDING,
-                start_time=(base_time + timedelta(seconds=15)).isoformat() + "Z" if status == "completed" else None,
-                end_time=(base_time + timedelta(seconds=25)).isoformat() + "Z" if status == "completed" else None,
+                start_time=(base_time + timedelta(seconds=16)).isoformat() + "Z" if status == "completed" else None,
+                end_time=(base_time + timedelta(seconds=26)).isoformat() + "Z" if status == "completed" else None,
                 duration=10000 if status == "completed" else None,
                 metadata={"slides_generated": 8}
             ),
@@ -210,6 +226,66 @@ class DebugService:
 
         # Generate LLM thought processes
         llm_thought_processes = [
+            LLMThoughtProcess(
+                id="llm-0",
+                task_name="Pre-LLM Data Validation (Fact-Checking)",
+                model="rule-based",
+                start_time=(base_time + timedelta(seconds=5)).isoformat() + "Z",
+                end_time=(base_time + timedelta(seconds=6)).isoformat() + "Z",
+                steps=[
+                    LLMThoughtStep(
+                        id="step-0-1",
+                        step=1,
+                        action="Check Known Company Facts",
+                        reasoning="Validating data against known facts database for major companies. Database contains verified CEO names, headquarters, and founding years for 14 major tech companies.",
+                        input={
+                            "domain": domain,
+                            "ceo_from_source": "Julie Strau",
+                            "known_facts_available": True
+                        },
+                        output={
+                            "domain_in_database": True,
+                            "known_ceo": "Satya Nadella",
+                            "mismatch_detected": True
+                        },
+                        confidence=1.0
+                    ),
+                    LLMThoughtStep(
+                        id="step-0-2",
+                        step=2,
+                        action="Apply Correction",
+                        reasoning="Source data contained incorrect CEO name 'Julie Strau' for Microsoft. Correcting to known value 'Satya Nadella' from verified facts database.",
+                        input={
+                            "incorrect_value": "Julie Strau",
+                            "correct_value": "Satya Nadella",
+                            "field": "ceo"
+                        },
+                        output={
+                            "correction_applied": True,
+                            "confidence_penalty": -0.3,
+                            "new_confidence": 0.7
+                        },
+                        confidence=1.0
+                    ),
+                    LLMThoughtStep(
+                        id="step-0-3",
+                        step=3,
+                        action="Validate Stakeholders",
+                        reasoning="Checking stakeholder list for incorrect executive data. Any person listed as CEO must match known CEO for major companies.",
+                        input={
+                            "stakeholders_count": 3,
+                            "ceo_in_stakeholders": "Julie Strau"
+                        },
+                        output={
+                            "stakeholder_filtered": True,
+                            "reason": "CEO name mismatch with known facts"
+                        },
+                        confidence=1.0
+                    ),
+                ],
+                final_decision="Pre-validation caught 1 critical issue: incorrect CEO name. Corrected 'Julie Strau' to 'Satya Nadella'. Confidence score reduced by 0.3 for this source. Data now safe to send to LLM council.",
+                discrepancies_resolved=["ceo_name_correction", "stakeholder_validation"]
+            ),
             LLMThoughtProcess(
                 id="llm-1",
                 task_name="Employee Count Discrepancy Resolution",
@@ -320,6 +396,14 @@ class DebugService:
                     duration=500
                 ),
                 ProcessFlowNode(
+                    id="node-pre-validate",
+                    label="Pre-LLM Validation",
+                    type=ProcessFlowNodeType.DECISION,
+                    status=ProcessStepStatus.COMPLETED,
+                    details="Fact-checking against known company data (CEO names, HQ, etc.)",
+                    duration=1000
+                ),
+                ProcessFlowNode(
                     id="node-validate",
                     label="LLM Validation",
                     type=ProcessFlowNodeType.LLM,
@@ -362,12 +446,13 @@ class DebugService:
                 ProcessFlowEdge(id="edge-2", source="node-start", target="node-pdl"),
                 ProcessFlowEdge(id="edge-3", source="node-apollo", target="node-aggregate"),
                 ProcessFlowEdge(id="edge-4", source="node-pdl", target="node-aggregate"),
-                ProcessFlowEdge(id="edge-5", source="node-aggregate", target="node-validate"),
-                ProcessFlowEdge(id="edge-6", source="node-validate", target="node-decision"),
-                ProcessFlowEdge(id="edge-7", source="node-decision", target="node-resolve", label="Yes"),
-                ProcessFlowEdge(id="edge-8", source="node-decision", target="node-gamma", label="No"),
-                ProcessFlowEdge(id="edge-9", source="node-resolve", target="node-gamma"),
-                ProcessFlowEdge(id="edge-10", source="node-gamma", target="node-end"),
+                ProcessFlowEdge(id="edge-5", source="node-aggregate", target="node-pre-validate"),
+                ProcessFlowEdge(id="edge-6", source="node-pre-validate", target="node-validate", label="Validated"),
+                ProcessFlowEdge(id="edge-7", source="node-validate", target="node-decision"),
+                ProcessFlowEdge(id="edge-8", source="node-decision", target="node-resolve", label="Yes"),
+                ProcessFlowEdge(id="edge-9", source="node-decision", target="node-gamma", label="No"),
+                ProcessFlowEdge(id="edge-10", source="node-resolve", target="node-gamma"),
+                ProcessFlowEdge(id="edge-11", source="node-gamma", target="node-end"),
             ]
         )
 
