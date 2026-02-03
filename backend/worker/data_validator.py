@@ -25,6 +25,16 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Redmond", "Redmond, Washington", "Redmond, WA"],
         "industry": ["Technology", "Software", "Computer Software"],
         "founded_year": [1975],
+        # Known C-suite executives (verified)
+        "known_executives": [
+            {"name": "Satya Nadella", "role": "CEO", "title": "Chairman and CEO"},
+            {"name": "Amy Hood", "role": "CFO", "title": "Executive Vice President and CFO"},
+            {"name": "Brad Smith", "role": "President", "title": "Vice Chair and President"},
+            {"name": "Judson Althoff", "role": "CCO", "title": "Executive Vice President and Chief Commercial Officer"},
+            {"name": "Scott Guthrie", "role": "EVP", "title": "Executive Vice President, Cloud + AI"},
+            {"name": "Kathleen Hogan", "role": "CPO", "title": "Executive Vice President and Chief People Officer"},
+            {"name": "Charlie Bell", "role": "EVP", "title": "Executive Vice President, Security"},
+        ],
     },
     "apple.com": {
         "ceo": ["Tim Cook"],
@@ -32,6 +42,13 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Cupertino", "Cupertino, California", "Cupertino, CA"],
         "industry": ["Technology", "Consumer Electronics"],
         "founded_year": [1976],
+        "known_executives": [
+            {"name": "Tim Cook", "role": "CEO", "title": "Chief Executive Officer"},
+            {"name": "Luca Maestri", "role": "CFO", "title": "Senior Vice President and CFO"},
+            {"name": "Jeff Williams", "role": "COO", "title": "Chief Operating Officer"},
+            {"name": "Craig Federighi", "role": "SVP", "title": "Senior Vice President of Software Engineering"},
+            {"name": "Katherine Adams", "role": "SVP", "title": "Senior Vice President and General Counsel"},
+        ],
     },
     "google.com": {
         "ceo": ["Sundar Pichai"],
@@ -39,6 +56,12 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Mountain View", "Mountain View, California", "Mountain View, CA"],
         "industry": ["Technology", "Internet", "Software"],
         "founded_year": [1998],
+        "known_executives": [
+            {"name": "Sundar Pichai", "role": "CEO", "title": "CEO of Google and Alphabet"},
+            {"name": "Ruth Porat", "role": "CFO", "title": "President and Chief Investment Officer"},
+            {"name": "Philipp Schindler", "role": "CBO", "title": "Senior Vice President and Chief Business Officer"},
+            {"name": "Prabhakar Raghavan", "role": "SVP", "title": "Senior Vice President, Knowledge & Information"},
+        ],
     },
     "amazon.com": {
         "ceo": ["Andy Jassy"],
@@ -46,6 +69,12 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Seattle", "Seattle, Washington", "Seattle, WA"],
         "industry": ["E-commerce", "Technology", "Retail"],
         "founded_year": [1994],
+        "known_executives": [
+            {"name": "Andy Jassy", "role": "CEO", "title": "President and Chief Executive Officer"},
+            {"name": "Brian Olsavsky", "role": "CFO", "title": "Senior Vice President and Chief Financial Officer"},
+            {"name": "Adam Selipsky", "role": "CEO AWS", "title": "CEO of Amazon Web Services"},
+            {"name": "Doug Herrington", "role": "CEO Stores", "title": "CEO of Worldwide Amazon Stores"},
+        ],
     },
     "meta.com": {
         "ceo": ["Mark Zuckerberg"],
@@ -53,6 +82,12 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Menlo Park", "Menlo Park, California", "Menlo Park, CA"],
         "industry": ["Technology", "Social Media"],
         "founded_year": [2004],
+        "known_executives": [
+            {"name": "Mark Zuckerberg", "role": "CEO", "title": "Chairman and CEO"},
+            {"name": "Susan Li", "role": "CFO", "title": "Chief Financial Officer"},
+            {"name": "Javier Olivan", "role": "COO", "title": "Chief Operating Officer"},
+            {"name": "Chris Cox", "role": "CPO", "title": "Chief Product Officer"},
+        ],
     },
     "facebook.com": {
         "ceo": ["Mark Zuckerberg"],
@@ -60,6 +95,12 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Menlo Park", "Menlo Park, California", "Menlo Park, CA"],
         "industry": ["Technology", "Social Media"],
         "founded_year": [2004],
+        "known_executives": [
+            {"name": "Mark Zuckerberg", "role": "CEO", "title": "Chairman and CEO"},
+            {"name": "Susan Li", "role": "CFO", "title": "Chief Financial Officer"},
+            {"name": "Javier Olivan", "role": "COO", "title": "Chief Operating Officer"},
+            {"name": "Chris Cox", "role": "CPO", "title": "Chief Product Officer"},
+        ],
     },
     "tesla.com": {
         "ceo": ["Elon Musk"],
@@ -67,6 +108,11 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Austin", "Austin, Texas", "Palo Alto"],
         "industry": ["Automotive", "Electric Vehicles", "Energy"],
         "founded_year": [2003],
+        "known_executives": [
+            {"name": "Elon Musk", "role": "CEO", "title": "Chief Executive Officer"},
+            {"name": "Vaibhav Taneja", "role": "CFO", "title": "Chief Financial Officer"},
+            {"name": "Tom Zhu", "role": "SVP", "title": "Senior Vice President of Automotive"},
+        ],
     },
     "nvidia.com": {
         "ceo": ["Jensen Huang"],
@@ -74,6 +120,10 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Santa Clara", "Santa Clara, California"],
         "industry": ["Technology", "Semiconductors"],
         "founded_year": [1993],
+        "known_executives": [
+            {"name": "Jensen Huang", "role": "CEO", "title": "President and Chief Executive Officer"},
+            {"name": "Colette Kress", "role": "CFO", "title": "Executive Vice President and CFO"},
+        ],
     },
     "salesforce.com": {
         "ceo": ["Marc Benioff"],
@@ -81,6 +131,11 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["San Francisco", "San Francisco, California"],
         "industry": ["Technology", "Software", "CRM"],
         "founded_year": [1999],
+        "known_executives": [
+            {"name": "Marc Benioff", "role": "CEO", "title": "Chair and Chief Executive Officer"},
+            {"name": "Amy Weaver", "role": "CFO", "title": "President and Chief Financial Officer"},
+            {"name": "Brian Millham", "role": "COO", "title": "President and Chief Operating Officer"},
+        ],
     },
     "oracle.com": {
         "ceo": ["Safra Catz"],
@@ -88,6 +143,10 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Austin", "Austin, Texas", "Redwood City"],
         "industry": ["Technology", "Software", "Database"],
         "founded_year": [1977],
+        "known_executives": [
+            {"name": "Safra Catz", "role": "CEO", "title": "Chief Executive Officer"},
+            {"name": "Larry Ellison", "role": "CTO", "title": "Chairman and Chief Technology Officer"},
+        ],
     },
     "ibm.com": {
         "ceo": ["Arvind Krishna"],
@@ -95,6 +154,10 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Armonk", "Armonk, New York"],
         "industry": ["Technology", "Software", "IT Services"],
         "founded_year": [1911],
+        "known_executives": [
+            {"name": "Arvind Krishna", "role": "CEO", "title": "Chairman and Chief Executive Officer"},
+            {"name": "James Kavanaugh", "role": "CFO", "title": "Senior Vice President and CFO"},
+        ],
     },
     "intel.com": {
         "ceo": ["Pat Gelsinger"],
@@ -102,6 +165,10 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["Santa Clara", "Santa Clara, California"],
         "industry": ["Technology", "Semiconductors"],
         "founded_year": [1968],
+        "known_executives": [
+            {"name": "Pat Gelsinger", "role": "CEO", "title": "Chief Executive Officer"},
+            {"name": "David Zinsner", "role": "CFO", "title": "Executive Vice President and CFO"},
+        ],
     },
     "cisco.com": {
         "ceo": ["Chuck Robbins"],
@@ -109,6 +176,10 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["San Jose", "San Jose, California"],
         "industry": ["Technology", "Networking"],
         "founded_year": [1984],
+        "known_executives": [
+            {"name": "Chuck Robbins", "role": "CEO", "title": "Chair and Chief Executive Officer"},
+            {"name": "Scott Herren", "role": "CFO", "title": "Executive Vice President and CFO"},
+        ],
     },
     "adobe.com": {
         "ceo": ["Shantanu Narayen"],
@@ -116,8 +187,25 @@ KNOWN_COMPANY_FACTS = {
         "headquarters": ["San Jose", "San Jose, California"],
         "industry": ["Technology", "Software"],
         "founded_year": [1982],
+        "known_executives": [
+            {"name": "Shantanu Narayen", "role": "CEO", "title": "Chairman and Chief Executive Officer"},
+            {"name": "Dan Durn", "role": "CFO", "title": "Executive Vice President and CFO"},
+            {"name": "David Wadhwani", "role": "President", "title": "President, Digital Media Business"},
+        ],
     },
 }
+
+# Common fake/generic names that should be flagged
+SUSPICIOUS_NAMES = [
+    # Test/placeholder patterns
+    "test", "sample", "example", "placeholder", "unknown", "n/a", "tbd", "tba", "xxx",
+    "fake", "dummy", "temp", "demo",
+    # Generic common names often used as placeholders
+    "john doe", "jane doe", "john smith", "jane smith", "tom smith", "bob smith",
+    "julie strau", "mike johnson", "test user", "admin user", "default user",
+    # Single word names (likely fake)
+    "admin", "user", "manager", "director", "executive", "officer",
+]
 
 # C-suite titles to validate
 CSUITE_TITLES = {
@@ -352,6 +440,9 @@ class DataValidator:
         """
         Validate stakeholder data for consistency and accuracy.
 
+        STRICT VALIDATION: For known major companies, only allow executives
+        that match the verified known_executives list.
+
         Args:
             domain: Company domain
             stakeholders: List of stakeholder records
@@ -364,6 +455,7 @@ class DataValidator:
         issues = []
         known_facts = self.known_facts.get(domain, {})
         known_ceo = known_facts.get("ceo", [])
+        known_executives = known_facts.get("known_executives", [])
 
         # Combine stakeholders and executives
         all_people = stakeholders + executives
@@ -373,15 +465,60 @@ class DataValidator:
             title = person.get("title", "")
             role_type = person.get("roleType", person.get("role_type", ""))
 
-            # Check if someone is incorrectly listed as CEO
+            if not name:
+                continue
+
+            name_lower = name.lower().strip()
+
+            # STRICT CHECK 1: Check against suspicious/fake names
+            is_suspicious = False
+            for suspicious in SUSPICIOUS_NAMES:
+                if suspicious in name_lower or name_lower == suspicious:
+                    is_suspicious = True
+                    issues.append(ValidationIssue(
+                        field_name=f"stakeholder.{role_type}.name",
+                        provided_value=name,
+                        expected_values=[],
+                        severity="critical",
+                        message=f"Name '{name}' is a known fake/placeholder name - REJECTED",
+                        source=source
+                    ))
+                    break
+
+            if is_suspicious:
+                continue
+
+            # STRICT CHECK 2: For major companies, verify against known executives
+            if known_executives:
+                known_names = [exec["name"].lower().strip() for exec in known_executives]
+
+                # Check if the name matches any known executive
+                is_known_executive = any(
+                    name_lower == known_name or
+                    name_lower in known_name or
+                    known_name in name_lower
+                    for known_name in known_names
+                )
+
+                if not is_known_executive:
+                    # This person is NOT in our known executives list for this major company
+                    issues.append(ValidationIssue(
+                        field_name=f"stakeholder.{role_type}.name",
+                        provided_value=name,
+                        expected_values=[exec["name"] for exec in known_executives],
+                        severity="critical",
+                        message=f"'{name}' is NOT a verified executive at {domain}. Known executives: {[e['name'] for e in known_executives[:5]]}",
+                        source=source
+                    ))
+                    continue
+
+            # STRICT CHECK 3: CEO validation
             if role_type == "CEO" or "CEO" in title.upper():
-                if known_ceo and name:
-                    name_lower = name.lower().strip()
+                if known_ceo:
                     known_ceo_lower = [c.lower().strip() for c in known_ceo]
 
-                    # Check if the name matches any known CEO
                     is_valid_ceo = any(
-                        name_lower in ceo or ceo in name_lower
+                        name_lower == ceo or name_lower in ceo or ceo in name_lower
                         for ceo in known_ceo_lower
                     )
 
@@ -391,29 +528,72 @@ class DataValidator:
                             provided_value=name,
                             expected_values=known_ceo,
                             severity="critical",
-                            message=f"Person '{name}' listed as CEO but known CEO is {known_ceo}",
+                            message=f"'{name}' listed as CEO but verified CEO is {known_ceo[0]}",
                             source=source
                         ))
 
-            # Check for duplicate stakeholders with different names in same role
-            # (this might indicate bad data)
-
-            # Check for obviously fake or placeholder names
-            suspicious_patterns = [
-                "test", "sample", "example", "placeholder", "unknown",
-                "n/a", "tbd", "tba", "xxx"
-            ]
-            if name and any(pattern in name.lower() for pattern in suspicious_patterns):
-                issues.append(ValidationIssue(
-                    field_name=f"stakeholder.{role_type}.name",
-                    provided_value=name,
-                    expected_values=[],
-                    severity="warning",
-                    message=f"Name '{name}' appears to be a placeholder or test value",
-                    source=source
-                ))
-
         return issues
+
+    def filter_invalid_stakeholders(
+        self,
+        domain: str,
+        stakeholders: List[Dict[str, Any]],
+        source: str = "unknown"
+    ) -> List[Dict[str, Any]]:
+        """
+        Filter out stakeholders that fail validation.
+        Returns only verified/valid stakeholders.
+
+        Args:
+            domain: Company domain
+            stakeholders: List of stakeholder records
+            source: Data source name
+
+        Returns:
+            List of valid stakeholders only
+        """
+        domain_normalized = domain.lower().strip()
+        if domain_normalized.startswith("www."):
+            domain_normalized = domain_normalized[4:]
+
+        known_facts = self.known_facts.get(domain_normalized, {})
+        known_executives = known_facts.get("known_executives", [])
+
+        valid_stakeholders = []
+
+        for person in stakeholders:
+            name = person.get("name", "")
+            if not name:
+                continue
+
+            name_lower = name.lower().strip()
+
+            # Check 1: Reject suspicious names
+            is_suspicious = any(
+                suspicious in name_lower or name_lower == suspicious
+                for suspicious in SUSPICIOUS_NAMES
+            )
+            if is_suspicious:
+                logger.warning(f"Filtering out suspicious stakeholder: {name}")
+                continue
+
+            # Check 2: For known companies, only allow verified executives
+            if known_executives:
+                known_names = [exec["name"].lower().strip() for exec in known_executives]
+                is_known = any(
+                    name_lower == known_name or
+                    name_lower in known_name or
+                    known_name in name_lower
+                    for known_name in known_names
+                )
+                if not is_known:
+                    logger.warning(f"Filtering out unverified stakeholder for {domain}: {name}")
+                    continue
+
+            valid_stakeholders.append(person)
+
+        logger.info(f"Stakeholder validation for {domain}: {len(valid_stakeholders)}/{len(stakeholders)} passed")
+        return valid_stakeholders
 
     def _sanity_checks(
         self,
