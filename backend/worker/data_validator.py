@@ -195,16 +195,10 @@ KNOWN_COMPANY_FACTS = {
     },
 }
 
-# Common fake/generic names that should be flagged
-SUSPICIOUS_NAMES = [
-    # Test/placeholder patterns
+# Only filter obvious placeholder values (not real names)
+PLACEHOLDER_VALUES = [
     "test", "sample", "example", "placeholder", "unknown", "n/a", "tbd", "tba", "xxx",
-    "fake", "dummy", "temp", "demo",
-    # Generic common names often used as placeholders
-    "john doe", "jane doe", "john smith", "jane smith", "tom smith", "bob smith",
-    "julie strau", "mike johnson", "test user", "admin user", "default user",
-    # Single word names (likely fake)
-    "admin", "user", "manager", "director", "executive", "officer",
+    "fake", "dummy", "temp", "demo", "admin", "user", "null", "none", "undefined",
 ]
 
 # C-suite titles to validate
@@ -438,10 +432,8 @@ class DataValidator:
         source: str
     ) -> List[ValidationIssue]:
         """
-        Validate stakeholder data for consistency and accuracy.
-
-        STRICT VALIDATION: For known major companies, only allow executives
-        that match the verified known_executives list.
+        Light validation of stakeholder data.
+        Only validates CEO for known companies - LLM Council does cross-source validation.
 
         Args:
             domain: Company domain
@@ -455,7 +447,6 @@ class DataValidator:
         issues = []
         known_facts = self.known_facts.get(domain, {})
         known_ceo = known_facts.get("ceo", [])
-        known_executives = known_facts.get("known_executives", [])
 
         # Combine stakeholders and executives
         all_people = stakeholders + executives
@@ -470,49 +461,19 @@ class DataValidator:
 
             name_lower = name.lower().strip()
 
-            # STRICT CHECK 1: Check against suspicious/fake names
-            is_suspicious = False
-            for suspicious in SUSPICIOUS_NAMES:
-                if suspicious in name_lower or name_lower == suspicious:
-                    is_suspicious = True
-                    issues.append(ValidationIssue(
-                        field_name=f"stakeholder.{role_type}.name",
-                        provided_value=name,
-                        expected_values=[],
-                        severity="critical",
-                        message=f"Name '{name}' is a known fake/placeholder name - REJECTED",
-                        source=source
-                    ))
-                    break
-
-            if is_suspicious:
+            # Only flag obvious placeholder values
+            if name_lower in PLACEHOLDER_VALUES:
+                issues.append(ValidationIssue(
+                    field_name=f"stakeholder.{role_type}.name",
+                    provided_value=name,
+                    expected_values=[],
+                    severity="warning",
+                    message=f"Name '{name}' appears to be a placeholder value",
+                    source=source
+                ))
                 continue
 
-            # STRICT CHECK 2: For major companies, verify against known executives
-            if known_executives:
-                known_names = [exec["name"].lower().strip() for exec in known_executives]
-
-                # Check if the name matches any known executive
-                is_known_executive = any(
-                    name_lower == known_name or
-                    name_lower in known_name or
-                    known_name in name_lower
-                    for known_name in known_names
-                )
-
-                if not is_known_executive:
-                    # This person is NOT in our known executives list for this major company
-                    issues.append(ValidationIssue(
-                        field_name=f"stakeholder.{role_type}.name",
-                        provided_value=name,
-                        expected_values=[exec["name"] for exec in known_executives],
-                        severity="critical",
-                        message=f"'{name}' is NOT a verified executive at {domain}. Known executives: {[e['name'] for e in known_executives[:5]]}",
-                        source=source
-                    ))
-                    continue
-
-            # STRICT CHECK 3: CEO validation
+            # CEO validation only - for known companies, verify CEO claims
             if role_type == "CEO" or "CEO" in title.upper():
                 if known_ceo:
                     known_ceo_lower = [c.lower().strip() for c in known_ceo]
@@ -527,8 +488,8 @@ class DataValidator:
                             field_name=f"stakeholder.{role_type}.name",
                             provided_value=name,
                             expected_values=known_ceo,
-                            severity="critical",
-                            message=f"'{name}' listed as CEO but verified CEO is {known_ceo[0]}",
+                            severity="warning",
+                            message=f"'{name}' listed as CEO but verified CEO is {known_ceo[0]} - LLM Council will verify",
                             source=source
                         ))
 
@@ -541,8 +502,8 @@ class DataValidator:
         source: str = "unknown"
     ) -> List[Dict[str, Any]]:
         """
-        Filter out stakeholders that fail validation.
-        Returns only verified/valid stakeholders.
+        Light filtering - only remove obvious placeholder data.
+        Real validation is done by the LLM Council which cross-checks sources.
 
         Args:
             domain: Company domain
@@ -550,15 +511,8 @@ class DataValidator:
             source: Data source name
 
         Returns:
-            List of valid stakeholders only
+            List of stakeholders (minimally filtered)
         """
-        domain_normalized = domain.lower().strip()
-        if domain_normalized.startswith("www."):
-            domain_normalized = domain_normalized[4:]
-
-        known_facts = self.known_facts.get(domain_normalized, {})
-        known_executives = known_facts.get("known_executives", [])
-
         valid_stakeholders = []
 
         for person in stakeholders:
@@ -568,41 +522,15 @@ class DataValidator:
 
             name_lower = name.lower().strip()
 
-            # Check 1: Reject suspicious names
-            is_suspicious = any(
-                suspicious in name_lower or name_lower == suspicious
-                for suspicious in SUSPICIOUS_NAMES
-            )
-            if is_suspicious:
-                logger.warning(f"Filtering out suspicious stakeholder: {name}")
+            # Only filter obvious placeholder values, not real names
+            is_placeholder = name_lower in PLACEHOLDER_VALUES or len(name_lower) < 2
+            if is_placeholder:
+                logger.info(f"Filtering placeholder value: {name}")
                 continue
-
-            # Check 2: For known companies, reject stakeholders claiming executive roles
-            # that don't match our verified list (e.g., someone claiming to be CEO who isn't)
-            if known_executives:
-                person_title = person.get("title", "").lower()
-                person_role = person.get("role", "").lower()
-
-                # Check if this person claims to be a C-suite executive
-                executive_titles = ["ceo", "cfo", "coo", "cto", "cpo", "cmo", "chief", "president", "chairman"]
-                claims_executive_role = any(title in person_title or title in person_role for title in executive_titles)
-
-                if claims_executive_role:
-                    # Verify against known executives
-                    known_names = [exec["name"].lower().strip() for exec in known_executives]
-                    is_verified = any(
-                        name_lower == known_name or
-                        name_lower in known_name or
-                        known_name in name_lower
-                        for known_name in known_names
-                    )
-                    if not is_verified:
-                        logger.warning(f"Filtering out unverified executive for {domain}: {name} ({person_title})")
-                        continue
 
             valid_stakeholders.append(person)
 
-        logger.info(f"Stakeholder validation for {domain}: {len(valid_stakeholders)}/{len(stakeholders)} passed")
+        logger.info(f"Stakeholder pre-filter for {domain}: {len(valid_stakeholders)}/{len(stakeholders)} passed (LLM Council will cross-validate)")
         return valid_stakeholders
 
     def _sanity_checks(
