@@ -42,7 +42,7 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
 
   return (
     <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
-      {/* Header */}
+      {/* Compact Header Row */}
       <div className={`${roleConfig.bgColor} px-4 py-3 border-b border-slate-200`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -54,110 +54,119 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
               <p className="text-xs text-slate-600">{stakeholder.title}</p>
             </div>
           </div>
-          {stakeholder.isNewHire && (
-            <div className="flex items-center space-x-1 bg-emerald-500 text-white px-2 py-1 rounded-full">
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              <span className="text-[10px] font-medium">New Hire</span>
-            </div>
-          )}
+          <div className="flex items-center space-x-2">
+            {stakeholder.isNewHire && (
+              <div className="flex items-center space-x-1 bg-emerald-500 text-white px-2 py-1 rounded-full">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+                </svg>
+                <span className="text-[10px] font-medium">New Hire</span>
+              </div>
+            )}
+          </div>
         </div>
         {stakeholder.isNewHire && stakeholder.hireDate && (
           <p className="text-xs text-slate-600 mt-2">Started: {stakeholder.hireDate}</p>
         )}
       </div>
 
-      <div className="p-4 space-y-4">
-        {/* Bio */}
-        <div>
-          <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">Bio</h5>
-          <p className="text-sm text-slate-600 leading-relaxed">
-            {stakeholder.bio || `${stakeholder.name} serves as ${stakeholder.title}, responsible for key strategic initiatives and organizational leadership.`}
+      {/* Horizontal Layout Content */}
+      <div className="p-4">
+        {/* Top Row: Bio and Contact side by side */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* Bio */}
+          <div className="bg-slate-50 rounded-lg p-3">
+            <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide flex items-center">
+              <svg className="w-3 h-3 mr-1 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+              </svg>
+              Bio
+            </h5>
+            <p className="text-sm text-slate-600 leading-relaxed line-clamp-3">
+              {stakeholder.bio || `${stakeholder.name} serves as ${stakeholder.title}, responsible for key strategic initiatives.`}
+            </p>
+          </div>
+
+          {/* Contact Info */}
+          <div className="bg-slate-50 rounded-lg p-3">
+            <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide flex items-center">
+              <svg className="w-3 h-3 mr-1 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+              </svg>
+              Contact
+            </h5>
+            <div className="space-y-1.5">
+              {contact.email && (
+                <a href={`mailto:${contact.email}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700 truncate">
+                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                  {contact.email}
+                </a>
+              )}
+              {contact.phone && (
+                <a href={`tel:${contact.phone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                  {contact.phone}
+                </a>
+              )}
+              {contact.linkedinUrl && (
+                <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
+                  </svg>
+                  LinkedIn
+                </a>
+              )}
+              {!contact.email && !contact.phone && !contact.linkedinUrl && (
+                <p className="text-xs text-slate-400">Contact info not available</p>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Strategic Priorities - Always show, with fallback */}
+        <div className="bg-primary-50 rounded-lg p-3 mb-4">
+          <h5 className="text-xs font-semibold text-primary-700 mb-2 uppercase tracking-wide flex items-center">
+            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
+            </svg>
+            Strategic Priorities
+          </h5>
+          {strategicPriorities.length > 0 ? (
+            <div className="flex flex-wrap gap-2">
+              {strategicPriorities.slice(0, 4).map((priority, index) => {
+                const priorityText = typeof priority === 'string' ? priority : priority.priority;
+                return (
+                  <span key={index} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
+                    {priorityText}
+                  </span>
+                );
+              })}
+            </div>
+          ) : (
+            <p className="text-xs text-primary-600">Digital transformation, operational efficiency, cost optimization</p>
+          )}
+        </div>
+
+        {/* Communication Preference - Always show */}
+        <div className="bg-blue-50 rounded-lg p-3 mb-4">
+          <h5 className="text-xs font-semibold text-blue-700 mb-2 uppercase tracking-wide flex items-center">
+            <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            Communication Preference
+          </h5>
+          <p className="text-xs text-blue-900">
+            {stakeholder.communicationPreference || `Prefers concise, data-driven communications focused on business outcomes and ROI.`}
           </p>
         </div>
 
-        {/* Contact Info */}
-        <div>
-          <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">Contact Information</h5>
-          <div className="grid grid-cols-1 gap-2">
-            {contact.email && (
-              <a
-                href={`mailto:${contact.email}`}
-                className="flex items-center text-sm text-primary-600 hover:text-primary-700"
-              >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                </svg>
-                {contact.email}
-              </a>
-            )}
-            {contact.phone && (
-              <a
-                href={`tel:${contact.phone}`}
-                className="flex items-center text-sm text-primary-600 hover:text-primary-700"
-              >
-                <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                </svg>
-                {contact.phone}
-              </a>
-            )}
-            {contact.linkedinUrl && (
-              <a
-                href={contact.linkedinUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center text-sm text-primary-600 hover:text-primary-700"
-              >
-                <svg className="w-4 h-4 mr-2" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
-                </svg>
-                LinkedIn Profile
-              </a>
-            )}
-            {!contact.email && !contact.phone && !contact.linkedinUrl && (
-              <p className="text-sm text-slate-400">Contact information not available</p>
-            )}
-          </div>
-        </div>
-
-        {/* Strategic Priorities */}
-        {strategicPriorities.length > 0 && (
-          <div>
-            <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">Strategic Priorities</h5>
-            <ul className="space-y-1.5">
-              {strategicPriorities.map((priority, index) => {
-                const priorityText = typeof priority === 'string' ? priority : priority.priority;
-                const priorityDescription = typeof priority === 'object' && priority.description ? priority.description : null;
-                return (
-                  <li key={index} className="flex items-start text-sm text-slate-600">
-                    <span className="w-5 h-5 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold mr-2 flex-shrink-0 mt-0.5">
-                      {index + 1}
-                    </span>
-                    <div>
-                      <span>{priorityText}</span>
-                      {priorityDescription && (
-                        <p className="text-xs text-slate-500 mt-0.5">{priorityDescription}</p>
-                      )}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          </div>
-        )}
-
-        {/* Communication Preference */}
-        {stakeholder.communicationPreference && (
-          <div>
-            <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">Communication Preference</h5>
-            <p className="text-sm text-slate-600">{stakeholder.communicationPreference}</p>
-          </div>
-        )}
-
-        {/* Conversation Starters */}
-        {stakeholder.conversationStarters && (
+        {/* Bottom Row: Conversation Starters and Next Steps */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+          {/* Conversation Starters */}
           <div className="bg-amber-50 rounded-lg p-3">
             <h5 className="text-xs font-semibold text-amber-700 mb-2 uppercase tracking-wide flex items-center">
               <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -165,43 +174,52 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
               </svg>
               Conversation Starters
             </h5>
-            <p className="text-sm text-amber-900 italic leading-relaxed">&ldquo;{stakeholder.conversationStarters}&rdquo;</p>
+            <p className="text-xs text-amber-900 italic leading-relaxed">
+              &ldquo;{stakeholder.conversationStarters || `Given your focus on ${stakeholder.roleType === 'CIO' || stakeholder.roleType === 'CTO' ? 'digital transformation' : stakeholder.roleType === 'CFO' ? 'financial optimization' : 'operational excellence'}, how are you approaching technology investments this year?`}&rdquo;
+            </p>
           </div>
-        )}
 
-        {/* Recommended Next Steps */}
-        {stakeholder.recommendedNextSteps && stakeholder.recommendedNextSteps.length > 0 && (
+          {/* Recommended Next Steps */}
           <div className="bg-emerald-50 rounded-lg p-3">
             <h5 className="text-xs font-semibold text-emerald-700 mb-2 uppercase tracking-wide flex items-center">
               <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
-              Recommended Next Steps
+              Next Steps
             </h5>
-            <ol className="space-y-2">
-              {stakeholder.recommendedNextSteps.map((step, index) => (
-                <li key={index} className="flex items-start text-sm text-emerald-900">
-                  <span className="w-5 h-5 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-xs font-bold mr-2 flex-shrink-0 mt-0.5">
-                    {index + 1}
-                  </span>
-                  <span className="leading-relaxed">{step}</span>
+            {stakeholder.recommendedNextSteps && stakeholder.recommendedNextSteps.length > 0 ? (
+              <ol className="space-y-1">
+                {stakeholder.recommendedNextSteps.slice(0, 3).map((step, index) => (
+                  <li key={index} className="flex items-start text-xs text-emerald-900">
+                    <span className="w-4 h-4 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-[10px] font-bold mr-1.5 flex-shrink-0 mt-0.5">
+                      {index + 1}
+                    </span>
+                    <span className="leading-relaxed">{step}</span>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <ol className="space-y-1">
+                <li className="flex items-start text-xs text-emerald-900">
+                  <span className="w-4 h-4 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-[10px] font-bold mr-1.5 flex-shrink-0 mt-0.5">1</span>
+                  <span>Connect on LinkedIn with personalized note</span>
                 </li>
-              ))}
-            </ol>
+                <li className="flex items-start text-xs text-emerald-900">
+                  <span className="w-4 h-4 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-[10px] font-bold mr-1.5 flex-shrink-0 mt-0.5">2</span>
+                  <span>Share relevant industry insights</span>
+                </li>
+                <li className="flex items-start text-xs text-emerald-900">
+                  <span className="w-4 h-4 rounded-full bg-emerald-200 text-emerald-800 flex items-center justify-center text-[10px] font-bold mr-1.5 flex-shrink-0 mt-0.5">3</span>
+                  <span>Request discovery conversation</span>
+                </li>
+              </ol>
+            )}
           </div>
-        )}
+        </div>
 
-        {/* Recommended Play (fallback if no next steps) */}
-        {stakeholder.recommendedPlay && (!stakeholder.recommendedNextSteps || stakeholder.recommendedNextSteps.length === 0) && (
-          <div className="bg-primary-50 rounded-lg p-3">
-            <h5 className="text-xs font-semibold text-primary-700 mb-1 uppercase tracking-wide">Recommended Play</h5>
-            <p className="text-sm text-primary-900">{stakeholder.recommendedPlay}</p>
-          </div>
-        )}
-
-        {/* Supporting Assets Section */}
+        {/* Supporting Assets Section - Collapsible */}
         {supportingAsset && (
-          <div className="border-t border-slate-200 pt-4">
+          <div className="border-t border-slate-200 pt-3">
             <button
               onClick={() => setShowAssets(!showAssets)}
               className="w-full flex items-center justify-between text-left"
@@ -223,7 +241,7 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
             </button>
 
             {showAssets && (
-              <div className="mt-3 space-y-3">
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
                 {/* Email Template */}
                 {supportingAsset.email_template && (
                   <div className="bg-blue-50 rounded-lg p-3">
@@ -231,9 +249,9 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
                       <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
                       </svg>
-                      Email Template
+                      Email
                     </h6>
-                    <pre className="text-xs text-blue-900 whitespace-pre-wrap font-sans leading-relaxed bg-white/50 rounded p-2 max-h-40 overflow-y-auto">
+                    <pre className="text-[10px] text-blue-900 whitespace-pre-wrap font-sans leading-relaxed bg-white/50 rounded p-2 max-h-24 overflow-y-auto">
                       {supportingAsset.email_template}
                     </pre>
                   </div>
@@ -246,9 +264,9 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
                       <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
                         <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
                       </svg>
-                      LinkedIn Outreach
+                      LinkedIn
                     </h6>
-                    <pre className="text-xs text-indigo-900 whitespace-pre-wrap font-sans leading-relaxed bg-white/50 rounded p-2 max-h-40 overflow-y-auto">
+                    <pre className="text-[10px] text-indigo-900 whitespace-pre-wrap font-sans leading-relaxed bg-white/50 rounded p-2 max-h-24 overflow-y-auto">
                       {supportingAsset.linkedin_outreach}
                     </pre>
                   </div>
@@ -263,7 +281,7 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
                       </svg>
                       Call Script
                     </h6>
-                    <pre className="text-xs text-green-900 whitespace-pre-wrap font-sans leading-relaxed bg-white/50 rounded p-2 max-h-40 overflow-y-auto">
+                    <pre className="text-[10px] text-green-900 whitespace-pre-wrap font-sans leading-relaxed bg-white/50 rounded p-2 max-h-24 overflow-y-auto">
                       {supportingAsset.call_script}
                     </pre>
                   </div>
@@ -277,7 +295,7 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
         {onGenerateOutreach && (
           <button
             onClick={() => onGenerateOutreach(stakeholder.roleType, stakeholder.name)}
-            className="w-full inline-flex items-center justify-center px-4 py-2.5 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 transition-all shadow-sm"
+            className="w-full mt-3 inline-flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium text-white bg-gradient-to-r from-primary-500 to-primary-600 hover:from-primary-600 hover:to-primary-700 transition-all shadow-sm"
           >
             <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
@@ -395,7 +413,7 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
             </div>
 
             {stakeholderCount > 0 ? (
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              <div className="space-y-4">
                 {stakeholders.map((stakeholder, index) => (
                   <StakeholderDetailCard
                     key={`${stakeholder.name}-${index}`}
@@ -424,7 +442,7 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
               <svg className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <p>Stakeholder data sourced from Apollo.io. Bios, priorities, and recommendations are AI-generated based on role and company context. New hire status detected from employment history.</p>
+              <p>Stakeholder data sourced from Apollo.io and Hunter.io. Strategic priorities, communication preferences, and recommendations are AI-generated based on role and company context.</p>
             </div>
           </div>
         </div>

@@ -1,12 +1,17 @@
 """
 LLM-based data validation module.
 Implements validation logic using LLM agents for data quality assurance.
+
+Pre-validation is performed using the DataValidator to catch egregiously
+wrong data (like incorrect CEO names) BEFORE sending to the LLM council.
 """
 import logging
 from typing import Dict, Any, List, Optional
 from enum import Enum
 import openai
 from dataclasses import dataclass
+
+from .data_validator import get_validator, DataValidator
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +42,9 @@ class LLMValidator:
     1. All data same: Simple consensus validation
     2. Conflicting data: LLM council resolution
     3. NULL data: Fallback strategies
+
+    Pre-validation using DataValidator catches egregiously wrong data
+    (like incorrect CEO names for major companies) before LLM processing.
     """
 
     def __init__(self, openai_api_key: str):
@@ -51,7 +59,99 @@ class LLMValidator:
         """
         openai.api_key = openai_api_key
         self.model = "gpt-4"
-        logger.info("LLM validator initialized")
+        self.data_validator = get_validator()
+        logger.info("LLM validator initialized with pre-validation enabled")
+
+    def pre_validate_source_data(
+        self,
+        domain: str,
+        source_data: Dict[str, Dict[str, Any]]
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Pre-validate data from all sources before LLM processing.
+
+        This catches egregiously wrong data (like incorrect CEO names)
+        before it goes to the LLM council, preventing garbage-in-garbage-out.
+
+        Args:
+            domain: Company domain (e.g., "microsoft.com")
+            source_data: Dict mapping source name to data from that source
+
+        Returns:
+            Cleaned source data with corrections applied
+        """
+        cleaned_data = {}
+
+        for source, data in source_data.items():
+            result = self.data_validator.validate_company_data(
+                domain=domain,
+                data=data,
+                source=source
+            )
+
+            # Apply corrections
+            corrected_data = data.copy()
+            for field, corrected_value in result.corrected_values.items():
+                logger.warning(
+                    f"Pre-validation corrected {field} for {domain} "
+                    f"from source {source}: '{data.get(field)}' -> '{corrected_value}'"
+                )
+                corrected_data[field] = corrected_value
+
+            # Log critical issues
+            for issue in result.issues:
+                if issue.severity == "critical":
+                    logger.error(
+                        f"Critical data issue from {source}: "
+                        f"{issue.field_name} - {issue.message}"
+                    )
+
+            cleaned_data[source] = corrected_data
+
+        return cleaned_data
+
+    def validate_stakeholder_data(
+        self,
+        domain: str,
+        stakeholders: List[Dict[str, Any]],
+        source: str = "unknown"
+    ) -> List[Dict[str, Any]]:
+        """
+        Validate stakeholder data and filter out obviously incorrect entries.
+
+        Args:
+            domain: Company domain
+            stakeholders: List of stakeholder records
+            source: Data source name
+
+        Returns:
+            Filtered and validated stakeholder list
+        """
+        result = self.data_validator.validate_company_data(
+            domain=domain,
+            data={"stakeholders": stakeholders},
+            source=source
+        )
+
+        # Filter out stakeholders with critical issues
+        critical_names = set()
+        for issue in result.issues:
+            if issue.severity == "critical" and "stakeholder" in issue.field_name:
+                # Extract the name that was flagged
+                critical_names.add(issue.provided_value)
+
+        validated_stakeholders = []
+        for stakeholder in stakeholders:
+            name = stakeholder.get("name", "")
+            if name not in critical_names:
+                validated_stakeholders.append(stakeholder)
+            else:
+                logger.warning(
+                    f"Filtered out stakeholder '{name}' from {source} "
+                    f"due to validation failure"
+                )
+
+        return validated_stakeholders
 
     async def validate_field(
         self,

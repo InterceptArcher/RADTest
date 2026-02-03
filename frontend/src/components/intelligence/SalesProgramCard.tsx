@@ -1,11 +1,10 @@
 'use client';
 
 import { useState } from 'react';
-import type { SalesProgram, IntentLevel, StakeholderRoleType } from '@/types';
+import type { SalesProgram, IntentLevel } from '@/types';
 
 interface SalesProgramCardProps {
   program: SalesProgram;
-  onGenerateOutreach?: (roleType: StakeholderRoleType) => void;
 }
 
 const intentLevelConfig: Record<IntentLevel, {
@@ -55,9 +54,55 @@ const intentLevelConfig: Record<IntentLevel, {
   },
 };
 
-const targetRoles: StakeholderRoleType[] = ['CIO', 'CTO', 'CISO', 'COO', 'CFO', 'CPO'];
+// Conversation starters based on intent level
+const conversationStartersByIntent: Record<IntentLevel, string[]> = {
+  'Low': [
+    "I noticed your company has been exploring solutions in this space. What challenges are you currently facing?",
+    "Many organizations in your industry are starting to evaluate options for [solution area]. Is this something on your radar?",
+    "I came across some interesting trends affecting companies like yours. Would you be open to a brief conversation about how others are approaching this?"
+  ],
+  'Medium': [
+    "Based on your recent activity, it seems like [topic] is becoming a priority. What's driving that interest?",
+    "I see you've been researching solutions in this area. How does your current approach compare to what you're evaluating?",
+    "Companies at a similar stage often benefit from understanding the ROI others have achieved. Would a case study be helpful?"
+  ],
+  'High': [
+    "It looks like you're actively evaluating vendors. What criteria matter most to your team?",
+    "I'd love to understand your timeline and what a successful implementation would look like for you.",
+    "Many of our customers in your situation found a technical deep-dive valuable at this stage. Would that be useful?"
+  ],
+  'Very High': [
+    "I understand you're close to a decision. What would help you feel confident in your choice?",
+    "At this stage, stakeholder alignment is often key. Who else needs to be involved in the final decision?",
+    "Let's discuss implementation specifics and how we can ensure a smooth transition for your team."
+  ]
+};
 
-export default function SalesProgramCard({ program, onGenerateOutreach }: SalesProgramCardProps) {
+// Next steps based on intent level
+const nextStepsByIntent: Record<IntentLevel, { action: string; description: string }[]> = {
+  'Low': [
+    { action: "Share educational content", description: "Send industry report or thought leadership piece" },
+    { action: "Connect on LinkedIn", description: "Build relationship with personalized connection request" },
+    { action: "Add to nurture sequence", description: "Enroll in automated awareness campaign" }
+  ],
+  'Medium': [
+    { action: "Schedule discovery call", description: "15-minute conversation to understand needs" },
+    { action: "Send relevant case study", description: "Share success story from similar company" },
+    { action: "Invite to upcoming webinar", description: "Educational event relevant to their challenges" }
+  ],
+  'High': [
+    { action: "Offer personalized demo", description: "Tailored demonstration of key features" },
+    { action: "Propose POC/pilot program", description: "Limited trial to prove value" },
+    { action: "Connect with technical team", description: "Arrange solution architect conversation" }
+  ],
+  'Very High': [
+    { action: "Send custom proposal", description: "Detailed pricing and implementation plan" },
+    { action: "Arrange executive meeting", description: "Align leadership on partnership vision" },
+    { action: "Prepare implementation timeline", description: "Detailed onboarding and success roadmap" }
+  ]
+};
+
+export default function SalesProgramCard({ program }: SalesProgramCardProps) {
   const [expanded, setExpanded] = useState(false);
 
   // Null safety for program data
@@ -224,77 +269,68 @@ export default function SalesProgramCard({ program, onGenerateOutreach }: SalesP
             </div>
           </div>
 
-          {/* Supporting Assets Section */}
+          {/* Conversation Starters Section */}
           <div className="mt-6">
             <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center">
               <svg className="w-4 h-4 mr-2 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
               </svg>
-              Supporting Assets (Generative Content)
+              Conversation Starters
             </h3>
             <p className="text-xs text-slate-500 mb-4">
-              Generate personalized outreach content for each stakeholder role
+              Opening lines tailored to {program.intentLevel} intent prospects
             </p>
 
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-              {targetRoles.map((role) => (
-                <button
-                  key={role}
-                  onClick={() => onGenerateOutreach?.(role)}
-                  disabled={!onGenerateOutreach}
-                  className="bg-white border border-slate-200 rounded-xl p-4 text-left hover:border-primary-300 hover:bg-primary-50 transition-all group disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold text-slate-900">{role}</span>
-                    <svg className="w-4 h-4 text-slate-400 group-hover:text-primary-500 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                    </svg>
+            <div className="space-y-3">
+              {conversationStartersByIntent[program.intentLevel].map((starter, index) => (
+                <div key={index} className="bg-white border border-slate-200 rounded-xl p-4">
+                  <div className="flex items-start space-x-3">
+                    <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">
+                      {index + 1}
+                    </span>
+                    <p className="text-sm text-slate-700 leading-relaxed italic">&ldquo;{starter}&rdquo;</p>
                   </div>
-                  <div className="space-y-1 text-[10px] text-slate-500">
-                    <div className="flex items-center">
-                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                      </svg>
-                      Email Copy
-                    </div>
-                    <div className="flex items-center">
-                      <svg className="w-3 h-3 mr-1" fill="currentColor" viewBox="0 0 24 24">
-                        <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
-                      </svg>
-                      LinkedIn Copy
-                    </div>
-                    <div className="flex items-center">
-                      <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                      </svg>
-                      Call Script
-                    </div>
-                  </div>
-                </button>
+                </div>
               ))}
             </div>
           </div>
 
-          {/* Quick Action Buttons */}
-          <div className="mt-6 flex flex-wrap gap-2">
-            <button className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors">
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          {/* Next Steps Section */}
+          <div className="mt-6">
+            <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center">
+              <svg className="w-4 h-4 mr-2 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
               </svg>
-              Schedule Follow-up
-            </button>
-            <button className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors">
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              Export to CRM
-            </button>
-            <button className="inline-flex items-center px-4 py-2 rounded-lg text-sm font-medium bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 transition-colors">
-              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-              </svg>
-              Download Report
-            </button>
+              Recommended Next Steps
+            </h3>
+            <p className="text-xs text-slate-500 mb-4">
+              Outreach actions for {program.intentLevel} intent accounts
+            </p>
+
+            <div className="space-y-3">
+              {nextStepsByIntent[program.intentLevel].map((step, index) => (
+                <div key={index} className="bg-white border border-slate-200 rounded-xl p-4">
+                  <div className="flex items-start space-x-3">
+                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                      index === 0 ? 'bg-emerald-100' : index === 1 ? 'bg-blue-100' : 'bg-purple-100'
+                    }`}>
+                      <span className={`text-xs font-bold ${
+                        index === 0 ? 'text-emerald-700' : index === 1 ? 'text-blue-700' : 'text-purple-700'
+                      }`}>
+                        {index + 1}
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-slate-900">{step.action}</p>
+                      <p className="text-xs text-slate-600 mt-1">{step.description}</p>
+                    </div>
+                    <svg className="w-5 h-5 text-slate-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
 
           {/* Data Source Note */}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import type { BuyingSignals, Scoop, IntentTopicDetailed, TechnologyInterest, InterestOverTime, KeySignals } from '@/types';
+import type { BuyingSignals, Scoop } from '@/types';
 
 interface BuyingSignalsCardProps {
   signals: BuyingSignals;
@@ -473,52 +473,6 @@ export default function BuyingSignalsCard({ signals }: BuyingSignalsCardProps) {
                 </svg>
                 <p className="text-sm text-slate-500">No scoops available</p>
                 <p className="text-xs text-slate-400 mt-1">News and trigger events will appear here when detected</p>
-              </div>
-            )}
-          </div>
-
-          {/* Opportunity Themes Section */}
-          <div className="mt-6">
-            <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center">
-              <svg className="w-4 h-4 mr-2 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-              </svg>
-              Opportunity Themes
-            </h3>
-            <p className="text-xs text-slate-500 mb-4">
-              Organizational challenges mapped to solution categories
-            </p>
-
-            {signals.opportunityThemes && signals.opportunityThemes.length > 0 ? (
-              <div className="space-y-3">
-                {signals.opportunityThemes.map((theme, index) => (
-                  <div key={index} className="bg-white border border-slate-200 rounded-xl p-4">
-                    <div className="flex items-center mb-2">
-                      <span className="w-6 h-6 rounded-full bg-primary-100 text-primary-700 flex items-center justify-center text-xs font-bold mr-2">
-                        {index + 1}
-                      </span>
-                      <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Priority {index + 1}</span>
-                    </div>
-                    <div className="grid md:grid-cols-2 gap-4">
-                      <div className="bg-red-50 rounded-lg p-3">
-                        <p className="text-xs font-medium text-red-700 mb-1">Challenge</p>
-                        <p className="text-sm text-red-900">{theme.challenge}</p>
-                      </div>
-                      <div className="bg-emerald-50 rounded-lg p-3">
-                        <p className="text-xs font-medium text-emerald-700 mb-1">Solution Category</p>
-                        <p className="text-sm text-emerald-900">{theme.solutionCategory}</p>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="bg-slate-50 rounded-xl p-6 text-center">
-                <svg className="w-8 h-8 mx-auto text-slate-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                </svg>
-                <p className="text-sm text-slate-500">No opportunity themes identified</p>
-                <p className="text-xs text-slate-400 mt-1">Challenge-to-solution mappings will appear here</p>
               </div>
             )}
           </div>
