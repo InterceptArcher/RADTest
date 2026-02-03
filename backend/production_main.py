@@ -93,6 +93,20 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 GAMMA_API_KEY = os.getenv("GAMMA_API_KEY")
+GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
+
+# Debug: Log env var status at startup
+logger.info("=" * 50)
+logger.info("ENVIRONMENT VARIABLE STATUS AT STARTUP:")
+logger.info(f"  APOLLO_API_KEY: {'SET' if APOLLO_API_KEY else 'MISSING'} (len={len(APOLLO_API_KEY) if APOLLO_API_KEY else 0})")
+logger.info(f"  PEOPLEDATALABS_API_KEY: {'SET' if PEOPLEDATALABS_API_KEY else 'MISSING'}")
+logger.info(f"  HUNTER_API_KEY: {'SET' if HUNTER_API_KEY else 'MISSING'}")
+logger.info(f"  OPENAI_API_KEY: {'SET' if OPENAI_API_KEY else 'MISSING'}")
+logger.info(f"  GNEWS_API_KEY: {'SET' if GNEWS_API_KEY else 'MISSING'}")
+logger.info(f"  SUPABASE_URL: {'SET' if SUPABASE_URL else 'MISSING'}")
+logger.info(f"  SUPABASE_KEY: {'SET' if SUPABASE_KEY else 'MISSING'}")
+logger.info(f"  GAMMA_API_KEY: {'SET' if GAMMA_API_KEY else 'MISSING'}")
+logger.info("=" * 50)
 
 
 # Health check
