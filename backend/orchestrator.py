@@ -1,11 +1,12 @@
 """
-Orchestrator LLM for Intelligent API Routing.
+Orchestrator LLM for Intelligent API Routing at BULLET-POINT Level.
 
 This module provides intelligent API selection for company data queries.
 Instead of blindly querying all APIs, the orchestrator analyzes required
-data points and assigns the most capable APIs for each.
+data points and assigns the most capable APIs for EACH INDIVIDUAL FIELD.
 
 Rule: Minimum 2 APIs per data point for data validation and completeness.
+Rule: Hunter.io is ALWAYS queried for contact/stakeholder data.
 """
 import os
 import json
@@ -19,41 +20,97 @@ logger = logging.getLogger(__name__)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 
-# Data points required for final output, mapped to capable APIs
-DATA_POINTS = {
-    "executive_snapshot": {
-        "account_name": ["apollo", "pdl", "hunter"],
-        "company_overview": ["apollo", "pdl", "gnews"],
-        "account_type": ["pdl", "apollo"],
-        "industry": ["apollo", "pdl", "hunter"],
-        "estimated_it_budget": ["pdl", "apollo"],
-        "installed_technologies": ["pdl", "apollo"]
-    },
-    "buying_signals": {
-        "intent_topics": ["gnews", "pdl", "apollo"],
-        "interest_over_time": ["gnews", "pdl"],
-        "partner_mentions": ["gnews", "apollo"],
-        "key_signals": ["gnews", "apollo", "pdl"]
-    },
-    "opportunity_themes": {
-        "pain_points": ["gnews", "pdl", "apollo"],
-        "sales_opportunities": ["gnews", "apollo", "pdl"],
-        "solution_areas": ["pdl", "apollo", "gnews"]
-    },
-    "stakeholder_map": {
-        "executives": ["apollo", "hunter"],
-        "bios": ["apollo", "hunter", "pdl"],
-        "strategic_priorities": ["gnews", "apollo"],
-        "communication_preferences": ["apollo", "hunter"],
-        "conversation_starters": ["gnews", "apollo"],
-        "next_steps": ["gnews", "apollo", "pdl"]
-    },
-    "supporting_assets": {
-        "email_templates": ["hunter", "apollo"],
-        "linkedin_outreach": ["apollo", "pdl"],
-        "call_scripts": ["apollo", "pdl", "gnews"]
-    }
+# GRANULAR DATA POINTS - Each individual bullet point mapped to capable APIs
+# Format: "section.field" -> [list of APIs that can provide this data]
+GRANULAR_DATA_POINTS = {
+    # === EXECUTIVE SNAPSHOT ===
+    "executive_snapshot.account_name": ["apollo", "pdl", "hunter"],
+    "executive_snapshot.company_overview": ["apollo", "pdl", "gnews"],
+    "executive_snapshot.account_type": ["pdl", "apollo"],
+    "executive_snapshot.company_classification": ["pdl", "apollo"],
+    "executive_snapshot.industry": ["apollo", "pdl", "hunter"],
+    "executive_snapshot.sub_industry": ["apollo", "pdl"],
+    "executive_snapshot.estimated_it_spend": ["pdl", "apollo"],
+    "executive_snapshot.employee_count": ["apollo", "pdl", "hunter"],
+    "executive_snapshot.annual_revenue": ["apollo", "pdl"],
+    "executive_snapshot.headquarters": ["apollo", "pdl", "hunter"],
+    "executive_snapshot.founded_year": ["apollo", "pdl"],
+    "executive_snapshot.installed_technologies": ["pdl", "apollo"],
+
+    # === BUYING SIGNALS ===
+    "buying_signals.intent_topic_1": ["gnews", "pdl", "apollo"],
+    "buying_signals.intent_topic_2": ["gnews", "pdl", "apollo"],
+    "buying_signals.intent_topic_3": ["gnews", "pdl", "apollo"],
+    "buying_signals.intent_topic_1_description": ["gnews", "pdl"],
+    "buying_signals.intent_topic_2_description": ["gnews", "pdl"],
+    "buying_signals.intent_topic_3_description": ["gnews", "pdl"],
+    "buying_signals.interest_over_time": ["gnews", "pdl"],
+    "buying_signals.partner_mention_1": ["gnews", "apollo"],
+    "buying_signals.partner_mention_2": ["gnews", "apollo"],
+    "buying_signals.partner_mention_3": ["gnews", "apollo"],
+    "buying_signals.key_signal_1": ["gnews", "apollo", "pdl"],
+    "buying_signals.key_signal_2": ["gnews", "apollo", "pdl"],
+    "buying_signals.key_signal_3": ["gnews", "apollo", "pdl"],
+    "buying_signals.signal_strength": ["gnews", "apollo", "pdl"],
+    "buying_signals.scoop_executive_hire": ["gnews", "apollo", "hunter"],
+    "buying_signals.scoop_funding": ["gnews", "apollo", "pdl"],
+    "buying_signals.scoop_expansion": ["gnews", "apollo"],
+    "buying_signals.scoop_ma": ["gnews", "apollo", "pdl"],
+    "buying_signals.scoop_product_launch": ["gnews", "apollo"],
+
+    # === OPPORTUNITY THEMES ===
+    "opportunity_themes.pain_point_1": ["gnews", "pdl", "apollo"],
+    "opportunity_themes.pain_point_2": ["gnews", "pdl", "apollo"],
+    "opportunity_themes.pain_point_3": ["gnews", "pdl", "apollo"],
+    "opportunity_themes.sales_opportunity_1": ["gnews", "apollo", "pdl"],
+    "opportunity_themes.sales_opportunity_2": ["gnews", "apollo", "pdl"],
+    "opportunity_themes.sales_opportunity_3": ["gnews", "apollo", "pdl"],
+    "opportunity_themes.solution_area_1": ["pdl", "apollo", "gnews"],
+    "opportunity_themes.solution_area_2": ["pdl", "apollo", "gnews"],
+    "opportunity_themes.solution_area_3": ["pdl", "apollo", "gnews"],
+
+    # === STAKEHOLDER MAP (Hunter.io is REQUIRED) ===
+    "stakeholder_map.cio_name": ["apollo", "hunter"],
+    "stakeholder_map.cio_email": ["hunter", "apollo"],
+    "stakeholder_map.cio_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.cio_priorities": ["gnews", "apollo"],
+    "stakeholder_map.cto_name": ["apollo", "hunter"],
+    "stakeholder_map.cto_email": ["hunter", "apollo"],
+    "stakeholder_map.cto_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.cto_priorities": ["gnews", "apollo"],
+    "stakeholder_map.ciso_name": ["apollo", "hunter"],
+    "stakeholder_map.ciso_email": ["hunter", "apollo"],
+    "stakeholder_map.ciso_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.ciso_priorities": ["gnews", "apollo"],
+    "stakeholder_map.cfo_name": ["apollo", "hunter"],
+    "stakeholder_map.cfo_email": ["hunter", "apollo"],
+    "stakeholder_map.cfo_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.cfo_priorities": ["gnews", "apollo"],
+    "stakeholder_map.coo_name": ["apollo", "hunter"],
+    "stakeholder_map.coo_email": ["hunter", "apollo"],
+    "stakeholder_map.coo_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.coo_priorities": ["gnews", "apollo"],
+    "stakeholder_map.cpo_name": ["apollo", "hunter"],
+    "stakeholder_map.cpo_email": ["hunter", "apollo"],
+    "stakeholder_map.cpo_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.cpo_priorities": ["gnews", "apollo"],
+    "stakeholder_map.conversation_starters": ["gnews", "apollo"],
+    "stakeholder_map.recommended_next_steps": ["gnews", "apollo", "pdl"],
+
+    # === SUPPORTING ASSETS ===
+    "supporting_assets.email_templates": ["hunter", "apollo"],
+    "supporting_assets.linkedin_outreach": ["apollo", "pdl"],
+    "supporting_assets.call_scripts": ["apollo", "pdl", "gnews"],
+
+    # === NEWS INTELLIGENCE (minimum 2 APIs per field) ===
+    "news_intelligence.executive_changes": ["gnews", "apollo"],
+    "news_intelligence.funding": ["gnews", "apollo"],
+    "news_intelligence.partnerships": ["gnews", "apollo"],
+    "news_intelligence.expansions": ["gnews", "apollo"],
+    "news_intelligence.key_insights": ["gnews", "apollo", "pdl"],
+    "news_intelligence.sales_implications": ["gnews", "apollo"],
 }
+
 
 # API capabilities - what each API is best at
 API_CAPABILITIES = {
@@ -80,7 +137,8 @@ API_CAPABILITIES = {
             "phone",
             "annual_revenue"
         ],
-        "description": "Apollo.io excels at contact discovery, executive information, and organizational data. Best choice for stakeholder mapping and contact details."
+        "description": "Apollo.io excels at contact discovery, executive information, and organizational data. Best choice for stakeholder mapping and contact details.",
+        "required_for": ["stakeholder_map", "executive_snapshot"]
     },
     "pdl": {
         "best_for": [
@@ -101,7 +159,8 @@ API_CAPABILITIES = {
             "location",
             "tech_stack"
         ],
-        "description": "PeopleDataLabs provides excellent technographic data, IT budget estimates, and technology stack information. Best for understanding installed technologies and company classification."
+        "description": "PeopleDataLabs provides excellent technographic data, IT budget estimates, and technology stack information. Best for understanding installed technologies and company classification.",
+        "required_for": ["executive_snapshot", "buying_signals"]
     },
     "hunter": {
         "best_for": [
@@ -118,7 +177,8 @@ API_CAPABILITIES = {
             "organization",
             "email_patterns"
         ],
-        "description": "Hunter.io specializes in email discovery and verification. Use when you need verified email addresses and contact information."
+        "description": "Hunter.io specializes in email discovery and verification. REQUIRED for verified email addresses and stakeholder contact information.",
+        "required_for": ["stakeholder_map", "supporting_assets"]  # ALWAYS required
     },
     "gnews": {
         "best_for": [
@@ -140,50 +200,64 @@ API_CAPABILITIES = {
             "financial_news",
             "market_signals"
         ],
-        "description": "GNews API provides recent company news for identifying buying signals, trigger events, and market intelligence. Essential for opportunity themes and timing insights."
+        "description": "GNews API provides recent company news for identifying buying signals, trigger events, and market intelligence. Essential for opportunity themes and timing insights.",
+        "required_for": ["buying_signals", "opportunity_themes", "news_intelligence"]
     }
 }
 
 
 @dataclass
 class OrchestratorResult:
-    """Result from orchestrator analysis."""
+    """Result from orchestrator analysis with GRANULAR field-level mapping."""
     apis_to_query: List[str]
-    data_point_api_mapping: Dict[str, List[str]]
+    data_point_api_mapping: Dict[str, List[str]]  # Now contains EVERY field
     reasoning: str
     priority_order: List[str]
+    granular_assignments: Dict[str, Dict[str, List[str]]]  # Section -> Field -> APIs
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
-    orchestrator_version: str = "1.0"
+    orchestrator_version: str = "2.0-granular"
 
 
 def get_default_query_plan() -> OrchestratorResult:
     """
-    Get default query plan that queries all APIs.
+    Get default query plan that queries ALL APIs.
     Used as fallback when orchestrator fails or is disabled.
+    Hunter.io is ALWAYS included for contact data.
     """
-    all_apis = list(API_CAPABILITIES.keys())
+    # Always query all APIs - Hunter is critical for contacts
+    all_apis = ["apollo", "pdl", "hunter", "gnews"]
 
-    # Build comprehensive mapping
-    mapping = {}
-    for category, points in DATA_POINTS.items():
-        for point_name, apis in points.items():
-            mapping[f"{category}.{point_name}"] = apis[:2]  # Take first 2 for each
+    # Build granular assignments from GRANULAR_DATA_POINTS
+    granular_assignments = {}
+    flat_mapping = {}
+
+    for full_key, apis in GRANULAR_DATA_POINTS.items():
+        section, field_name = full_key.split(".", 1)
+        if section not in granular_assignments:
+            granular_assignments[section] = {}
+        granular_assignments[section][field_name] = apis[:2]  # Take first 2 for validation
+        flat_mapping[full_key] = apis[:2]
 
     return OrchestratorResult(
         apis_to_query=all_apis,
-        data_point_api_mapping=mapping,
-        reasoning="Default plan: querying all APIs for comprehensive data coverage.",
-        priority_order=["apollo", "pdl", "hunter", "gnews"]
+        data_point_api_mapping=flat_mapping,
+        reasoning="Default plan: querying ALL APIs for comprehensive data coverage. Hunter.io included for contact verification.",
+        priority_order=["apollo", "hunter", "pdl", "gnews"],  # Hunter prioritized
+        granular_assignments=granular_assignments
     )
 
 
 def build_orchestrator_prompt(company_data: Dict[str, Any]) -> str:
-    """Build the prompt for the orchestrator LLM."""
+    """Build the prompt for the orchestrator LLM with GRANULAR field assignments."""
     company_name = company_data.get("company_name", "Unknown")
     domain = company_data.get("domain", "unknown.com")
     industry = company_data.get("industry", "")
 
+    # Build detailed field list
+    field_list = "\n".join([f"   - {k}: Best APIs = {', '.join(v)}" for k, v in list(GRANULAR_DATA_POINTS.items())[:30]])
+
     return f"""You are an intelligent API orchestrator for a sales intelligence platform.
+You must assign APIs to EACH INDIVIDUAL DATA FIELD (bullet point), not just categories.
 
 COMPANY TO ANALYZE:
 - Name: {company_name}
@@ -194,57 +268,73 @@ AVAILABLE APIs AND THEIR STRENGTHS:
 
 1. APOLLO.IO:
    Best for: {', '.join(API_CAPABILITIES['apollo']['best_for'])}
-   Provides: {', '.join(API_CAPABILITIES['apollo']['provides'])}
+   REQUIRED for: stakeholder_map, executive_snapshot
 
 2. PEOPLEDATALABS (PDL):
    Best for: {', '.join(API_CAPABILITIES['pdl']['best_for'])}
-   Provides: {', '.join(API_CAPABILITIES['pdl']['provides'])}
+   REQUIRED for: executive_snapshot, buying_signals
 
 3. HUNTER.IO:
    Best for: {', '.join(API_CAPABILITIES['hunter']['best_for'])}
-   Provides: {', '.join(API_CAPABILITIES['hunter']['provides'])}
+   REQUIRED for: stakeholder_map (emails), supporting_assets
+   *** HUNTER MUST ALWAYS BE QUERIED FOR CONTACT DATA ***
 
 4. GNEWS:
    Best for: {', '.join(API_CAPABILITIES['gnews']['best_for'])}
-   Provides: {', '.join(API_CAPABILITIES['gnews']['provides'])}
+   REQUIRED for: buying_signals, opportunity_themes, news_intelligence
 
-REQUIRED OUTPUT DATA POINTS:
+EXAMPLE GRANULAR FIELD ASSIGNMENTS:
+{field_list}
+... and many more fields
 
-1. EXECUTIVE SNAPSHOT:
-   - Account name, Company overview, Account type (public/private)
-   - Industry, Estimated IT Budget, Installed technologies
-
-2. BUYING SIGNALS:
-   - Top 3 Intent Topics, Interest over time, Partner mentions, Key signals from news
-
-3. OPPORTUNITY THEMES:
-   - Pain points (3), Sales opportunities (3), Recommended solution areas (3)
-
-4. STAKEHOLDER MAP (for CIO/CTO/CISO/COO/CFO/CPO):
-   - Bio, Strategic priorities, Communication preferences, Conversation starters, Next steps
-
-5. SUPPORTING ASSETS:
-   - Email templates, LinkedIn outreach, Call scripts per contact
-
-RULES:
-1. Assign MINIMUM 2 APIs to each data point category for validation
-2. Prioritize APIs based on their strengths for each data point
-3. Consider the company context when making decisions
-4. Always include GNews for buying signals and opportunity themes
-5. Always include Apollo or Hunter for stakeholder data
+CRITICAL RULES:
+1. Assign MINIMUM 2 APIs to EACH field for validation
+2. Hunter.io MUST be included for all stakeholder email/contact fields
+3. GNews MUST be included for all news/signal/scoop fields
+4. Every field in the output must have API assignments
 
 OUTPUT FORMAT (JSON only, no explanation):
 {{
-    "apis_to_query": ["api1", "api2", ...],
-    "priority_order": ["most_important_api", "second", ...],
-    "data_point_mapping": {{
-        "executive_snapshot": ["api1", "api2"],
-        "buying_signals": ["api1", "api2"],
-        "opportunity_themes": ["api1", "api2"],
-        "stakeholder_map": ["api1", "api2"],
-        "supporting_assets": ["api1", "api2"]
+    "apis_to_query": ["apollo", "hunter", "pdl", "gnews"],
+    "priority_order": ["apollo", "hunter", "pdl", "gnews"],
+    "granular_assignments": {{
+        "executive_snapshot": {{
+            "account_name": ["apollo", "pdl"],
+            "company_overview": ["apollo", "pdl", "gnews"],
+            "industry": ["apollo", "pdl"],
+            "estimated_it_spend": ["pdl", "apollo"],
+            "installed_technologies": ["pdl", "apollo"]
+        }},
+        "buying_signals": {{
+            "intent_topic_1": ["gnews", "pdl"],
+            "intent_topic_2": ["gnews", "pdl"],
+            "intent_topic_3": ["gnews", "pdl"],
+            "key_signal_1": ["gnews", "apollo"],
+            "key_signal_2": ["gnews", "apollo"],
+            "key_signal_3": ["gnews", "apollo"],
+            "signal_strength": ["gnews", "apollo", "pdl"]
+        }},
+        "opportunity_themes": {{
+            "pain_point_1": ["gnews", "pdl"],
+            "pain_point_2": ["gnews", "pdl"],
+            "pain_point_3": ["gnews", "pdl"],
+            "sales_opportunity_1": ["gnews", "apollo"],
+            "sales_opportunity_2": ["gnews", "apollo"],
+            "sales_opportunity_3": ["gnews", "apollo"]
+        }},
+        "stakeholder_map": {{
+            "cio_name": ["apollo", "hunter"],
+            "cio_email": ["hunter", "apollo"],
+            "cto_name": ["apollo", "hunter"],
+            "cto_email": ["hunter", "apollo"]
+        }},
+        "news_intelligence": {{
+            "executive_changes": ["gnews"],
+            "funding": ["gnews", "apollo"],
+            "partnerships": ["gnews"]
+        }}
     }},
-    "reasoning": "Brief explanation of API selection strategy"
+    "reasoning": "Brief explanation of API selection for each section"
 }}"""
 
 
@@ -269,7 +359,7 @@ async def call_orchestrator_llm(prompt: str) -> Optional[Dict[str, Any]]:
                     "messages": [
                         {
                             "role": "system",
-                            "content": "You are an API orchestrator. Output only valid JSON, no explanation."
+                            "content": "You are an API orchestrator. Output only valid JSON with granular field-level API assignments. ALWAYS include hunter in apis_to_query."
                         },
                         {
                             "role": "user",
@@ -277,7 +367,7 @@ async def call_orchestrator_llm(prompt: str) -> Optional[Dict[str, Any]]:
                         }
                     ],
                     "temperature": 0.3,
-                    "max_tokens": 500
+                    "max_tokens": 1500  # Increased for granular output
                 },
                 timeout=30.0
             )
@@ -306,12 +396,13 @@ async def call_orchestrator_llm(prompt: str) -> Optional[Dict[str, Any]]:
 async def analyze_and_plan(company_data: Dict[str, Any]) -> OrchestratorResult:
     """
     Analyze required data points and create an intelligent API query plan.
+    Now with GRANULAR field-level assignments.
 
     Args:
         company_data: Dictionary with company_name, domain, and optional industry
 
     Returns:
-        OrchestratorResult with API assignments and reasoning
+        OrchestratorResult with API assignments for EACH field
     """
     # Handle empty/invalid input
     if not company_data or not company_data.get("company_name"):
@@ -330,35 +421,51 @@ async def analyze_and_plan(company_data: Dict[str, Any]) -> OrchestratorResult:
         # Validate and extract results
         apis_to_query = llm_result.get("apis_to_query", [])
         priority_order = llm_result.get("priority_order", apis_to_query)
-        data_point_mapping = llm_result.get("data_point_mapping", {})
-        reasoning = llm_result.get("reasoning", "LLM-based selection")
+        granular_assignments = llm_result.get("granular_assignments", {})
+        reasoning = llm_result.get("reasoning", "LLM-based granular selection")
 
         # Ensure all APIs are valid
         valid_apis = set(API_CAPABILITIES.keys())
         apis_to_query = [api for api in apis_to_query if api in valid_apis]
 
-        # Ensure minimum coverage - at least apollo and gnews for core data
+        # CRITICAL: Hunter.io is ALWAYS required for contact data
+        if "hunter" not in apis_to_query:
+            apis_to_query.append("hunter")
+            logger.info("Added Hunter.io to query plan (required for contacts)")
+
+        # Ensure apollo is included for org data
         if "apollo" not in apis_to_query:
             apis_to_query.append("apollo")
+
+        # Ensure gnews is included for news/signals
         if "gnews" not in apis_to_query:
             apis_to_query.append("gnews")
 
-        # Ensure each category has at least 2 APIs
-        for category in DATA_POINTS.keys():
-            if category not in data_point_mapping:
-                data_point_mapping[category] = DATA_POINTS[category].get(
-                    list(DATA_POINTS[category].keys())[0], ["apollo", "pdl"]
-                )[:2]
-            elif len(data_point_mapping[category]) < 2:
-                # Add fallback APIs
-                fallback = [api for api in valid_apis if api not in data_point_mapping[category]]
-                data_point_mapping[category].extend(fallback[:2 - len(data_point_mapping[category])])
+        # Ensure pdl is included for technographics
+        if "pdl" not in apis_to_query:
+            apis_to_query.append("pdl")
+
+        # Build flat mapping from granular assignments
+        flat_mapping = {}
+        for section, fields in granular_assignments.items():
+            for field_name, apis in fields.items():
+                flat_mapping[f"{section}.{field_name}"] = apis
+
+        # Fill in any missing fields from default
+        for full_key, default_apis in GRANULAR_DATA_POINTS.items():
+            if full_key not in flat_mapping:
+                flat_mapping[full_key] = default_apis[:2]
+                section, field_name = full_key.split(".", 1)
+                if section not in granular_assignments:
+                    granular_assignments[section] = {}
+                granular_assignments[section][field_name] = default_apis[:2]
 
         return OrchestratorResult(
             apis_to_query=apis_to_query,
-            data_point_api_mapping=data_point_mapping,
+            data_point_api_mapping=flat_mapping,
             reasoning=reasoning,
-            priority_order=priority_order if priority_order else apis_to_query
+            priority_order=priority_order if priority_order else apis_to_query,
+            granular_assignments=granular_assignments
         )
 
     except Exception as e:
@@ -367,7 +474,13 @@ async def analyze_and_plan(company_data: Dict[str, Any]) -> OrchestratorResult:
 
 
 def should_query_api(api_name: str, query_plan: OrchestratorResult) -> bool:
-    """Check if a specific API should be queried based on the plan."""
+    """
+    Check if a specific API should be queried based on the plan.
+    Hunter.io is ALWAYS queried regardless of plan (required for contacts).
+    """
+    # Hunter is ALWAYS required for contact/email data
+    if api_name == "hunter":
+        return True
     return api_name in query_plan.apis_to_query
 
 
@@ -377,3 +490,20 @@ def get_api_priority(api_name: str, query_plan: OrchestratorResult) -> int:
         return query_plan.priority_order.index(api_name)
     except ValueError:
         return len(query_plan.priority_order)  # Put at end if not found
+
+
+def get_apis_for_field(field_path: str, query_plan: OrchestratorResult) -> List[str]:
+    """
+    Get the list of APIs assigned to a specific field.
+
+    Args:
+        field_path: Full path like "executive_snapshot.company_overview"
+        query_plan: The orchestrator result
+
+    Returns:
+        List of API names assigned to this field
+    """
+    return query_plan.data_point_api_mapping.get(
+        field_path,
+        GRANULAR_DATA_POINTS.get(field_path, ["apollo", "pdl"])
+    )
