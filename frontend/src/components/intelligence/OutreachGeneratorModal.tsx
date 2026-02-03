@@ -101,7 +101,7 @@ export default function OutreachGeneratorModal({
     setError(null);
 
     try {
-      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:8000';
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'https://radtest-backend-4mux.onrender.com';
       const response = await fetch(`${backendUrl}/jobs/${jobId}/generate-outreach/${roleType}`, {
         method: 'POST',
         headers: {

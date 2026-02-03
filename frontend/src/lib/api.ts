@@ -13,13 +13,12 @@ import type {
   ErrorResponse,
 } from '@/types';
 
-// Get API URL from environment variable
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
+// Get API URL from environment variable with fallback to production backend
+const API_URL = process.env.NEXT_PUBLIC_API_URL || 'https://radtest-backend-4mux.onrender.com';
 
-if (!API_URL) {
-  console.error(
-    'NEXT_PUBLIC_API_URL is not defined. ' +
-    'This value must be provided via environment variables.'
+if (!process.env.NEXT_PUBLIC_API_URL) {
+  console.warn(
+    'NEXT_PUBLIC_API_URL not defined, using default production backend: ' + API_URL
   );
 }
 
