@@ -29,5 +29,7 @@ services:
         sync: false
       - key: GAMMA_API_KEY
         sync: false
+      - key: GNEWS_API_KEY
+        sync: false
       - key: DEBUG
         value: false

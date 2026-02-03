@@ -10,6 +10,7 @@ import {
   StakeholderMapCard,
   SalesProgramCard,
   OutreachGeneratorModal,
+  NewsIntelligenceCard,
 } from '@/components/intelligence';
 import type { StakeholderRoleType } from '@/types';
 
@@ -170,6 +171,7 @@ export default function JobDetailPage() {
   const buyingSignals = job.result.buying_signals;
   const stakeholderMap = job.result.stakeholder_map;
   const salesProgram = job.result.sales_program;
+  const newsIntelligence = job.result.news_intelligence;
 
   return (
     <div className="p-8 lg:p-10">
@@ -268,6 +270,14 @@ export default function JobDetailPage() {
           {/* Buying Signals - New Intelligence Section */}
           {buyingSignals && (
             <BuyingSignalsCard signals={buyingSignals} />
+          )}
+
+          {/* News Intelligence - New Intelligence Section */}
+          {newsIntelligence && (
+            <NewsIntelligenceCard
+              newsIntelligence={newsIntelligence}
+              companyName={data.company_name || job.companyName}
+            />
           )}
 
           {/* Stakeholder Map - New Intelligence Section */}

@@ -74,6 +74,7 @@ export interface ProfileResult {
   buying_signals?: BuyingSignals;
   stakeholder_map?: StakeholderMap;
   sales_program?: SalesProgram;
+  news_intelligence?: NewsIntelligence;
 }
 
 /**
@@ -306,6 +307,7 @@ export interface ExtendedCompanyData {
   buying_signals?: BuyingSignals;
   stakeholder_map?: StakeholderMap;
   sales_program?: SalesProgram;
+  news_intelligence?: NewsIntelligence;
 }
 
 /**
@@ -410,6 +412,19 @@ export interface SalesProgram {
   intentLevel: IntentLevel;
   intentScore: number;
   strategyText: string;
+}
+
+/**
+ * News Intelligence - Recent company news and events.
+ */
+export interface NewsIntelligence {
+  executiveChanges: string;
+  funding: string;
+  partnerships: string;
+  expansions: string;
+  articlesCount: number;
+  dateRange: string;
+  lastUpdated?: string;
 }
 
 /**

@@ -784,6 +784,26 @@ def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hun
             if hunter_contacts:
                 result["hunter_contacts"] = hunter_contacts
 
+    # Extract news data summaries
+    if news_data and news_data.get("success"):
+        news_summaries = news_data.get("summaries", {})
+        result["executive_hires"] = news_summaries.get("executive_hires", "No recent executive changes found")
+        result["funding_news"] = news_summaries.get("funding_news", "No recent funding announcements found")
+        result["partnership_news"] = news_summaries.get("partnership_news", "No recent partnership or acquisition news found")
+        result["expansion_news"] = news_summaries.get("expansion_news", "No recent expansion news found")
+
+        # Also store raw news categories for detailed view
+        news_categories = news_data.get("categories", {})
+        result["news_categories"] = {
+            "executive_changes": news_categories.get("executive_changes", []),
+            "funding": news_categories.get("funding", []),
+            "partnerships": news_categories.get("partnerships", []),
+            "expansions": news_categories.get("expansions", []),
+            "products": news_categories.get("products", []),
+            "financial": news_categories.get("financial", [])
+        }
+        result["news_articles_count"] = news_data.get("articles_count", 0)
+
     return result
 
 

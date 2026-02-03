@@ -19,3 +19,4 @@ services:
       # SUPABASE_URL
       # SUPABASE_KEY
       # GAMMA_API_KEY
+      # GNEWS_API_KEY
