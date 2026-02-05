@@ -112,6 +112,19 @@ logger.info(f"  GAMMA_API_KEY: {'SET' if GAMMA_API_KEY else 'MISSING'}")
 logger.info("=" * 50)
 
 
+# Environment diagnostic endpoint
+@app.get("/api/env-check", tags=["Debug"])
+async def env_check():
+    """Check environment variables - SENSITIVE! Remove in production."""
+    import os
+    return {
+        "gamma_api_key_set": bool(os.getenv("GAMMA_API_KEY")),
+        "gamma_api_key_length": len(os.getenv("GAMMA_API_KEY", "")),
+        "gamma_api_key_prefix": os.getenv("GAMMA_API_KEY", "")[:10] if os.getenv("GAMMA_API_KEY") else None,
+        "all_gamma_vars": [k for k in os.environ.keys() if "GAMMA" in k.upper()],
+        "timestamp": datetime.now().isoformat()
+    }
+
 # Health check
 @app.get("/health", tags=["Health"])
 async def health_check():
