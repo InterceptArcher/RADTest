@@ -311,8 +311,8 @@ export default function JobDetailPage() {
           <div className="card p-6">
             <h2 className="text-lg font-semibold text-slate-900 mb-4">Quick Actions</h2>
             <div className="space-y-3">
-              {/* View Slideshow Button */}
-              {job.result.slideshow_url && (
+              {/* View Slideshow Button - ALWAYS VISIBLE */}
+              {job.result.slideshow_url ? (
                 <a
                   href={job.result.slideshow_url}
                   target="_blank"
@@ -334,6 +334,11 @@ export default function JobDetailPage() {
                   </svg>
                   View Slideshow
                 </a>
+              ) : (
+                <div className="w-full p-4 bg-red-100 border border-red-300 rounded-lg">
+                  <p className="text-sm font-semibold text-red-900">❌ Slideshow Not Generated</p>
+                  <p className="text-xs text-red-700 mt-1">Check Render logs for error details</p>
+                </div>
               )}
               <Link
                 href={`/dashboard/jobs/${jobId}/debug`}

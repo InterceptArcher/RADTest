@@ -1571,16 +1571,20 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
         }
 
         # Generate slideshow
+        logger.info(f"🚀 Calling gamma_creator.create_slideshow for {company_name}")
         result = await gamma_creator.create_slideshow(company_data)
+        logger.info(f"📊 Slideshow result: {result}")
 
         if result.get("success"):
             slideshow_url = result.get('slideshow_url')
+            logger.info(f"✅ Success flag is True, slideshow_url={slideshow_url}")
             # Validate the URL format
             if slideshow_url and slideshow_url.startswith('https://gamma.app/'):
-                logger.info(f"Slideshow generated successfully: {slideshow_url}")
+                logger.info(f"✅✅ Slideshow generated successfully: {slideshow_url}")
                 return result
             else:
-                logger.error(f"Invalid slideshow URL returned: {slideshow_url}")
+                logger.error(f"❌ Invalid slideshow URL returned: {slideshow_url}")
+                logger.error(f"❌ URL validation failed - expected to start with https://gamma.app/")
                 return {
                     "success": False,
                     "slideshow_url": None,
@@ -1588,7 +1592,7 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
                     "error": f"Invalid slideshow URL: {slideshow_url}"
                 }
         else:
-            logger.error(f"Slideshow generation failed: {result.get('error')}")
+            logger.error(f"❌ Slideshow generation failed - success=False: {result.get('error')}")
             return {
                 "success": False,
                 "slideshow_url": None,  # Don't return fake URLs
@@ -1597,7 +1601,8 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
             }
 
     except Exception as e:
-        logger.error(f"Error generating slideshow: {str(e)}")
+        logger.error(f"💥 EXCEPTION during slideshow generation: {str(e)}")
+        logger.exception(e)  # Full traceback
         # Return error info on exception - no fake URLs
         return {
             "success": False,
