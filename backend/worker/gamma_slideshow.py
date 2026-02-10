@@ -21,22 +21,22 @@ class GammaSlideshowCreator:
     4. Return slideshow URL
     """
 
-    def __init__(self, gamma_api_key: str, template_id: str = "h6eisl0g3ipk0nz"):
+    def __init__(self, gamma_api_key: str, template_id: str = None):
         """
         Initialize Gamma slideshow creator.
 
         Args:
             gamma_api_key: Gamma API key (from environment)
-            template_id: Gamma template ID to use (default: g_vsj27dcr73l1nv1)
+            template_id: DEPRECATED - Not supported by Gamma API v1.0
 
         Note:
-            This value must be provided via environment variables.
+            API key must be provided via environment variables.
         """
         self.api_key = gamma_api_key
-        self.template_id = template_id
+        self.template_id = template_id  # Kept for backward compatibility but not used
         self.api_url = "https://public-api.gamma.app/v1.0/generations"
         self.status_url = "https://public-api.gamma.app/v1.0/generations"
-        logger.info(f"Gamma slideshow creator initialized with template: {template_id}")
+        logger.info(f"Gamma slideshow creator initialized")
 
     async def create_slideshow(
         self,
@@ -986,10 +986,9 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             "format": "presentation"
         }
 
-        # Add template if specified
-        if self.template_id:
-            payload["templateId"] = self.template_id
-            logger.info(f"Using Gamma template: {self.template_id}")
+        # NOTE: templateId is NOT supported by Gamma API v1.0
+        # Attempting to use it causes 400 error: "property templateId should not exist"
+        # Template functionality may be added in future API versions
 
         # Add numCards if reasonable
         if num_cards and 5 <= num_cards <= 100:
@@ -1048,9 +1047,22 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                             elapsed = attempt * 2
                             logger.info(f"Generation status after {elapsed}s (attempt {attempt}/{max_attempts}): {status}")
 
-                        logger.debug(f"Full status response: {status_data}")
+                        # CRITICAL: Log full response structure for debugging
+                        logger.info(f"Full status response: {status_data}")
+                        logger.info(f"Response keys available: {list(status_data.keys())}")
 
                         if status == "completed":
+                            # CRITICAL: Log all URL-related fields for debugging
+                            logger.info("=" * 60)
+                            logger.info("GENERATION COMPLETED - Checking for URL fields:")
+                            logger.info(f"  gammaUrl: {status_data.get('gammaUrl')}")
+                            logger.info(f"  url: {status_data.get('url')}")
+                            logger.info(f"  webUrl: {status_data.get('webUrl')}")
+                            logger.info(f"  gamma_url: {status_data.get('gamma_url')}")
+                            logger.info(f"  All keys in response: {list(status_data.keys())}")
+                            logger.info(f"  Full response: {status_data}")
+                            logger.info("=" * 60)
+
                             # Try multiple possible URL keys
                             gamma_url = (
                                 status_data.get("gammaUrl") or
@@ -1059,8 +1071,19 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                                 status_data.get("gamma_url")
                             )
 
+                            # Fallback: Search all keys for any URL-like field
                             if not gamma_url:
-                                logger.error(f"No URL in completed response. Full response: {status_data}")
+                                logger.warning("Standard URL fields not found, searching all fields...")
+                                for key, value in status_data.items():
+                                    if isinstance(value, str) and ("gamma.app" in value or "http" in value):
+                                        logger.info(f"Found URL-like value in field '{key}': {value}")
+                                        gamma_url = value
+                                        break
+
+                            if not gamma_url:
+                                logger.error(f"❌ No URL field found in completed response!")
+                                logger.error(f"Response keys: {list(status_data.keys())}")
+                                logger.error(f"Full response: {status_data}")
                                 raise Exception(f"No URL returned from completed generation. Response keys: {list(status_data.keys())}")
 
                             logger.info(f"Slideshow generated successfully: {gamma_url}")

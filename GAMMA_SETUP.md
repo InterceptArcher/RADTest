@@ -129,7 +129,10 @@ The system generates slideshows with the following structure:
 - Increase timeout in code if needed (current: 120 seconds)
 
 ### Issue: "No URL returned from completed generation"
-**Solution**: This was a bug related to incorrect field name. Fixed in latest version (uses `gammaUrl` not `webUrl`)
+**Solution**: This was caused by using unsupported `templateId` parameter. The Gamma API v1.0 does not support custom templates via API. Fixed by removing templateId from payload.
+
+### Issue: "HTTP 400 - property templateId should not exist"
+**Solution**: The `templateId` parameter is not supported by Gamma API v1.0. Templates must be applied through the Gamma web UI after generation, not during API creation.
 
 ### Issue: "HTTP 401 Unauthorized"
 **Solution**:
