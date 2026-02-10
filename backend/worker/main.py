@@ -150,16 +150,21 @@ class WorkerOrchestrator:
             if raw_records:
                 await self.supabase_injector.inject_batch_raw_data(raw_records)
 
-            # Step 3: Data validation and normalization
-            logger.info("Step 3: Validating and normalizing data")
+            # Step 3: Extract and process people data
+            logger.info("Step 3: Processing executive/stakeholder data")
+            stakeholder_profiles = self._process_people_data(intelligence_results)
+
+            # Step 4: Data validation and normalization
+            logger.info("Step 4: Validating and normalizing data")
             validated_data = await self._validate_and_normalize(
                 company_name,
                 domain,
-                intelligence_results
+                intelligence_results,
+                stakeholder_profiles
             )
 
-            # Step 4: Inject finalized data
-            logger.info("Step 4: Injecting finalized data")
+            # Step 5: Inject finalized data
+            logger.info("Step 5: Injecting finalized data")
             finalize_result = await self.supabase_injector.inject_finalized_data(
                 company_name=company_name,
                 domain=domain,
@@ -168,8 +173,8 @@ class WorkerOrchestrator:
                 validation_metadata=validated_data["metadata"]
             )
 
-            # Step 5: Generate slideshow
-            logger.info("Step 5: Generating slideshow")
+            # Step 6: Generate slideshow
+            logger.info("Step 6: Generating slideshow")
             slideshow_data = {
                 "company_name": company_name,
                 "validated_data": validated_data["data"],
@@ -200,11 +205,75 @@ class WorkerOrchestrator:
             logger.error(f"Failed to process company request: {e}", exc_info=True)
             raise
 
+    def _process_people_data(self, intelligence_results: list) -> list:
+        """
+        Process and merge people/executive data from multiple sources.
+
+        Args:
+            intelligence_results: List of IntelligenceResult objects
+
+        Returns:
+            List of stakeholder profile dictionaries
+        """
+        stakeholders = []
+        seen_names = set()
+
+        for result in intelligence_results:
+            if not result.success or not result.data:
+                continue
+
+            # Check if this is people data
+            if result.data.get("type") == "people":
+                people_list = result.data.get("people", [])
+
+                for person in people_list:
+                    # Extract name
+                    if result.source.value == "apollo":
+                        first_name = person.get("first_name", "")
+                        last_name = person.get("last_name", "")
+                        name = f"{first_name} {last_name}".strip()
+                        email = person.get("email")
+                        phone = person.get("phone_numbers", [{}])[0].get("raw_number") if person.get("phone_numbers") else None
+                        linkedin = person.get("linkedin_url")
+                        title = person.get("title", "")
+                    elif result.source.value == "peopledatalabs":
+                        name = person.get("full_name", "")
+                        email = person.get("work_email") or person.get("personal_emails", [None])[0]
+                        phone = person.get("phone_numbers", [None])[0]
+                        linkedin = person.get("linkedin_url")
+                        title = person.get("job_title", "")
+                    else:
+                        continue
+
+                    # Skip if no name
+                    if not name:
+                        continue
+
+                    # Deduplicate by name
+                    name_lower = name.lower()
+                    if name_lower in seen_names:
+                        continue
+
+                    seen_names.add(name_lower)
+
+                    stakeholders.append({
+                        "name": name,
+                        "title": title,
+                        "email": email or "Not available",
+                        "phone": phone or "Not available",
+                        "linkedin": linkedin or "Not available",
+                        "source": result.source.value
+                    })
+
+        logger.info(f"Processed {len(stakeholders)} stakeholder profiles")
+        return stakeholders
+
     async def _validate_and_normalize(
         self,
         company_name: str,
         domain: str,
-        intelligence_results: list
+        intelligence_results: list,
+        stakeholder_profiles: list = None
     ) -> Dict[str, Any]:
         """
         Validate and normalize data from multiple sources.
@@ -282,16 +351,23 @@ class WorkerOrchestrator:
         # Calculate average confidence
         avg_confidence = total_confidence / len(fields_to_validate) if fields_to_validate else 0.0
 
+        # Add stakeholder profiles if provided
+        data_dict = {
+            "company_name": company_name,
+            "domain": domain,
+            **validated_fields
+        }
+
+        if stakeholder_profiles:
+            data_dict["stakeholder_profiles"] = stakeholder_profiles
+
         return {
-            "data": {
-                "company_name": company_name,
-                "domain": domain,
-                **validated_fields
-            },
+            "data": data_dict,
             "confidence_score": avg_confidence,
             "metadata": {
                 "validated_fields": len(validated_fields),
                 "total_fields": len(fields_to_validate),
+                "stakeholders_count": len(stakeholder_profiles) if stakeholder_profiles else 0,
                 "sources_used": list(sources_data.keys())
             }
         }
