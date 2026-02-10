@@ -27,16 +27,22 @@ class GammaSlideshowCreator:
 
         Args:
             gamma_api_key: Gamma API key (from environment)
-            template_id: DEPRECATED - Not supported by Gamma API v1.0
+            template_id: Gamma template ID (gammaId) for template-based generation
+                        If provided, uses /from-template endpoint instead of standard generation
 
         Note:
             API key must be provided via environment variables.
         """
         self.api_key = gamma_api_key
-        self.template_id = template_id  # Kept for backward compatibility but not used
+        self.template_id = template_id
         self.api_url = "https://public-api.gamma.app/v1.0/generations"
+        self.template_url = "https://public-api.gamma.app/v1.0/generations/from-template"
         self.status_url = "https://public-api.gamma.app/v1.0/generations"
-        logger.info(f"Gamma slideshow creator initialized")
+
+        if template_id:
+            logger.info(f"Gamma slideshow creator initialized with template: {template_id}")
+        else:
+            logger.info(f"Gamma slideshow creator initialized (no template)")
 
     async def create_slideshow(
         self,
@@ -978,22 +984,28 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             "Content-Type": "application/json"
         }
 
-        # Simplified payload - only using confirmed Gamma API parameters
-        # Start with minimal working config
-        payload = {
-            "inputText": markdown_content,
-            "textMode": "preserve",
-            "format": "presentation"
-        }
+        # Choose endpoint and payload based on whether template is used
+        if self.template_id:
+            # Use template endpoint: /v1.0/generations/from-template
+            api_endpoint = self.template_url
+            payload = {
+                "gammaId": self.template_id,
+                "prompt": markdown_content
+            }
+            logger.info(f"Using template endpoint with gammaId: {self.template_id}")
+        else:
+            # Use standard generation endpoint: /v1.0/generations
+            api_endpoint = self.api_url
+            payload = {
+                "inputText": markdown_content,
+                "textMode": "preserve",
+                "format": "presentation"
+            }
 
-        # NOTE: templateId is NOT supported by Gamma API v1.0
-        # Attempting to use it causes 400 error: "property templateId should not exist"
-        # Template functionality may be added in future API versions
-
-        # Add numCards if reasonable
-        if num_cards and 5 <= num_cards <= 100:
-            payload["numCards"] = num_cards
-            logger.info(f"Requesting {num_cards} cards")
+            # Add numCards for standard generation (not supported by template endpoint)
+            if num_cards and 5 <= num_cards <= 100:
+                payload["numCards"] = num_cards
+                logger.info(f"Requesting {num_cards} cards")
 
         logger.info(f"Payload keys: {list(payload.keys())}")
 
@@ -1001,9 +1013,9 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             # Increased timeout for complex presentations
             async with httpx.AsyncClient(timeout=300) as client:
                 # Create generation
-                logger.info("Sending request to Gamma API")
+                logger.info(f"Sending request to Gamma API: {api_endpoint}")
                 response = await client.post(
-                    self.api_url,
+                    api_endpoint,
                     json=payload,
                     headers=headers
                 )
