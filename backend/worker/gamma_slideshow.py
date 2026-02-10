@@ -134,7 +134,7 @@ class GammaSlideshowCreator:
         from datetime import datetime
         current_date = datetime.now().strftime("%B %d, %Y")
 
-        # Build concise, structured data
+        # Build comprehensive, data-rich structured content
         data = f"""ACCOUNT INTELLIGENCE REPORT
 
 Company: {company_name}
@@ -145,54 +145,97 @@ Prepared For: {user_email or 'HP Sales Team'}
 === COMPANY OVERVIEW ===
 
 Company Name: {company_name}
+Domain: {validated_data.get('domain', 'Not available')}
 Industry: {validated_data.get('industry', 'Not available')}
-Account Type: {validated_data.get('account_type', 'Private Sector')}
+Sub-Industry: {validated_data.get('sub_industry', 'Not available')}
+Account Type: {validated_data.get('account_type', validated_data.get('target_market', 'Private Sector'))}
+
+Founded: {validated_data.get('founded_year', 'Not available')}
+CEO: {validated_data.get('ceo', 'Not available')}
+Headquarters: {validated_data.get('headquarters', 'Not available')}
+Geographic Reach: {', '.join(validated_data.get('geographic_reach', [])) if validated_data.get('geographic_reach') else 'Not available'}
+
 Employee Count: {validated_data.get('employee_count', 'Not available')}
-IT Budget: {validated_data.get('estimated_it_spend', 'Contact for estimate')}
+Annual Revenue: {validated_data.get('annual_revenue', 'Not available')}
+Estimated IT Budget: {validated_data.get('estimated_it_spend', validated_data.get('it_budget', 'Contact for estimate'))}
 
-Description: {validated_data.get('company_overview', validated_data.get('description', 'Not available'))}
+Company Description: {validated_data.get('company_overview', validated_data.get('description', validated_data.get('summary', 'Not available')))}
 
-Technology Stack: {', '.join(validated_data.get('technology', [])) if isinstance(validated_data.get('technology'), list) else validated_data.get('technology', 'Not available')}
+Target Market: {validated_data.get('target_market', 'Not available')}
+Customer Segments: {', '.join(validated_data.get('customer_segments', [])) if validated_data.get('customer_segments') else 'Not available'}
+
+Products/Services: {', '.join(validated_data.get('products', [])) if validated_data.get('products') else 'Not available'}
+
+Technology Stack: {', '.join(validated_data.get('technologies', validated_data.get('technology', []))) if validated_data.get('technologies') or validated_data.get('technology') else 'Not available'}
 
 === INTENT SIGNALS ===
 
 """
 
-        # Intent Topics
-        intent_topics = validated_data.get('intent_topics', [])
+        # Buying Signals - comprehensive extraction
+        buying_signals = validated_data.get('buying_signals', {})
+        intent_topics = buying_signals.get('intent_topics', validated_data.get('intent_topics', []))
+
         if intent_topics:
             data += "Top Intent Topics:\n"
-            for i, topic in enumerate(intent_topics[:3], 1):
+            for i, topic in enumerate(intent_topics[:5], 1):
                 if isinstance(topic, dict):
-                    t_name = topic.get('topic', f'Topic {i}')
-                    t_score = topic.get('score', 'N/A')
-                    data += f"{i}. {t_name} (Score: {t_score})\n"
+                    t_name = topic.get('topic', topic.get('name', f'Topic {i}'))
+                    t_score = topic.get('score', topic.get('intent_score', 'N/A'))
+                    t_desc = topic.get('description', '')
+                    data += f"{i}. {t_name} (Score: {t_score})"
+                    if t_desc:
+                        data += f" - {t_desc}"
+                    data += "\n"
                 else:
                     data += f"{i}. {topic}\n"
         else:
-            data += "Intent Topics: Not available\n"
+            data += "Intent Topics: Monitoring for digital signals\n"
 
         data += "\n"
 
-        # Partner Mentions
-        partners = validated_data.get('partner_mentions', [])
-        if partners:
-            data += f"Partner Mentions: {', '.join(str(p) for p in partners[:7])}\n\n"
+        # Partner Mentions & Competitors
+        partners = buying_signals.get('partner_mentions', validated_data.get('partner_mentions', []))
+        competitors = buying_signals.get('competitors', validated_data.get('competitors', []))
 
-        # News & Triggers
-        news_triggers = validated_data.get('news_triggers', {})
-        if news_triggers:
-            data += "=== KEY SIGNALS ===\n\n"
-            if news_triggers.get('funding'):
-                data += f"Funding: {news_triggers['funding']}\n\n"
-            if news_triggers.get('expansions') or news_triggers.get('executive_changes'):
-                exp = news_triggers.get('expansions', '')
-                exec_ch = news_triggers.get('executive_changes', '')
-                data += f"Growth: {exp} {exec_ch}\n\n".strip() + "\n\n"
-            if news_triggers.get('partnerships') or news_triggers.get('products'):
-                part = news_triggers.get('partnerships', '')
-                prod = news_triggers.get('products', '')
-                data += f"Strategic: {part} {prod}\n\n".strip() + "\n\n"
+        if partners:
+            data += f"Partner Ecosystem: {', '.join(str(p) for p in partners[:10])}\n\n"
+        if competitors:
+            data += f"Competitive Landscape: {', '.join(str(c) for c in competitors[:10])}\n\n"
+
+        # News & Triggers - comprehensive
+        news_triggers = buying_signals.get('triggers', validated_data.get('news_triggers', {}))
+        news_summaries = validated_data.get('news_summaries', {})
+
+        if news_triggers or news_summaries:
+            data += "=== BUYING SIGNALS & NEWS ===\n\n"
+
+            # Funding signals
+            if news_triggers.get('funding') or news_summaries.get('funding'):
+                funding_info = news_triggers.get('funding', news_summaries.get('funding', ''))
+                data += f"💰 Funding Activity: {funding_info}\n\n"
+
+            # Growth signals
+            if news_triggers.get('expansions') or news_summaries.get('expansions'):
+                exp_info = news_triggers.get('expansions', news_summaries.get('expansions', ''))
+                data += f"📈 Expansion & Growth: {exp_info}\n\n"
+
+            if news_triggers.get('executive_changes') or news_summaries.get('executive_changes'):
+                exec_info = news_triggers.get('executive_changes', news_summaries.get('executive_changes', ''))
+                data += f"👔 Leadership Changes: {exec_info}\n\n"
+
+            # Strategic signals
+            if news_triggers.get('partnerships') or news_summaries.get('partnerships'):
+                part_info = news_triggers.get('partnerships', news_summaries.get('partnerships', ''))
+                data += f"🤝 Strategic Partnerships: {part_info}\n\n"
+
+            if news_triggers.get('products') or news_summaries.get('products'):
+                prod_info = news_triggers.get('products', news_summaries.get('products', ''))
+                data += f"🚀 Product Launches: {prod_info}\n\n"
+
+            # Technology signals
+            if news_summaries.get('technology'):
+                data += f"💻 Technology Initiatives: {news_summaries['technology']}\n\n"
 
         # Pain Points
         pain_points = validated_data.get('pain_points', [])
@@ -233,36 +276,80 @@ Technology Stack: {', '.join(validated_data.get('technology', [])) if isinstance
                     data += f"{i}. {sol}\n"
                 data += "\n"
 
-        # Stakeholders
-        stakeholders = validated_data.get('stakeholder_profiles', [])
+        # Stakeholders - comprehensive from both formats
+        stakeholder_map = validated_data.get('stakeholder_map', {})
+        stakeholder_profiles = validated_data.get('stakeholder_profiles', [])
+
+        # Extract stakeholders from stakeholder_map if available
+        if stakeholder_map and stakeholder_map.get('stakeholders'):
+            stakeholders = stakeholder_map['stakeholders']
+        elif stakeholder_profiles:
+            stakeholders = stakeholder_profiles
+        else:
+            stakeholders = []
+
         if stakeholders:
             data += "=== KEY STAKEHOLDERS ===\n\n"
-            for stakeholder in stakeholders:
-                name = stakeholder.get('name', 'Not available')
-                title = stakeholder.get('title', 'Not available')
-                email = stakeholder.get('email', 'Not available')
-                phone = stakeholder.get('phone', stakeholder.get('mobile', 'Not available'))
-                linkedin = stakeholder.get('linkedin', 'Not available')
+            for idx, stakeholder in enumerate(stakeholders, 1):
+                # Basic info
+                name = stakeholder.get('name', stakeholder.get('fullName', 'Not available'))
+                title = stakeholder.get('title', stakeholder.get('role', 'Not available'))
+                email = stakeholder.get('email', stakeholder.get('contact', {}).get('email', 'Not available'))
+                phone = stakeholder.get('phone', stakeholder.get('mobile', stakeholder.get('contact', {}).get('phone', 'Not available')))
+                linkedin = stakeholder.get('linkedin', stakeholder.get('linkedinUrl', stakeholder.get('linkedin_url', stakeholder.get('contact', {}).get('linkedinUrl', 'Not available'))))
 
-                data += f"Name: {name}\n"
+                data += f"[{idx}] {name}\n"
                 data += f"Title: {title}\n"
+
+                # Department/Seniority if available
+                if stakeholder.get('department'):
+                    data += f"Department: {stakeholder['department']}\n"
+                if stakeholder.get('seniority'):
+                    data += f"Seniority: {stakeholder['seniority']}\n"
+
+                # Contact info
                 data += f"Email: {email}\n"
-                data += f"Phone: {phone}\n"
-                data += f"LinkedIn: {linkedin}\n"
+                if phone and phone != 'Not available':
+                    data += f"Phone: {phone}\n"
+                if linkedin and linkedin != 'Not available':
+                    data += f"LinkedIn: {linkedin}\n"
 
-                # Bio
-                if stakeholder.get('bio'):
-                    data += f"About: {stakeholder['bio']}\n"
+                # Bio/About
+                bio = stakeholder.get('bio', stakeholder.get('about', stakeholder.get('description', '')))
+                if bio:
+                    data += f"About: {bio}\n"
 
-                # Priorities
-                priorities = stakeholder.get('strategic_priorities', [])
+                # Strategic Priorities
+                priorities = stakeholder.get('strategic_priorities', stakeholder.get('strategicPriorities', []))
                 if priorities:
-                    data += "Priorities:\n"
+                    data += "Strategic Priorities:\n"
                     for i, p in enumerate(priorities[:3], 1):
                         if isinstance(p, dict):
-                            data += f"  {i}. {p.get('name', p)}\n"
+                            p_name = p.get('name', p.get('priority', p))
+                            p_desc = p.get('description', '')
+                            data += f"  {i}. {p_name}"
+                            if p_desc:
+                                data += f" - {p_desc}"
+                            data += "\n"
                         else:
                             data += f"  {i}. {p}\n"
+
+                # Communication Preference
+                comm_pref = stakeholder.get('communication_preference', stakeholder.get('communicationPreference', ''))
+                if comm_pref:
+                    data += f"Preferred Contact: {comm_pref}\n"
+
+                # Recommended Play
+                rec_play = stakeholder.get('recommended_play', stakeholder.get('recommendedPlay', ''))
+                if rec_play:
+                    data += f"Recommended Approach: {rec_play}\n"
+
+                # Data quality indicator if available
+                if stakeholder.get('confidence') or stakeholder.get('email_verified'):
+                    confidence = stakeholder.get('confidence', 0)
+                    verified = stakeholder.get('email_verified', False)
+                    if confidence > 80 or verified:
+                        data += f"✓ Verified Contact\n"
 
                 data += "\n"
 
