@@ -21,7 +21,7 @@ class GammaSlideshowCreator:
     4. Return slideshow URL
     """
 
-    def __init__(self, gamma_api_key: str, template_id: str = "g_vsj27dcr73l1nv1"):
+    def __init__(self, gamma_api_key: str, template_id: str = "h6eisl0g3ipk0nz"):
         """
         Initialize Gamma slideshow creator.
 

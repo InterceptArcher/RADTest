@@ -1543,12 +1543,16 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
         }
 
     try:
+        logger.info(f"🎨 Starting Gamma slideshow generation for {company_name}")
+        logger.info(f"   GAMMA_API_KEY is set: {bool(GAMMA_API_KEY)}")
+
         # Import and initialize Gamma slideshow creator
         import sys
         sys.path.insert(0, 'worker')
         from gamma_slideshow import GammaSlideshowCreator
 
         gamma_creator = GammaSlideshowCreator(GAMMA_API_KEY)
+        logger.info("   ✓ Gamma creator initialized")
 
         # Prepare company data for slideshow
         company_data = {
@@ -1558,7 +1562,9 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
         }
 
         # Generate slideshow
+        logger.info("   Calling create_slideshow()...")
         result = await gamma_creator.create_slideshow(company_data)
+        logger.info(f"   Result: success={result.get('success')}, url={result.get('slideshow_url')}")
 
         if result.get("success"):
             slideshow_url = result.get('slideshow_url')
@@ -1584,7 +1590,9 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
             }
 
     except Exception as e:
-        logger.error(f"Error generating slideshow: {str(e)}")
+        logger.error(f"❌ EXCEPTION generating slideshow: {str(e)}")
+        import traceback
+        logger.error(f"   Traceback: {traceback.format_exc()}")
         # Return error info on exception - no fake URLs
         return {
             "success": False,
