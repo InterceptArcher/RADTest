@@ -451,3 +451,228 @@ class LLMCouncil:
             council_signals=signals,
             audit_log=audit_log
         )
+
+    async def generate_pain_points(
+        self,
+        company_data: Dict[str, Any],
+        news_data: Dict[str, Any]
+    ) -> List[Dict[str, str]]:
+        """
+        Generate pain points based on company data and news.
+
+        Args:
+            company_data: Company information
+            news_data: Recent news articles and summaries
+
+        Returns:
+            List of pain point dictionaries with title and description
+        """
+        try:
+            prompt = f"""Based on the following company information and recent news, identify 3 specific business pain points or challenges this company likely faces.
+
+Company: {company_data.get('company_name', 'Unknown')}
+Industry: {company_data.get('industry', 'Unknown')}
+Employee Count: {company_data.get('employee_count', 'Unknown')}
+Recent News: {news_data.get('summaries', {}).get('all', 'No recent news')}
+
+For each pain point, provide:
+1. A concise title (5-10 words)
+2. A detailed description (2-3 sentences) explaining the challenge
+
+Format as JSON array:
+[
+  {{"title": "...", "description": "..."}},
+  {{"title": "...", "description": "..."}}
+]"""
+
+            response = await openai.ChatCompletion.acreate(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an expert B2B sales analyst specializing in enterprise technology needs."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=800
+            )
+
+            import json
+            content = response.choices[0].message.content
+            pain_points = json.loads(content)
+
+            logger.info(f"Generated {len(pain_points)} pain points")
+            return pain_points[:3]
+
+        except Exception as e:
+            logger.error(f"Failed to generate pain points: {e}")
+            return []
+
+    async def generate_opportunities(
+        self,
+        company_data: Dict[str, Any],
+        pain_points: List[Dict[str, str]]
+    ) -> List[Dict[str, str]]:
+        """
+        Generate sales opportunities based on pain points.
+
+        Args:
+            company_data: Company information
+            pain_points: List of identified pain points
+
+        Returns:
+            List of opportunity dictionaries with title and description
+        """
+        try:
+            pain_summary = "\n".join([f"- {p['title']}" for p in pain_points])
+
+            prompt = f"""Based on these pain points for {company_data.get('company_name', 'the company')}, identify 3 specific sales opportunities for HP technology solutions.
+
+Industry: {company_data.get('industry', 'Unknown')}
+Pain Points:
+{pain_summary}
+
+For each opportunity, provide:
+1. A specific title (sales opportunity)
+2. A description with qualification questions
+
+Format as JSON array:
+[
+  {{"title": "...", "description": "..."}}
+]"""
+
+            response = await openai.ChatCompletion.acreate(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an HP enterprise sales strategist."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=800
+            )
+
+            import json
+            content = response.choices[0].message.content
+            opportunities = json.loads(content)
+
+            logger.info(f"Generated {len(opportunities)} opportunities")
+            return opportunities[:3]
+
+        except Exception as e:
+            logger.error(f"Failed to generate opportunities: {e}")
+            return []
+
+    async def generate_intent_topics(
+        self,
+        company_data: Dict[str, Any],
+        news_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Generate intent topics with scores based on company activities.
+
+        Args:
+            company_data: Company information
+            news_data: Recent news and signals
+
+        Returns:
+            List of intent topics with scores (0-100)
+        """
+        try:
+            prompt = f"""Based on company activities and news, identify top 3 technology intent topics with scores (0-100).
+
+Company: {company_data.get('company_name')}
+Industry: {company_data.get('industry')}
+Recent Activities: {news_data.get('summaries', {}).get('all', 'No recent news')}
+
+Provide intent topics with realistic scores based on evidence.
+
+Format as JSON array:
+[
+  {{"topic": "...", "score": 85, "description": "..."}}
+]"""
+
+            response = await openai.ChatCompletion.acreate(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are a sales intelligence analyst."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=600
+            )
+
+            import json
+            content = response.choices[0].message.content
+            topics = json.loads(content)
+
+            logger.info(f"Generated {len(topics)} intent topics")
+            return topics[:3]
+
+        except Exception as e:
+            logger.error(f"Failed to generate intent topics: {e}")
+            return []
+
+    async def enrich_stakeholder_profiles(
+        self,
+        stakeholders: List[Dict[str, str]],
+        company_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Enrich stakeholder profiles with strategic priorities and conversation starters.
+
+        Args:
+            stakeholders: List of stakeholder basic info
+            company_data: Company context
+
+        Returns:
+            Enriched stakeholder profiles
+        """
+        enriched = []
+
+        for stakeholder in stakeholders[:5]:  # Limit to 5 stakeholders
+            try:
+                title = stakeholder.get('title', '')
+                name = stakeholder.get('name', '')
+
+                prompt = f"""For {name}, {title} at {company_data.get('company_name')} ({company_data.get('industry')} industry):
+
+Generate:
+1. Three strategic priorities (title + description)
+2. Three conversation starters (topic + question)
+
+Format as JSON:
+{{
+  "strategic_priorities": [
+    {{"name": "...", "description": "..."}}
+  ],
+  "conversation_starters": [
+    {{"topic": "...", "question": "..."}}
+  ]
+}}"""
+
+                response = await openai.ChatCompletion.acreate(
+                    model=self.model,
+                    messages=[
+                        {"role": "system", "content": "You are an executive profiler for B2B sales."},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.3,
+                    max_tokens=700
+                )
+
+                import json
+                enrichment = json.loads(response.choices[0].message.content)
+
+                enriched_profile = {
+                    **stakeholder,
+                    "strategic_priorities": enrichment.get("strategic_priorities", []),
+                    "conversation_starters": enrichment.get("conversation_starters", [])
+                }
+
+                enriched.append(enriched_profile)
+
+            except Exception as e:
+                logger.warning(f"Failed to enrich stakeholder {name}: {e}")
+                # Add without enrichment
+                enriched.append(stakeholder)
+
+        logger.info(f"Enriched {len(enriched)} stakeholder profiles")
+        return enriched

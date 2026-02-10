@@ -154,8 +154,14 @@ class WorkerOrchestrator:
             logger.info("Step 3: Processing executive/stakeholder data")
             stakeholder_profiles = self._process_people_data(intelligence_results)
 
-            # Step 4: Data validation and normalization
-            logger.info("Step 4: Validating and normalizing data")
+            # Step 4: Fetch and process news data
+            logger.info("Step 4: Fetching news and signals")
+            from news_gatherer import NewsGatherer
+            news_gatherer = NewsGatherer()
+            news_data = await news_gatherer.fetch_company_news(company_name, domain)
+
+            # Step 5: Data validation and normalization
+            logger.info("Step 5: Validating and normalizing data")
             validated_data = await self._validate_and_normalize(
                 company_name,
                 domain,
@@ -163,8 +169,19 @@ class WorkerOrchestrator:
                 stakeholder_profiles
             )
 
-            # Step 5: Inject finalized data
-            logger.info("Step 5: Injecting finalized data")
+            # Step 6: Enrich data with LLM-generated insights
+            logger.info("Step 6: Generating pain points, opportunities, and intent signals")
+            enriched_data = await self._enrich_with_llm(
+                validated_data["data"],
+                news_data,
+                stakeholder_profiles
+            )
+
+            # Merge enriched data
+            validated_data["data"].update(enriched_data)
+
+            # Step 7: Inject finalized data
+            logger.info("Step 7: Injecting finalized data")
             finalize_result = await self.supabase_injector.inject_finalized_data(
                 company_name=company_name,
                 domain=domain,
@@ -173,8 +190,8 @@ class WorkerOrchestrator:
                 validation_metadata=validated_data["metadata"]
             )
 
-            # Step 6: Generate slideshow
-            logger.info("Step 6: Generating slideshow")
+            # Step 8: Generate slideshow
+            logger.info("Step 8: Generating slideshow")
             slideshow_data = {
                 "company_name": company_name,
                 "validated_data": validated_data["data"],
@@ -204,6 +221,64 @@ class WorkerOrchestrator:
         except Exception as e:
             logger.error(f"Failed to process company request: {e}", exc_info=True)
             raise
+
+    async def _enrich_with_llm(
+        self,
+        company_data: Dict[str, Any],
+        news_data: Dict[str, Any],
+        stakeholder_profiles: list
+    ) -> Dict[str, Any]:
+        """
+        Enrich company data with LLM-generated insights.
+
+        Args:
+            company_data: Validated company data
+            news_data: News articles and summaries
+            stakeholder_profiles: List of stakeholder profiles
+
+        Returns:
+            Dictionary with enriched data fields
+        """
+        enriched = {}
+
+        # Generate pain points
+        pain_points = await self.llm_council.generate_pain_points(
+            company_data,
+            news_data
+        )
+        if pain_points:
+            enriched["pain_points"] = pain_points
+
+        # Generate opportunities based on pain points
+        opportunities = await self.llm_council.generate_opportunities(
+            company_data,
+            pain_points
+        )
+        if opportunities:
+            enriched["sales_opportunities"] = opportunities
+
+        # Generate intent topics
+        intent_topics = await self.llm_council.generate_intent_topics(
+            company_data,
+            news_data
+        )
+        if intent_topics:
+            enriched["intent_topics"] = intent_topics
+
+        # Enrich stakeholder profiles
+        if stakeholder_profiles:
+            enriched_stakeholders = await self.llm_council.enrich_stakeholder_profiles(
+                stakeholder_profiles,
+                company_data
+            )
+            enriched["stakeholder_profiles"] = enriched_stakeholders
+
+        # Add news summaries
+        if news_data.get("success"):
+            enriched["news_triggers"] = news_data.get("summaries", {})
+
+        logger.info(f"Enriched data with {len(enriched)} new fields")
+        return enriched
 
     def _process_people_data(self, intelligence_results: list) -> list:
         """
