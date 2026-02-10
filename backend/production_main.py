@@ -2821,6 +2821,86 @@ Best regards""",
     return OutreachResponse(content=outreach_content)
 
 
+@app.post("/test-slideshow", tags=["Testing"])
+async def test_slideshow_generation(company_name: str = "Airbnb"):
+    """
+    Test endpoint to verify Gamma slideshow generation.
+    Default tests with Airbnb.
+    """
+    logger.info(f"🧪 TEST: Starting slideshow generation test for {company_name}")
+
+    try:
+        # Create minimal test data
+        test_validated_data = {
+            "company_name": company_name,
+            "domain": f"{company_name.lower()}.com",
+            "industry": "Technology",
+            "employee_count": "5000-10000",
+            "company_overview": f"{company_name} is a leading technology company.",
+            "confidence_score": 0.90,
+            "intent_topics": [
+                {"topic": "Cloud Infrastructure", "score": 85},
+                {"topic": "Digital Transformation", "score": 78}
+            ],
+            "pain_points": [
+                {
+                    "title": "Infrastructure Scaling",
+                    "description": "Managing global infrastructure at scale"
+                }
+            ],
+            "sales_opportunities": [
+                {
+                    "title": "Cloud Migration Strategy",
+                    "description": "Assessment and roadmap for cloud adoption"
+                }
+            ],
+            "stakeholder_profiles": [
+                {
+                    "name": "Test Executive",
+                    "title": "CTO",
+                    "email": "test@example.com",
+                    "phone": "+1-555-0100",
+                    "linkedin": "https://linkedin.com/in/test"
+                }
+            ]
+        }
+
+        logger.info("🧪 TEST: Calling generate_slideshow()...")
+        result = await generate_slideshow(company_name, test_validated_data)
+
+        logger.info("🧪 TEST: === RESULT ===")
+        logger.info(f"🧪 TEST: Success: {result.get('success')}")
+        logger.info(f"🧪 TEST: Slideshow URL: {result.get('slideshow_url')}")
+        logger.info(f"🧪 TEST: Slideshow ID: {result.get('slideshow_id')}")
+        logger.info(f"🧪 TEST: Error: {result.get('error')}")
+        logger.info(f"🧪 TEST: Full result: {result}")
+        logger.info("🧪 TEST: ================")
+
+        if result.get("slideshow_url"):
+            return {
+                "test": "PASSED ✅",
+                "company": company_name,
+                "slideshow_url": result.get("slideshow_url"),
+                "slideshow_id": result.get("slideshow_id"),
+                "message": "Slideshow generated successfully!"
+            }
+        else:
+            return {
+                "test": "FAILED ❌",
+                "company": company_name,
+                "slideshow_url": None,
+                "error": result.get("error", "Unknown error"),
+                "full_result": result,
+                "message": "Slideshow URL is null - check logs above for details"
+            }
+
+    except Exception as e:
+        logger.error(f"🧪 TEST: Exception occurred: {e}")
+        import traceback
+        logger.error(f"🧪 TEST: Traceback:\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
