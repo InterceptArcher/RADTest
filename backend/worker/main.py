@@ -161,17 +161,25 @@ class WorkerOrchestrator:
 
             # Step 3.5: Enrich emails with Hunter.io
             if stakeholder_profiles:
-                logger.info("Step 3.5: Verifying and enriching emails")
-                stakeholder_profiles = await self.hunter_client.enrich_stakeholder_emails(
-                    stakeholder_profiles,
-                    domain
-                )
+                try:
+                    logger.info("Step 3.5: Verifying and enriching emails")
+                    stakeholder_profiles = await self.hunter_client.enrich_stakeholder_emails(
+                        stakeholder_profiles,
+                        domain
+                    )
+                except Exception as e:
+                    logger.warning(f"Email enrichment failed, continuing with basic emails: {e}")
 
             # Step 4: Fetch and process news data
-            logger.info("Step 4: Fetching news and signals")
-            from news_gatherer import NewsGatherer
-            news_gatherer = NewsGatherer()
-            news_data = await news_gatherer.fetch_company_news(company_name, domain)
+            news_data = {}
+            try:
+                logger.info("Step 4: Fetching news and signals")
+                from news_gatherer import NewsGatherer
+                news_gatherer = NewsGatherer()
+                news_data = await news_gatherer.fetch_company_news(company_name, domain)
+            except Exception as e:
+                logger.warning(f"News gathering failed, continuing without news: {e}")
+                news_data = {"success": False}
 
             # Step 5: Data validation and normalization
             logger.info("Step 5: Validating and normalizing data")
@@ -183,15 +191,18 @@ class WorkerOrchestrator:
             )
 
             # Step 6: Enrich data with LLM-generated insights
-            logger.info("Step 6: Generating pain points, opportunities, and intent signals")
-            enriched_data = await self._enrich_with_llm(
-                validated_data["data"],
-                news_data,
-                stakeholder_profiles
-            )
-
-            # Merge enriched data
-            validated_data["data"].update(enriched_data)
+            try:
+                logger.info("Step 6: Generating pain points, opportunities, and intent signals")
+                enriched_data = await self._enrich_with_llm(
+                    validated_data["data"],
+                    news_data,
+                    stakeholder_profiles
+                )
+                # Merge enriched data
+                validated_data["data"].update(enriched_data)
+            except Exception as e:
+                logger.warning(f"LLM enrichment failed, continuing with basic data: {e}")
+                # Continue without enrichment
 
             # Step 7: Inject finalized data
             logger.info("Step 7: Injecting finalized data")
