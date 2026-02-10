@@ -13,6 +13,7 @@ from supabase_injector import SupabaseInjector
 from llm_validator import LLMValidator
 from llm_council import LLMCouncil, SourceTier
 from gamma_slideshow import GammaSlideshowCreator
+from hunter_client import HunterClient
 
 # Configure logging
 logging.basicConfig(
@@ -74,6 +75,10 @@ class WorkerOrchestrator:
 
         self.gamma_creator = GammaSlideshowCreator(
             gamma_api_key=self.gamma_api_key
+        )
+
+        self.hunter_client = HunterClient(
+            api_key=os.environ.get("HUNTER_API_KEY")
         )
 
         logger.info("Worker orchestrator initialized successfully")
@@ -153,6 +158,14 @@ class WorkerOrchestrator:
             # Step 3: Extract and process people data
             logger.info("Step 3: Processing executive/stakeholder data")
             stakeholder_profiles = self._process_people_data(intelligence_results)
+
+            # Step 3.5: Enrich emails with Hunter.io
+            if stakeholder_profiles:
+                logger.info("Step 3.5: Verifying and enriching emails")
+                stakeholder_profiles = await self.hunter_client.enrich_stakeholder_emails(
+                    stakeholder_profiles,
+                    domain
+                )
 
             # Step 4: Fetch and process news data
             logger.info("Step 4: Fetching news and signals")
