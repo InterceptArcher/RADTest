@@ -125,7 +125,8 @@ class IntelligenceGatherer:
         self,
         company_name: str,
         domain: str,
-        sources: Optional[List[DataSource]] = None
+        sources: Optional[List[DataSource]] = None,
+        include_people: bool = True
     ) -> List[IntelligenceResult]:
         """
         Gather intelligence from multiple sources in parallel.
@@ -134,6 +135,7 @@ class IntelligenceGatherer:
             company_name: Name of the company
             domain: Company domain
             sources: List of sources to query (defaults to all)
+            include_people: Whether to fetch executive/people data
 
         Returns:
             List of IntelligenceResult objects
@@ -143,7 +145,7 @@ class IntelligenceGatherer:
 
         logger.info(
             f"Starting intelligence gathering for {company_name} "
-            f"from {len(sources)} sources"
+            f"from {len(sources)} sources (include_people={include_people})"
         )
 
         # Create tasks for parallel execution
@@ -151,8 +153,12 @@ class IntelligenceGatherer:
         for source in sources:
             if source == DataSource.APOLLO:
                 tasks.append(self._fetch_apollo_data(company_name, domain))
+                if include_people:
+                    tasks.append(self._fetch_apollo_people(company_name, domain))
             elif source == DataSource.PDL:
                 tasks.append(self._fetch_pdl_data(company_name, domain))
+                if include_people:
+                    tasks.append(self._fetch_pdl_people(company_name, domain))
 
         # Execute all tasks in parallel
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -362,5 +368,180 @@ class IntelligenceGatherer:
             success=False,
             data=None,
             error="Failed after retries",
+            attempt_count=self.max_retries
+        )
+
+    async def _fetch_apollo_people(
+        self,
+        company_name: str,
+        domain: str
+    ) -> IntelligenceResult:
+        """
+        Fetch executive/people data from Apollo.io.
+
+        Args:
+            company_name: Name of the company
+            domain: Company domain
+
+        Returns:
+            IntelligenceResult with Apollo people data
+        """
+        source = DataSource.APOLLO
+        circuit_breaker = self.circuit_breakers[source]
+
+        if not circuit_breaker.can_execute():
+            logger.warning(f"Circuit breaker open for {source.value} (people)")
+            return IntelligenceResult(
+                source=source,
+                success=False,
+                data=None,
+                error="Circuit breaker open",
+                attempt_count=0
+            )
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    # Search for C-level executives at the company
+                    response = await client.post(
+                        "https://api.apollo.io/v1/mixed_people/search",
+                        json={
+                            "organization_domains": [domain],
+                            "person_titles": ["CEO", "CTO", "CFO", "CIO", "CISO", "COO", "CPO", "President", "VP"],
+                            "per_page": 10,
+                            "page": 1
+                        },
+                        headers={
+                            "Content-Type": "application/json",
+                            "X-Api-Key": self.apollo_api_key
+                        }
+                    )
+
+                    response.raise_for_status()
+                    data = response.json()
+
+                    circuit_breaker.record_success()
+
+                    logger.info(
+                        f"Successfully fetched Apollo people data for {company_name} "
+                        f"({len(data.get('people', []))} executives found)"
+                    )
+
+                    return IntelligenceResult(
+                        source=source,
+                        success=True,
+                        data={"type": "people", "people": data.get("people", [])},
+                        error=None,
+                        attempt_count=attempt
+                    )
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    logger.warning(f"Rate limit hit for Apollo people (attempt {attempt})")
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                else:
+                    logger.error(f"HTTP error from Apollo people: {e}")
+                    circuit_breaker.record_failure()
+                    break
+
+            except Exception as e:
+                logger.error(f"Unexpected error with Apollo people: {e}")
+                circuit_breaker.record_failure()
+                break
+
+        return IntelligenceResult(
+            source=source,
+            success=False,
+            data=None,
+            error="Failed after retries (people)",
+            attempt_count=self.max_retries
+        )
+
+    async def _fetch_pdl_people(
+        self,
+        company_name: str,
+        domain: str
+    ) -> IntelligenceResult:
+        """
+        Fetch executive/people data from PeopleDataLabs.
+
+        Args:
+            company_name: Name of the company
+            domain: Company domain
+
+        Returns:
+            IntelligenceResult with PDL people data
+        """
+        source = DataSource.PDL
+        circuit_breaker = self.circuit_breakers[source]
+
+        if not circuit_breaker.can_execute():
+            logger.warning(f"Circuit breaker open for {source.value} (people)")
+            return IntelligenceResult(
+                source=source,
+                success=False,
+                data=None,
+                error="Circuit breaker open",
+                attempt_count=0
+            )
+
+        for attempt in range(1, self.max_retries + 1):
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    # Search for C-level executives
+                    response = await client.get(
+                        "https://api.peopledatalabs.com/v5/person/search",
+                        params={
+                            "query": {
+                                "job_company_website": domain,
+                                "job_title_role": ["ceo", "cto", "cfo", "cio", "ciso", "coo", "cpo", "president", "vp"]
+                            },
+                            "size": 10,
+                            "pretty": True
+                        },
+                        headers={
+                            "X-Api-Key": self.pdl_api_key
+                        }
+                    )
+
+                    response.raise_for_status()
+                    data = response.json()
+
+                    circuit_breaker.record_success()
+
+                    logger.info(
+                        f"Successfully fetched PDL people data for {company_name} "
+                        f"({len(data.get('data', []))} executives found)"
+                    )
+
+                    return IntelligenceResult(
+                        source=source,
+                        success=True,
+                        data={"type": "people", "people": data.get("data", [])},
+                        error=None,
+                        attempt_count=attempt
+                    )
+
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    logger.warning(f"Rate limit hit for PDL people (attempt {attempt})")
+                    await asyncio.sleep(2 ** attempt)
+                    continue
+                else:
+                    logger.error(f"HTTP error from PDL people: {e}")
+                    circuit_breaker.record_failure()
+                    break
+
+            except Exception as e:
+                logger.error(f"Unexpected error with PDL people: {e}")
+                circuit_breaker.record_failure()
+                break
+
+        return IntelligenceResult(
+            source=source,
+            success=False,
+            data=None,
+            error="Failed after retries (people)",
             attempt_count=self.max_retries
         )
