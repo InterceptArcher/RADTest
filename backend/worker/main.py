@@ -224,7 +224,8 @@ class WorkerOrchestrator:
             }
 
             slideshow_result = await self.gamma_creator.create_slideshow(
-                slideshow_data
+                company_data=slideshow_data,
+                user_email=requested_by
             )
 
             logger.info(
