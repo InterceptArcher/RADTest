@@ -1553,6 +1553,7 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
 
         gamma_creator = GammaSlideshowCreator(GAMMA_API_KEY)
         logger.info("   ✓ Gamma creator initialized")
+        logger.info(f"   Template ID: {gamma_creator.template_id}")
 
         # Prepare company data for slideshow
         company_data = {
@@ -1561,24 +1562,45 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
             "confidence_score": validated_data.get("confidence_score", 0.85)
         }
 
-        # Generate slideshow
+        # Generate slideshow - gamma_slideshow handles template automatically
         logger.info("   Calling create_slideshow()...")
+        logger.info(f"   Company data keys: {list(company_data.keys())}")
+        logger.info(f"   Validated data keys: {list(validated_data.keys())}")
+
         result = await gamma_creator.create_slideshow(company_data)
-        logger.info(f"   Result: success={result.get('success')}, url={result.get('slideshow_url')}")
+
+        # Detailed logging of result
+        logger.info("   === GAMMA API RESULT ===")
+        logger.info(f"   Result type: {type(result)}")
+        logger.info(f"   Result keys: {list(result.keys()) if isinstance(result, dict) else 'N/A'}")
+        logger.info(f"   Success: {result.get('success')}")
+        logger.info(f"   Slideshow URL: {result.get('slideshow_url')}")
+        logger.info(f"   Slideshow ID: {result.get('slideshow_id')}")
+        logger.info(f"   Error: {result.get('error')}")
+        logger.info(f"   Full result: {result}")
+        logger.info("   =======================")
 
         if result.get("success"):
             slideshow_url = result.get('slideshow_url')
             # Validate the URL format
             if slideshow_url and slideshow_url.startswith('https://gamma.app/'):
-                logger.info(f"Slideshow generated successfully: {slideshow_url}")
+                logger.info(f"✅ Slideshow generated successfully: {slideshow_url}")
                 return result
-            else:
-                logger.error(f"Invalid slideshow URL returned: {slideshow_url}")
+            elif slideshow_url:
+                logger.error(f"❌ Invalid slideshow URL format: {slideshow_url}")
                 return {
                     "success": False,
                     "slideshow_url": None,
                     "slideshow_id": None,
-                    "error": f"Invalid slideshow URL: {slideshow_url}"
+                    "error": f"Invalid slideshow URL format: {slideshow_url}"
+                }
+            else:
+                logger.error(f"❌ Slideshow URL is None or empty despite success=True")
+                return {
+                    "success": False,
+                    "slideshow_url": None,
+                    "slideshow_id": None,
+                    "error": "Slideshow URL is None despite success status"
                 }
         else:
             logger.error(f"Slideshow generation failed: {result.get('error')}")
