@@ -100,7 +100,7 @@ class GammaSlideshowCreator:
             num_cards = 4 + stakeholder_count + 1 + persona_count + 1
 
             # Send to Gamma API
-            result = await self._send_to_gamma(markdown_content, num_cards)
+            result = await self._send_to_gamma(markdown_content, num_cards, company_data, user_email)
 
             logger.info(f"Slideshow created successfully: {result.get('url')}")
 
@@ -114,6 +114,176 @@ class GammaSlideshowCreator:
         except Exception as e:
             logger.error(f"Failed to create slideshow: {e}")
             raise
+
+    def _format_for_template(self, company_data: Dict[str, Any], user_email: str = None) -> str:
+        """
+        Format company data as structured text for template population.
+        The template will handle all formatting, fonts, logos, and design.
+
+        Args:
+            company_data: Company data dictionary
+            user_email: Email of person requesting the report
+
+        Returns:
+            Structured data string that the template will format
+        """
+        validated_data = company_data.get("validated_data", {})
+        company_name = validated_data.get('company_name', 'Company')
+
+        from datetime import datetime
+        current_date = datetime.now().strftime("%B %d, %Y")
+
+        # Build concise, structured data
+        data = f"""ACCOUNT INTELLIGENCE REPORT
+
+Company: {company_name}
+Report Date: {current_date}
+Prepared By: HP RAD Intelligence Desk
+Prepared For: {user_email or 'HP Sales Team'}
+
+=== COMPANY OVERVIEW ===
+
+Company Name: {company_name}
+Industry: {validated_data.get('industry', 'Not available')}
+Account Type: {validated_data.get('account_type', 'Private Sector')}
+Employee Count: {validated_data.get('employee_count', 'Not available')}
+IT Budget: {validated_data.get('estimated_it_spend', 'Contact for estimate')}
+
+Description: {validated_data.get('company_overview', validated_data.get('description', 'Not available'))}
+
+Technology Stack: {', '.join(validated_data.get('technology', [])) if isinstance(validated_data.get('technology'), list) else validated_data.get('technology', 'Not available')}
+
+=== INTENT SIGNALS ===
+
+"""
+
+        # Intent Topics
+        intent_topics = validated_data.get('intent_topics', [])
+        if intent_topics:
+            data += "Top Intent Topics:\n"
+            for i, topic in enumerate(intent_topics[:3], 1):
+                if isinstance(topic, dict):
+                    t_name = topic.get('topic', f'Topic {i}')
+                    t_score = topic.get('score', 'N/A')
+                    data += f"{i}. {t_name} (Score: {t_score})\n"
+                else:
+                    data += f"{i}. {topic}\n"
+        else:
+            data += "Intent Topics: Not available\n"
+
+        data += "\n"
+
+        # Partner Mentions
+        partners = validated_data.get('partner_mentions', [])
+        if partners:
+            data += f"Partner Mentions: {', '.join(str(p) for p in partners[:7])}\n\n"
+
+        # News & Triggers
+        news_triggers = validated_data.get('news_triggers', {})
+        if news_triggers:
+            data += "=== KEY SIGNALS ===\n\n"
+            if news_triggers.get('funding'):
+                data += f"Funding: {news_triggers['funding']}\n\n"
+            if news_triggers.get('expansions') or news_triggers.get('executive_changes'):
+                exp = news_triggers.get('expansions', '')
+                exec_ch = news_triggers.get('executive_changes', '')
+                data += f"Growth: {exp} {exec_ch}\n\n".strip() + "\n\n"
+            if news_triggers.get('partnerships') or news_triggers.get('products'):
+                part = news_triggers.get('partnerships', '')
+                prod = news_triggers.get('products', '')
+                data += f"Strategic: {part} {prod}\n\n".strip() + "\n\n"
+
+        # Pain Points
+        pain_points = validated_data.get('pain_points', [])
+        if pain_points:
+            data += "=== PAIN POINTS ===\n\n"
+            for i, pain in enumerate(pain_points, 1):
+                if isinstance(pain, dict):
+                    data += f"{i}. {pain.get('title', pain)}\n"
+                    if pain.get('description'):
+                        data += f"   {pain['description']}\n"
+                else:
+                    data += f"{i}. {pain}\n"
+                data += "\n"
+
+        # Opportunities
+        opportunities = validated_data.get('sales_opportunities', [])
+        if opportunities:
+            data += "=== SALES OPPORTUNITIES ===\n\n"
+            for i, opp in enumerate(opportunities, 1):
+                if isinstance(opp, dict):
+                    data += f"{i}. {opp.get('title', opp)}\n"
+                    if opp.get('description'):
+                        data += f"   {opp['description']}\n"
+                else:
+                    data += f"{i}. {opp}\n"
+                data += "\n"
+
+        # Solutions
+        solutions = validated_data.get('recommended_solutions', [])
+        if solutions:
+            data += "=== RECOMMENDED SOLUTIONS ===\n\n"
+            for i, sol in enumerate(solutions, 1):
+                if isinstance(sol, dict):
+                    data += f"{i}. {sol.get('title', sol)}\n"
+                    if sol.get('description'):
+                        data += f"   {sol['description']}\n"
+                else:
+                    data += f"{i}. {sol}\n"
+                data += "\n"
+
+        # Stakeholders
+        stakeholders = validated_data.get('stakeholder_profiles', [])
+        if stakeholders:
+            data += "=== KEY STAKEHOLDERS ===\n\n"
+            for stakeholder in stakeholders:
+                name = stakeholder.get('name', 'Not available')
+                title = stakeholder.get('title', 'Not available')
+                email = stakeholder.get('email', 'Not available')
+                phone = stakeholder.get('phone', stakeholder.get('mobile', 'Not available'))
+                linkedin = stakeholder.get('linkedin', 'Not available')
+
+                data += f"Name: {name}\n"
+                data += f"Title: {title}\n"
+                data += f"Email: {email}\n"
+                data += f"Phone: {phone}\n"
+                data += f"LinkedIn: {linkedin}\n"
+
+                # Bio
+                if stakeholder.get('bio'):
+                    data += f"About: {stakeholder['bio']}\n"
+
+                # Priorities
+                priorities = stakeholder.get('strategic_priorities', [])
+                if priorities:
+                    data += "Priorities:\n"
+                    for i, p in enumerate(priorities[:3], 1):
+                        if isinstance(p, dict):
+                            data += f"  {i}. {p.get('name', p)}\n"
+                        else:
+                            data += f"  {i}. {p}\n"
+
+                data += "\n"
+
+        # Next Steps
+        next_steps = validated_data.get('recommended_next_steps', [])
+        if next_steps:
+            data += "=== RECOMMENDED NEXT STEPS ===\n\n"
+            for i, step in enumerate(next_steps, 1):
+                if isinstance(step, dict):
+                    data += f"{i}. {step.get('step', step)}\n"
+                    if step.get('collateral'):
+                        data += f"   Collateral: {step['collateral']}\n"
+                else:
+                    data += f"{i}. {step}\n"
+                data += "\n"
+
+        data += f"\n=== REPORT METADATA ===\n\n"
+        data += f"Confidence Score: {company_data.get('confidence_score', 0.85):.0%}\n"
+        data += f"Report Generated: {current_date}\n"
+        data += f"Status: For Internal HP Use Only\n"
+
+        return data
 
     def _generate_markdown(self, company_data: Dict[str, Any], user_email: str = None) -> str:
         """
@@ -1006,7 +1176,13 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
         return markdown
 
-    async def _send_to_gamma(self, markdown_content: str, num_cards: int = 10) -> Dict[str, Any]:
+    async def _send_to_gamma(
+        self,
+        markdown_content: str,
+        num_cards: int = 10,
+        company_data: Dict[str, Any] = None,
+        user_email: str = None
+    ) -> Dict[str, Any]:
         """
         Send markdown content to Gamma API for slideshow generation.
 
@@ -1033,12 +1209,18 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         # Choose endpoint and payload based on whether template is used
         if self.template_id:
             # Use template endpoint: /v1.0/generations/from-template
+            # Send structured data instead of markdown to preserve template design
             api_endpoint = self.template_url
+
+            # Create concise, structured data that preserves template formatting
+            structured_data = self._format_for_template(company_data, user_email)
+
             payload = {
                 "gammaId": self.template_id,
-                "prompt": markdown_content
+                "prompt": structured_data
             }
             logger.info(f"Using template endpoint with gammaId: {self.template_id}")
+            logger.info(f"Sending structured data (length: {len(structured_data)} chars)")
         else:
             # Use standard generation endpoint: /v1.0/generations
             api_endpoint = self.api_url
