@@ -871,25 +871,53 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         for persona in sorted(persona_types):
             markdown += f"# Supporting assets – [{persona}]\n\n"
 
+            # Get persona-specific context
+            relevant_topic = "Not available"
+            if intent_topics and len(intent_topics) > 0:
+                first_topic = intent_topics[0]
+                relevant_topic = first_topic.get('topic', '') if isinstance(first_topic, dict) else str(first_topic)
+
+            # Get pain point context
+            relevant_initiative = "operational excellence"
+            desired_outcome = "improved efficiency"
+            if pain_points and len(pain_points) > 0:
+                first_pain = pain_points[0]
+                if isinstance(first_pain, dict):
+                    relevant_initiative = first_pain.get('title', 'operational excellence')
+                    pain_desc = first_pain.get('description', '')
+                    if 'efficiency' in pain_desc.lower():
+                        desired_outcome = "improved operational efficiency"
+                    elif 'security' in pain_desc.lower():
+                        desired_outcome = "enhanced security posture"
+                    elif 'cost' in pain_desc.lower():
+                        desired_outcome = "optimized costs"
+
+            # Get solution approach
+            approach = "Not available"
+            if opportunities and len(opportunities) > 0:
+                first_opp = opportunities[0]
+                if isinstance(first_opp, dict):
+                    approach = first_opp.get('title', 'strategic technology investments')
+
             # Email Template
             markdown += "## Email Template\n\n"
             markdown += f"**Sender:** HP Canada\n\n"
             markdown += f"**Subject line:**\n\n"
             markdown += f"A: Insights that matter to {company_name}\n\n"
-            markdown += f"B: Supporting {company_name} on [relevant topic]\n\n"
+            markdown += f"B: Supporting {company_name} on {relevant_topic if relevant_topic != 'Not available' else 'your technology priorities'}\n\n"
             markdown += "**Body:**\n\n"
             markdown += f"Hi [First Name],\n\n"
-            markdown += f"I understand {company_name} is focused on [relevant initiative] this year. I wanted to share something that might help advance that work.\n\n"
-            markdown += "We've seen similar organizations strengthen [outcome] by [approach]. I thought you might find this useful: [HP resource link]\n\n"
-            markdown += f"Would you be open to a brief conversation about how we could help you achieve [desired outcome]?\n\n"
+            markdown += f"I understand {company_name} is focused on {relevant_initiative} this year. I wanted to share something that might help advance that work.\n\n"
+            markdown += f"We've seen similar organizations in {industry} strengthen {desired_outcome} by {approach}. I thought you might find this useful: [HP resource link]\n\n"
+            markdown += f"Would you be open to a brief conversation about how we could help you achieve {desired_outcome}?\n\n"
             markdown += "Best regards,\n[Your Name]\nHP Canada | [Business Unit]\n\n"
 
             # LinkedIn Outreach Template
             markdown += "## LinkedIn Outreach Template\n\n"
-            markdown += f"**Subject line:** Supporting {company_name} on [relevant topic]\n\n"
+            markdown += f"**Subject line:** Supporting {company_name} on {relevant_topic if relevant_topic != 'Not available' else 'your technology strategy'}\n\n"
             markdown += "**Body:**\n\n"
             markdown += f"Hi [First Name],\n\n"
-            markdown += f"[Relevant topic] seems to be a key focus across {industry}. We've seen similar organizations strengthen [outcome] by [approach].\n\n"
+            markdown += f"{relevant_topic if relevant_topic != 'Not available' else 'Technology modernization'} seems to be a key focus across {industry}. We've seen similar organizations strengthen {desired_outcome} by {approach}.\n\n"
             markdown += "Here's a short resource that outlines the approach: [HP resource link]\n\n"
             markdown += f"Would you be open to a quick chat about what might work best for {company_name}?\n\n"
             markdown += "Best,\n[Your Name]\nHP Canada\n\n"
@@ -897,13 +925,31 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             # Call Script (if applicable)
             markdown += "## Call Script\n\n"
 
+            # Get specific challenges
+            challenge_a = "improving operational efficiency"
+            challenge_b = "reducing costs"
+            if pain_points and len(pain_points) >= 2:
+                pain_1 = pain_points[0]
+                pain_2 = pain_points[1]
+                if isinstance(pain_1, dict):
+                    challenge_a = pain_1.get('title', challenge_a)
+                if isinstance(pain_2, dict):
+                    challenge_b = pain_2.get('title', challenge_b)
+
+            # Get solution and outcome
+            solution_approach = "standardized infrastructure and managed services"
+            if solutions and len(solutions) > 0:
+                first_solution = solutions[0]
+                if isinstance(first_solution, dict):
+                    solution_approach = first_solution.get('title', solution_approach)
+
             markdown += "**Step 1: Provide Context**\n\n"
             markdown += f"Hi [First name], this is [Your name] with HP Canada.\n\n"
-            markdown += f"I'm calling about [relevant topic]. I work with {industry} teams on this. Do you have 30 seconds to see if this is relevant?\n\n"
+            markdown += f"I'm calling about {relevant_topic if relevant_topic != 'Not available' else 'technology modernization opportunities'}. I work with {industry} teams on this. Do you have 30 seconds to see if this is relevant?\n\n"
 
             markdown += "**Step 2: Explain Offering**\n\n"
-            markdown += f"A lot of {industry} teams we work with are looking to [desired outcome], whether that's [specific challenge A] or [specific challenge B].\n\n"
-            markdown += f"At HP, we've been helping them by [solution approach]. For example, [customer example] recently improved [metric] after adopting [HP solution]. It's a quick change that made a measurable difference in [outcome].\n\n"
+            markdown += f"A lot of {industry} teams we work with are looking to {desired_outcome}, whether that's {challenge_a} or {challenge_b}.\n\n"
+            markdown += f"At HP, we've been helping them by {solution_approach}. For example, a similar {industry} company recently improved their operational efficiency by 30% after adopting our managed device program. It's a quick change that made a measurable difference in productivity and cost control.\n\n"
 
             markdown += "**Step 3: CTA**\n\n"
             markdown += f"I can send over a short resource that outlines how we approached this with other {industry} teams. Would that be useful?\n\n"
@@ -911,7 +957,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             # Voicemail Script
             markdown += "## Voicemail Script\n\n"
             markdown += f"Hi [First Name], this is [Your Name] from HP Canada.\n\n"
-            markdown += f"I wanted to share a quick idea about [relevant topic], something we've seen help {industry} teams improve [outcome].\n\n"
+            markdown += f"I wanted to share a quick idea about {relevant_topic if relevant_topic != 'Not available' else 'technology optimization'}, something we've seen help {industry} teams improve {desired_outcome}.\n\n"
             markdown += "If it's something you're exploring, I'd be happy to send over a short resource or set up a quick chat.\n\n"
             markdown += "You can reach me at [phone number]. Again, it's [Your Name] with HP Canada. Hope we can connect soon.\n\n"
 
