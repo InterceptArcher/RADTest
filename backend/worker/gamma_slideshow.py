@@ -978,30 +978,25 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             "Content-Type": "application/json"
         }
 
-        # Professional HP consulting deck configuration
-        # Prioritize data visualization over decorative images
+        # Simplified payload - only using confirmed Gamma API parameters
+        # Start with minimal working config
         payload = {
             "inputText": markdown_content,
-            "textMode": "preserve",  # Keep text exactly as provided - no AI rewriting
-            "format": "presentation",
-            "numCards": num_cards,
-            "templateId": self.template_id,  # Use specified template
-            # Professional design settings
-            "imageStyle": "none",  # Disable AI-generated images for professional look
-            "cardSize": "large",   # Larger cards to accommodate more information
-            "style": "professional",  # Professional/corporate theme
-            "theme": "corporate",  # Corporate design theme
-            "includeCharts": True,  # Enable chart rendering for data tables
-            "saveToAccount": True,  # Save to API generated section in Gamma account
-            "editable": True,  # Ensure the generated slideshow is editable
-            "sharingOptions": {
-                "externalAccess": "view",
-                "allowEdit": True  # Allow editing after generation
-            }
+            "textMode": "preserve",
+            "format": "presentation"
         }
 
-        logger.info(f"Using Gamma template: {self.template_id}")
-        logger.info("Slideshow will be saved to account and remain editable")
+        # Add template if specified
+        if self.template_id:
+            payload["templateId"] = self.template_id
+            logger.info(f"Using Gamma template: {self.template_id}")
+
+        # Add numCards if reasonable
+        if num_cards and 5 <= num_cards <= 100:
+            payload["numCards"] = num_cards
+            logger.info(f"Requesting {num_cards} cards")
+
+        logger.info(f"Payload keys: {list(payload.keys())}")
 
         try:
             # Increased timeout for complex presentations
