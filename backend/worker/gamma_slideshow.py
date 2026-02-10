@@ -21,20 +21,22 @@ class GammaSlideshowCreator:
     4. Return slideshow URL
     """
 
-    def __init__(self, gamma_api_key: str):
+    def __init__(self, gamma_api_key: str, template_id: str = "g_vsj27dcr73l1nv1"):
         """
         Initialize Gamma slideshow creator.
 
         Args:
             gamma_api_key: Gamma API key (from environment)
+            template_id: Gamma template ID to use (default: g_vsj27dcr73l1nv1)
 
         Note:
             This value must be provided via environment variables.
         """
         self.api_key = gamma_api_key
+        self.template_id = template_id
         self.api_url = "https://public-api.gamma.app/v1.0/generations"
         self.status_url = "https://public-api.gamma.app/v1.0/generations"
-        logger.info("Gamma slideshow creator initialized")
+        logger.info(f"Gamma slideshow creator initialized with template: {template_id}")
 
     async def create_slideshow(
         self,
@@ -983,16 +985,23 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             "textMode": "preserve",  # Keep text exactly as provided - no AI rewriting
             "format": "presentation",
             "numCards": num_cards,
+            "templateId": self.template_id,  # Use specified template
             # Professional design settings
             "imageStyle": "none",  # Disable AI-generated images for professional look
             "cardSize": "large",   # Larger cards to accommodate more information
             "style": "professional",  # Professional/corporate theme
             "theme": "corporate",  # Corporate design theme
             "includeCharts": True,  # Enable chart rendering for data tables
+            "saveToAccount": True,  # Save to API generated section in Gamma account
+            "editable": True,  # Ensure the generated slideshow is editable
             "sharingOptions": {
-                "externalAccess": "view"
+                "externalAccess": "view",
+                "allowEdit": True  # Allow editing after generation
             }
         }
+
+        logger.info(f"Using Gamma template: {self.template_id}")
+        logger.info("Slideshow will be saved to account and remain editable")
 
         try:
             # Increased timeout for complex presentations
@@ -1008,12 +1017,16 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 response.raise_for_status()
                 result = response.json()
 
-                generation_id = result.get("generationId")
+                logger.info(f"Gamma API response: {result}")
+
+                generation_id = result.get("generationId") or result.get("generation_id") or result.get("id")
                 if not generation_id:
-                    raise Exception("No generationId returned from Gamma API")
+                    logger.error(f"No generationId in response. Full response: {result}")
+                    raise Exception(f"No generationId returned from Gamma API. Response keys: {list(result.keys())}")
 
                 logger.info(f"Generation started with ID: {generation_id}")
                 logger.info(f"Markdown length: {len(markdown_content)} characters")
+                logger.info(f"Template ID: {self.template_id}")
 
                 # Poll for completion (max 5 minutes for complex presentations)
                 max_attempts = 150  # 150 attempts * 2 seconds = 5 minutes
@@ -1043,9 +1056,17 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                         logger.debug(f"Full status response: {status_data}")
 
                         if status == "completed":
-                            gamma_url = status_data.get("gammaUrl")
+                            # Try multiple possible URL keys
+                            gamma_url = (
+                                status_data.get("gammaUrl") or
+                                status_data.get("url") or
+                                status_data.get("webUrl") or
+                                status_data.get("gamma_url")
+                            )
+
                             if not gamma_url:
-                                raise Exception("No URL returned from completed generation")
+                                logger.error(f"No URL in completed response. Full response: {status_data}")
+                                raise Exception(f"No URL returned from completed generation. Response keys: {list(status_data.keys())}")
 
                             logger.info(f"Slideshow generated successfully: {gamma_url}")
                             return {
