@@ -344,13 +344,21 @@ class WorkerOrchestrator:
         if opportunities:
             enriched["sales_opportunities"] = opportunities
 
-        # Generate intent topics (enhanced with ZoomInfo buyer intent)
-        intent_topics = await self.llm_council.generate_intent_topics(
-            company_data,
-            enrichment_context
-        )
-        if intent_topics:
-            enriched["intent_topics"] = intent_topics
+        # Generate intent topics (PRIORITIZE ZoomInfo buyer intent data)
+        # Only generate with LLM if ZoomInfo intent signals are missing or insufficient
+        if zoominfo_signals.get("intent_signals") and len(zoominfo_signals["intent_signals"]) >= 3:
+            # Use ZoomInfo intent signals directly (PRIMARY data source)
+            enriched["intent_topics"] = zoominfo_signals["intent_signals"]
+            logger.info(f"Using {len(zoominfo_signals['intent_signals'])} ZoomInfo intent signals (PRIMARY)")
+        else:
+            # Fallback: Generate with LLM if ZoomInfo data is insufficient
+            intent_topics = await self.llm_council.generate_intent_topics(
+                company_data,
+                enrichment_context
+            )
+            if intent_topics:
+                enriched["intent_topics"] = intent_topics
+                logger.info(f"Generated {len(intent_topics)} intent topics with LLM (ZoomInfo unavailable)")
 
         # Enrich stakeholder profiles
         if stakeholder_profiles:
@@ -364,13 +372,24 @@ class WorkerOrchestrator:
         if news_data.get("success"):
             enriched["news_triggers"] = news_data.get("summaries", {})
 
-        # Add ZoomInfo-specific enrichment data
+        # Add ZoomInfo-specific enrichment data (PRIMARY source - always include)
+        # These are PRIORITIZED over LLM-generated data
         if zoominfo_signals.get("technologies"):
             enriched["technology_stack"] = zoominfo_signals["technologies"]
+            enriched["technologies"] = zoominfo_signals["technologies"]  # Alias for template
+            logger.info(f"Included {len(zoominfo_signals['technologies'])} ZoomInfo technology installations")
+
         if zoominfo_signals.get("intent_signals"):
             enriched["buyer_intent_signals"] = zoominfo_signals["intent_signals"]
+            # Also set as intent_topics if not already set by LLM
+            if "intent_topics" not in enriched:
+                enriched["intent_topics"] = zoominfo_signals["intent_signals"]
+            logger.info(f"Included {len(zoominfo_signals['intent_signals'])} ZoomInfo intent signals")
+
         if zoominfo_signals.get("scoops"):
             enriched["business_scoops"] = zoominfo_signals["scoops"]
+            enriched["scoops"] = zoominfo_signals["scoops"]  # Alias for template
+            logger.info(f"Included {len(zoominfo_signals['scoops'])} ZoomInfo business scoops")
 
         logger.info(f"Enriched data with {len(enriched)} new fields")
         return enriched
@@ -472,11 +491,12 @@ class WorkerOrchestrator:
         if not sources_data:
             raise ValueError("No successful intelligence data to validate")
 
-        # Define source reliability
+        # Define source reliability - ZoomInfo is PRIMARY source (TIER_1)
+        # Apollo and PDL are secondary sources (TIER_2)
         source_reliability = {
-            "apollo": SourceTier.TIER_1,
-            "peopledatalabs": SourceTier.TIER_1,
-            "zoominfo": SourceTier.TIER_1
+            "zoominfo": SourceTier.TIER_1,  # PRIMARY - Highest priority
+            "apollo": SourceTier.TIER_2,    # Secondary fallback
+            "peopledatalabs": SourceTier.TIER_2  # Secondary fallback
         }
 
         # Fields to validate
@@ -529,15 +549,61 @@ class WorkerOrchestrator:
         # Calculate average confidence
         avg_confidence = total_confidence / len(fields_to_validate) if fields_to_validate else 0.0
 
-        # Add stakeholder profiles if provided
+        # CRITICAL: Merge ALL comprehensive data from ALL sources
+        # Priority: ZoomInfo (TIER_1) > Apollo (TIER_2) > PDL (TIER_2)
         data_dict = {
             "company_name": company_name,
             "domain": domain,
-            **validated_fields
+            **validated_fields  # Validated core fields
         }
 
+        # Merge comprehensive ZoomInfo data (50+ fields) - HIGHEST PRIORITY
+        if "zoominfo" in sources_data:
+            zi_data = sources_data["zoominfo"]
+            # Merge ALL ZoomInfo fields (don't overwrite validated core fields)
+            for key, value in zi_data.items():
+                if key not in data_dict and value:  # Only add if not already set
+                    data_dict[key] = value
+
+            # ZoomInfo-specific enrichment data (always include these)
+            if "intent_signals" in zi_data:
+                data_dict["intent_signals"] = zi_data["intent_signals"]
+            if "scoops" in zi_data:
+                data_dict["scoops"] = zi_data["scoops"]
+            if "news_articles" in zi_data:
+                data_dict["news_articles"] = zi_data["news_articles"]
+            if "technology_installs" in zi_data:
+                data_dict["technology_installs"] = zi_data["technology_installs"]
+
+            logger.info(f"Merged {len(zi_data)} ZoomInfo fields (PRIMARY source)")
+
+        # Merge Apollo data for missing fields - SECONDARY PRIORITY
+        if "apollo" in sources_data:
+            apollo_data = sources_data["apollo"]
+            fields_added = 0
+            for key, value in apollo_data.items():
+                if key not in data_dict and value:  # Fill gaps only
+                    data_dict[key] = value
+                    fields_added += 1
+            if fields_added > 0:
+                logger.info(f"Added {fields_added} missing fields from Apollo (secondary source)")
+
+        # Merge PDL data for any remaining gaps - SECONDARY PRIORITY
+        if "peopledatalabs" in sources_data:
+            pdl_data = sources_data["peopledatalabs"]
+            fields_added = 0
+            for key, value in pdl_data.items():
+                if key not in data_dict and value:  # Fill gaps only
+                    data_dict[key] = value
+                    fields_added += 1
+            if fields_added > 0:
+                logger.info(f"Added {fields_added} missing fields from PDL (secondary source)")
+
+        # Add stakeholder profiles if provided
         if stakeholder_profiles:
             data_dict["stakeholder_profiles"] = stakeholder_profiles
+
+        logger.info(f"Final merged data contains {len(data_dict)} total fields")
 
         return {
             "data": data_dict,
@@ -545,8 +611,14 @@ class WorkerOrchestrator:
             "metadata": {
                 "validated_fields": len(validated_fields),
                 "total_fields": len(fields_to_validate),
+                "merged_fields": len(data_dict),
                 "stakeholders_count": len(stakeholder_profiles) if stakeholder_profiles else 0,
-                "sources_used": list(sources_data.keys())
+                "sources_used": list(sources_data.keys()),
+                "primary_source": "zoominfo" if "zoominfo" in sources_data else (
+                    "apollo" if "apollo" in sources_data else (
+                        "peopledatalabs" if "peopledatalabs" in sources_data else "none"
+                    )
+                )
             }
         }
 
