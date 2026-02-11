@@ -87,6 +87,22 @@ class DebugService:
                 metadata={"source": "PeopleDataLabs", "fields_retrieved": 12}
             ),
             ProcessStep(
+                id="step-3b",
+                name="ZoomInfo Data Collection",
+                description="Gathering company enrichment, intent signals, scoops, and technology data from ZoomInfo GTM API",
+                status=ProcessStepStatus.COMPLETED,
+                start_time=(base_time + timedelta(seconds=1)).isoformat() + "Z",
+                end_time=(base_time + timedelta(seconds=2, milliseconds=800)).isoformat() + "Z",
+                duration=1800,
+                metadata={
+                    "source": "ZoomInfo",
+                    "fields_retrieved": 18,
+                    "intent_signals": 3,
+                    "scoops": 2,
+                    "technologies": 5
+                }
+            ),
+            ProcessStep(
                 id="step-4",
                 name="Data Aggregation",
                 description="Merging data from multiple sources into unified format",
@@ -94,7 +110,7 @@ class DebugService:
                 start_time=(base_time + timedelta(seconds=4)).isoformat() + "Z",
                 end_time=(base_time + timedelta(seconds=4, milliseconds=500)).isoformat() + "Z",
                 duration=500,
-                metadata={"sources_merged": 2}
+                metadata={"sources_merged": 3}
             ),
             ProcessStep(
                 id="step-5",
@@ -202,6 +218,60 @@ class DebugService:
             ),
             APIResponseData(
                 id="api-3",
+                api_name="ZoomInfo Company Enrichment",
+                url="https://api.zoominfo.com/gtm/data/v1/companies/enrich",
+                method="POST",
+                status_code=200,
+                status_text="OK",
+                headers={
+                    "content-type": "application/json",
+                    "x-request-id": str(uuid.uuid4()),
+                    "x-ratelimit-remaining": "23"
+                },
+                request_body={"data": {"type": "CompanyEnrich", "attributes": {"companyDomain": domain}}},
+                response_body={
+                    "data": [{
+                        "companyName": company_name,
+                        "domain": domain,
+                        "employeeCount": 500,
+                        "revenue": 50000000,
+                        "industry": "Technology",
+                        "city": "San Francisco",
+                        "state": "California",
+                        "yearFounded": 2015
+                    }]
+                },
+                timestamp=(base_time + timedelta(seconds=1, milliseconds=200)).isoformat() + "Z",
+                duration=1600,
+                is_sensitive=True,
+                masked_fields=["authorization"]
+            ),
+            APIResponseData(
+                id="api-4",
+                api_name="ZoomInfo Intent Enrichment",
+                url="https://api.zoominfo.com/gtm/data/v1/intent/enrich",
+                method="POST",
+                status_code=200,
+                status_text="OK",
+                headers={
+                    "content-type": "application/json",
+                    "x-request-id": str(uuid.uuid4())
+                },
+                request_body={"data": {"type": "IntentEnrich", "attributes": {"companyDomain": domain}}},
+                response_body={
+                    "data": [
+                        {"topic": "Cloud Migration", "score": 85, "audienceStrength": "high"},
+                        {"topic": "Data Security", "score": 72, "audienceStrength": "medium"},
+                        {"topic": "AI/ML Platform", "score": 68, "audienceStrength": "medium"}
+                    ]
+                },
+                timestamp=(base_time + timedelta(seconds=2)).isoformat() + "Z",
+                duration=1200,
+                is_sensitive=True,
+                masked_fields=["authorization"]
+            ),
+            APIResponseData(
+                id="api-5",
                 api_name="OpenAI Chat Completion",
                 url="https://api.openai.com/v1/chat/completions",
                 method="POST",
@@ -358,6 +428,52 @@ class DebugService:
                 final_decision="Selected 'Software Development' as primary industry (more specific), with 'Technology' as parent category.",
                 discrepancies_resolved=["industry"]
             ),
+            LLMThoughtProcess(
+                id="llm-3",
+                task_name="ZoomInfo Intent Signal Integration",
+                model="gpt-4",
+                start_time=(base_time + timedelta(seconds=14)).isoformat() + "Z",
+                end_time=(base_time + timedelta(seconds=15)).isoformat() + "Z",
+                steps=[
+                    LLMThoughtStep(
+                        id="step-3-1",
+                        step=1,
+                        action="Analyze ZoomInfo Intent Signals",
+                        reasoning="ZoomInfo buyer intent data shows 3 active signals: Cloud Migration (score: 85, high), Data Security (score: 72, medium), AI/ML Platform (score: 68, medium). These signals indicate active buying behavior.",
+                        input={
+                            "intent_signals": [
+                                {"topic": "Cloud Migration", "score": 85},
+                                {"topic": "Data Security", "score": 72},
+                                {"topic": "AI/ML Platform", "score": 68}
+                            ]
+                        },
+                        output={
+                            "primary_intent": "Cloud Migration",
+                            "signal_strength": "high",
+                            "buying_stage": "active_evaluation"
+                        },
+                        confidence=0.90
+                    ),
+                    LLMThoughtStep(
+                        id="step-3-2",
+                        step=2,
+                        action="Cross-Reference with Scoops",
+                        reasoning="ZoomInfo scoops show recent CTO hire and expansion announcement, corroborating the cloud migration intent signal. This increases confidence in active evaluation.",
+                        input={
+                            "scoops": ["New CTO appointed", "Office expansion planned"],
+                            "primary_intent": "Cloud Migration"
+                        },
+                        output={
+                            "corroborated": True,
+                            "enriched_pain_points": ["Legacy infrastructure migration", "Security compliance gaps"],
+                            "confidence_boost": 0.05
+                        },
+                        confidence=0.92
+                    ),
+                ],
+                final_decision="ZoomInfo intent signals confirm active Cloud Migration evaluation (score 85). Cross-referenced with CTO hire scoop, suggesting infrastructure modernization initiative. Added 2 enriched pain points to opportunity themes.",
+                discrepancies_resolved=["intent_topic_validation", "pain_point_enrichment"]
+            ),
         ]
 
         # Generate process flow
@@ -385,6 +501,14 @@ class DebugService:
                     type=ProcessFlowNodeType.API,
                     status=ProcessStepStatus.COMPLETED,
                     details="Fetched company data from PeopleDataLabs",
+                    duration=1800
+                ),
+                ProcessFlowNode(
+                    id="node-zoominfo",
+                    label="ZoomInfo API",
+                    type=ProcessFlowNodeType.API,
+                    status=ProcessStepStatus.COMPLETED,
+                    details="Fetched enrichment, intent signals, scoops, and tech data from ZoomInfo",
                     duration=1800
                 ),
                 ProcessFlowNode(
@@ -444,8 +568,10 @@ class DebugService:
             edges=[
                 ProcessFlowEdge(id="edge-1", source="node-start", target="node-apollo"),
                 ProcessFlowEdge(id="edge-2", source="node-start", target="node-pdl"),
+                ProcessFlowEdge(id="edge-2b", source="node-start", target="node-zoominfo"),
                 ProcessFlowEdge(id="edge-3", source="node-apollo", target="node-aggregate"),
                 ProcessFlowEdge(id="edge-4", source="node-pdl", target="node-aggregate"),
+                ProcessFlowEdge(id="edge-4b", source="node-zoominfo", target="node-aggregate"),
                 ProcessFlowEdge(id="edge-5", source="node-aggregate", target="node-pre-validate"),
                 ProcessFlowEdge(id="edge-6", source="node-pre-validate", target="node-validate", label="Validated"),
                 ProcessFlowEdge(id="edge-7", source="node-validate", target="node-decision"),

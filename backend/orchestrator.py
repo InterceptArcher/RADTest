@@ -24,75 +24,75 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 # Format: "section.field" -> [list of APIs that can provide this data]
 GRANULAR_DATA_POINTS = {
     # === EXECUTIVE SNAPSHOT ===
-    "executive_snapshot.account_name": ["apollo", "pdl", "hunter"],
-    "executive_snapshot.company_overview": ["apollo", "pdl", "gnews"],
+    "executive_snapshot.account_name": ["apollo", "pdl", "hunter", "zoominfo"],
+    "executive_snapshot.company_overview": ["apollo", "pdl", "gnews", "zoominfo"],
     "executive_snapshot.account_type": ["pdl", "apollo"],
     "executive_snapshot.company_classification": ["pdl", "apollo"],
-    "executive_snapshot.industry": ["apollo", "pdl", "hunter"],
-    "executive_snapshot.sub_industry": ["apollo", "pdl"],
-    "executive_snapshot.estimated_it_spend": ["pdl", "apollo"],
-    "executive_snapshot.employee_count": ["apollo", "pdl", "hunter"],
-    "executive_snapshot.annual_revenue": ["apollo", "pdl"],
-    "executive_snapshot.headquarters": ["apollo", "pdl", "hunter"],
-    "executive_snapshot.founded_year": ["apollo", "pdl"],
-    "executive_snapshot.installed_technologies": ["pdl", "apollo"],
+    "executive_snapshot.industry": ["apollo", "pdl", "hunter", "zoominfo"],
+    "executive_snapshot.sub_industry": ["apollo", "pdl", "zoominfo"],
+    "executive_snapshot.estimated_it_spend": ["pdl", "apollo", "zoominfo"],
+    "executive_snapshot.employee_count": ["apollo", "pdl", "hunter", "zoominfo"],
+    "executive_snapshot.annual_revenue": ["apollo", "pdl", "zoominfo"],
+    "executive_snapshot.headquarters": ["apollo", "pdl", "hunter", "zoominfo"],
+    "executive_snapshot.founded_year": ["apollo", "pdl", "zoominfo"],
+    "executive_snapshot.installed_technologies": ["pdl", "apollo", "zoominfo"],
 
     # === BUYING SIGNALS ===
-    "buying_signals.intent_topic_1": ["gnews", "pdl", "apollo"],
-    "buying_signals.intent_topic_2": ["gnews", "pdl", "apollo"],
-    "buying_signals.intent_topic_3": ["gnews", "pdl", "apollo"],
-    "buying_signals.intent_topic_1_description": ["gnews", "pdl"],
-    "buying_signals.intent_topic_2_description": ["gnews", "pdl"],
-    "buying_signals.intent_topic_3_description": ["gnews", "pdl"],
-    "buying_signals.interest_over_time": ["gnews", "pdl"],
+    "buying_signals.intent_topic_1": ["gnews", "pdl", "apollo", "zoominfo"],
+    "buying_signals.intent_topic_2": ["gnews", "pdl", "apollo", "zoominfo"],
+    "buying_signals.intent_topic_3": ["gnews", "pdl", "apollo", "zoominfo"],
+    "buying_signals.intent_topic_1_description": ["gnews", "pdl", "zoominfo"],
+    "buying_signals.intent_topic_2_description": ["gnews", "pdl", "zoominfo"],
+    "buying_signals.intent_topic_3_description": ["gnews", "pdl", "zoominfo"],
+    "buying_signals.interest_over_time": ["gnews", "pdl", "zoominfo"],
     "buying_signals.partner_mention_1": ["gnews", "apollo"],
     "buying_signals.partner_mention_2": ["gnews", "apollo"],
     "buying_signals.partner_mention_3": ["gnews", "apollo"],
-    "buying_signals.key_signal_1": ["gnews", "apollo", "pdl"],
-    "buying_signals.key_signal_2": ["gnews", "apollo", "pdl"],
-    "buying_signals.key_signal_3": ["gnews", "apollo", "pdl"],
-    "buying_signals.signal_strength": ["gnews", "apollo", "pdl"],
-    "buying_signals.scoop_executive_hire": ["gnews", "apollo", "hunter"],
-    "buying_signals.scoop_funding": ["gnews", "apollo", "pdl"],
-    "buying_signals.scoop_expansion": ["gnews", "apollo"],
-    "buying_signals.scoop_ma": ["gnews", "apollo", "pdl"],
-    "buying_signals.scoop_product_launch": ["gnews", "apollo"],
+    "buying_signals.key_signal_1": ["gnews", "apollo", "pdl", "zoominfo"],
+    "buying_signals.key_signal_2": ["gnews", "apollo", "pdl", "zoominfo"],
+    "buying_signals.key_signal_3": ["gnews", "apollo", "pdl", "zoominfo"],
+    "buying_signals.signal_strength": ["gnews", "apollo", "pdl", "zoominfo"],
+    "buying_signals.scoop_executive_hire": ["gnews", "apollo", "hunter", "zoominfo"],
+    "buying_signals.scoop_funding": ["gnews", "apollo", "pdl", "zoominfo"],
+    "buying_signals.scoop_expansion": ["gnews", "apollo", "zoominfo"],
+    "buying_signals.scoop_ma": ["gnews", "apollo", "pdl", "zoominfo"],
+    "buying_signals.scoop_product_launch": ["gnews", "apollo", "zoominfo"],
 
     # === OPPORTUNITY THEMES ===
-    "opportunity_themes.pain_point_1": ["gnews", "pdl", "apollo"],
-    "opportunity_themes.pain_point_2": ["gnews", "pdl", "apollo"],
-    "opportunity_themes.pain_point_3": ["gnews", "pdl", "apollo"],
-    "opportunity_themes.sales_opportunity_1": ["gnews", "apollo", "pdl"],
-    "opportunity_themes.sales_opportunity_2": ["gnews", "apollo", "pdl"],
-    "opportunity_themes.sales_opportunity_3": ["gnews", "apollo", "pdl"],
-    "opportunity_themes.solution_area_1": ["pdl", "apollo", "gnews"],
-    "opportunity_themes.solution_area_2": ["pdl", "apollo", "gnews"],
-    "opportunity_themes.solution_area_3": ["pdl", "apollo", "gnews"],
+    "opportunity_themes.pain_point_1": ["gnews", "pdl", "apollo", "zoominfo"],
+    "opportunity_themes.pain_point_2": ["gnews", "pdl", "apollo", "zoominfo"],
+    "opportunity_themes.pain_point_3": ["gnews", "pdl", "apollo", "zoominfo"],
+    "opportunity_themes.sales_opportunity_1": ["gnews", "apollo", "pdl", "zoominfo"],
+    "opportunity_themes.sales_opportunity_2": ["gnews", "apollo", "pdl", "zoominfo"],
+    "opportunity_themes.sales_opportunity_3": ["gnews", "apollo", "pdl", "zoominfo"],
+    "opportunity_themes.solution_area_1": ["pdl", "apollo", "gnews", "zoominfo"],
+    "opportunity_themes.solution_area_2": ["pdl", "apollo", "gnews", "zoominfo"],
+    "opportunity_themes.solution_area_3": ["pdl", "apollo", "gnews", "zoominfo"],
 
     # === STAKEHOLDER MAP (Hunter.io is REQUIRED) ===
-    "stakeholder_map.cio_name": ["apollo", "hunter"],
-    "stakeholder_map.cio_email": ["hunter", "apollo"],
-    "stakeholder_map.cio_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.cio_name": ["apollo", "hunter", "zoominfo"],
+    "stakeholder_map.cio_email": ["hunter", "apollo", "zoominfo"],
+    "stakeholder_map.cio_bio": ["apollo", "hunter", "pdl", "zoominfo"],
     "stakeholder_map.cio_priorities": ["gnews", "apollo"],
-    "stakeholder_map.cto_name": ["apollo", "hunter"],
-    "stakeholder_map.cto_email": ["hunter", "apollo"],
-    "stakeholder_map.cto_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.cto_name": ["apollo", "hunter", "zoominfo"],
+    "stakeholder_map.cto_email": ["hunter", "apollo", "zoominfo"],
+    "stakeholder_map.cto_bio": ["apollo", "hunter", "pdl", "zoominfo"],
     "stakeholder_map.cto_priorities": ["gnews", "apollo"],
-    "stakeholder_map.ciso_name": ["apollo", "hunter"],
-    "stakeholder_map.ciso_email": ["hunter", "apollo"],
-    "stakeholder_map.ciso_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.ciso_name": ["apollo", "hunter", "zoominfo"],
+    "stakeholder_map.ciso_email": ["hunter", "apollo", "zoominfo"],
+    "stakeholder_map.ciso_bio": ["apollo", "hunter", "pdl", "zoominfo"],
     "stakeholder_map.ciso_priorities": ["gnews", "apollo"],
-    "stakeholder_map.cfo_name": ["apollo", "hunter"],
-    "stakeholder_map.cfo_email": ["hunter", "apollo"],
-    "stakeholder_map.cfo_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.cfo_name": ["apollo", "hunter", "zoominfo"],
+    "stakeholder_map.cfo_email": ["hunter", "apollo", "zoominfo"],
+    "stakeholder_map.cfo_bio": ["apollo", "hunter", "pdl", "zoominfo"],
     "stakeholder_map.cfo_priorities": ["gnews", "apollo"],
-    "stakeholder_map.coo_name": ["apollo", "hunter"],
-    "stakeholder_map.coo_email": ["hunter", "apollo"],
-    "stakeholder_map.coo_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.coo_name": ["apollo", "hunter", "zoominfo"],
+    "stakeholder_map.coo_email": ["hunter", "apollo", "zoominfo"],
+    "stakeholder_map.coo_bio": ["apollo", "hunter", "pdl", "zoominfo"],
     "stakeholder_map.coo_priorities": ["gnews", "apollo"],
-    "stakeholder_map.cpo_name": ["apollo", "hunter"],
-    "stakeholder_map.cpo_email": ["hunter", "apollo"],
-    "stakeholder_map.cpo_bio": ["apollo", "hunter", "pdl"],
+    "stakeholder_map.cpo_name": ["apollo", "hunter", "zoominfo"],
+    "stakeholder_map.cpo_email": ["hunter", "apollo", "zoominfo"],
+    "stakeholder_map.cpo_bio": ["apollo", "hunter", "pdl", "zoominfo"],
     "stakeholder_map.cpo_priorities": ["gnews", "apollo"],
     "stakeholder_map.conversation_starters": ["gnews", "apollo"],
     "stakeholder_map.recommended_next_steps": ["gnews", "apollo", "pdl"],
@@ -202,6 +202,34 @@ API_CAPABILITIES = {
         ],
         "description": "GNews API provides recent company news for identifying buying signals, trigger events, and market intelligence. Essential for opportunity themes and timing insights.",
         "required_for": ["buying_signals", "opportunity_themes", "news_intelligence"]
+    },
+    "zoominfo": {
+        "best_for": [
+            "company enrichment",
+            "contact discovery",
+            "buyer intent signals",
+            "business scoops",
+            "technology stack",
+            "executive data",
+            "firmographic data"
+        ],
+        "provides": [
+            "company_name",
+            "employee_count",
+            "revenue",
+            "industry",
+            "headquarters",
+            "founded_year",
+            "executives",
+            "email",
+            "phone",
+            "linkedin",
+            "intent_signals",
+            "scoops",
+            "technologies"
+        ],
+        "description": "ZoomInfo GTM API provides premium company enrichment, executive contacts, buyer intent signals, business scoops (hires, funding, expansion), and installed technology data. Acts as tiebreaker in LLM council when other sources disagree.",
+        "required_for": ["executive_snapshot", "buying_signals", "stakeholder_map"]
     }
 }
 
@@ -225,7 +253,7 @@ def get_default_query_plan() -> OrchestratorResult:
     Hunter.io is ALWAYS included for contact data.
     """
     # Always query all APIs - Hunter is critical for contacts
-    all_apis = ["apollo", "pdl", "hunter", "gnews"]
+    all_apis = ["apollo", "pdl", "hunter", "gnews", "zoominfo"]
 
     # Build granular assignments from GRANULAR_DATA_POINTS
     granular_assignments = {}
@@ -241,8 +269,8 @@ def get_default_query_plan() -> OrchestratorResult:
     return OrchestratorResult(
         apis_to_query=all_apis,
         data_point_api_mapping=flat_mapping,
-        reasoning="Default plan: querying ALL APIs for comprehensive data coverage. Hunter.io included for contact verification.",
-        priority_order=["apollo", "hunter", "pdl", "gnews"],  # Hunter prioritized
+        reasoning="Default plan: querying ALL APIs for comprehensive data coverage. Hunter.io included for contact verification. ZoomInfo included for intent signals and scoops.",
+        priority_order=["apollo", "hunter", "pdl", "zoominfo", "gnews"],  # Hunter prioritized
         granular_assignments=granular_assignments
     )
 
@@ -283,6 +311,11 @@ AVAILABLE APIs AND THEIR STRENGTHS:
    Best for: {', '.join(API_CAPABILITIES['gnews']['best_for'])}
    REQUIRED for: buying_signals, opportunity_themes, news_intelligence
 
+5. ZOOMINFO:
+   Best for: {', '.join(API_CAPABILITIES['zoominfo']['best_for'])}
+   REQUIRED for: executive_snapshot, buying_signals, stakeholder_map
+   *** ZOOMINFO PROVIDES PREMIUM INTENT SIGNALS AND BUSINESS SCOOPS ***
+
 EXAMPLE GRANULAR FIELD ASSIGNMENTS:
 {field_list}
 ... and many more fields
@@ -295,8 +328,8 @@ CRITICAL RULES:
 
 OUTPUT FORMAT (JSON only, no explanation):
 {{
-    "apis_to_query": ["apollo", "hunter", "pdl", "gnews"],
-    "priority_order": ["apollo", "hunter", "pdl", "gnews"],
+    "apis_to_query": ["apollo", "hunter", "pdl", "gnews", "zoominfo"],
+    "priority_order": ["apollo", "hunter", "pdl", "zoominfo", "gnews"],
     "granular_assignments": {{
         "executive_snapshot": {{
             "account_name": ["apollo", "pdl"],
@@ -444,6 +477,10 @@ async def analyze_and_plan(company_data: Dict[str, Any]) -> OrchestratorResult:
         # Ensure pdl is included for technographics
         if "pdl" not in apis_to_query:
             apis_to_query.append("pdl")
+
+        # Ensure zoominfo is included for intent/scoops
+        if "zoominfo" not in apis_to_query:
+            apis_to_query.append("zoominfo")
 
         # Build flat mapping from granular assignments
         flat_mapping = {}

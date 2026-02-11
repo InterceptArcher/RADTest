@@ -17,7 +17,7 @@
     "type": "postgresql"
   },
   "services": {
-    "intelligence_apis": ["apollo.io", "peopledatalabs"],
+    "intelligence_apis": ["apollo.io", "peopledatalabs", "zoominfo"],
     "llm_provider": "openai",
     "slideshow_api": "gamma"
   }

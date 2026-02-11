@@ -73,7 +73,7 @@ class TestAPICapabilities:
 
     def test_all_apis_have_capabilities(self):
         """Each API must have defined capabilities."""
-        required_apis = ["apollo", "pdl", "hunter", "gnews"]
+        required_apis = ["apollo", "pdl", "hunter", "gnews", "zoominfo"]
         for api in required_apis:
             assert api in API_CAPABILITIES, f"Missing API: {api}"
             assert "best_for" in API_CAPABILITIES[api], f"API {api} missing 'best_for'"
@@ -138,7 +138,7 @@ class TestDefaultQueryPlan:
     def test_default_plan_includes_all_apis(self):
         """Default plan should query all APIs as fallback."""
         result = get_default_query_plan()
-        assert set(result.apis_to_query) == {"apollo", "pdl", "hunter", "gnews"}
+        assert set(result.apis_to_query) == {"apollo", "pdl", "hunter", "gnews", "zoominfo"}
 
     def test_default_plan_has_all_data_points(self):
         """Default plan should map all data points."""
@@ -196,11 +196,12 @@ class TestOrchestratorPlanning:
         company_data = {"company_name": "Test Corp", "domain": "test.com"}
         result = await analyze_and_plan(company_data)
 
-        # Must have all 4 APIs since they're all required
+        # Must have all 5 APIs since they're all required
         assert "apollo" in result.apis_to_query
         assert "hunter" in result.apis_to_query
         assert "pdl" in result.apis_to_query
         assert "gnews" in result.apis_to_query
+        assert "zoominfo" in result.apis_to_query
 
     @pytest.mark.asyncio
     async def test_handles_empty_input_gracefully(self):
@@ -209,7 +210,7 @@ class TestOrchestratorPlanning:
 
         # Should fall back to default plan
         assert isinstance(result, OrchestratorResult)
-        assert len(result.apis_to_query) == 4  # All APIs
+        assert len(result.apis_to_query) == 5  # All APIs
         assert "hunter" in result.apis_to_query
 
     @pytest.mark.asyncio

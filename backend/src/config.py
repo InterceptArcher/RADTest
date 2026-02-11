@@ -3,6 +3,7 @@ Configuration management for the FastAPI backend.
 All sensitive values must be provided via environment variables.
 """
 import os
+from typing import Optional
 from pydantic import BaseSettings, Field
 
 
@@ -85,6 +86,13 @@ class Settings(BaseSettings):
         ...,
         env="GAMMA_API_KEY",
         description="Gamma API key for slideshow generation. Must be provided via environment variables."
+    )
+
+    # ZoomInfo settings (optional - graceful degradation without it)
+    zoominfo_access_token: Optional[str] = Field(
+        default=None,
+        env="ZOOMINFO_ACCESS_TOKEN",
+        description="ZoomInfo API access token. Optional. Must be provided via environment variables."
     )
 
     # Timeout settings

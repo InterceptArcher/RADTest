@@ -3,7 +3,7 @@
 ## 🎉 System Status: FULLY OPERATIONAL WITH REAL API DATA
 
 **Configuration**: ✅ 100% Complete
-**API Integrations**: ✅ Apollo, PDL, GNews, Hunter.io Active
+**API Integrations**: ✅ Apollo, PDL, GNews, Hunter.io, ZoomInfo Active
 **LLM Enrichment**: ✅ Pain Points, Opportunities, Intent Signals Generated
 **Gamma Templates**: ✅ Template g_vsj27dcr73l1nv1 Used by Default
 **Email Verification**: ✅ Hunter.io Integrated
@@ -21,7 +21,63 @@
 
 ---
 
-## 🚀 Latest Features (2026-02-11)
+## Latest Features (2026-02-11)
+
+### ZoomInfo OAuth 2.0 Callback Handler
+
+A server-side OAuth 2.0 callback endpoint for handling ZoomInfo API sign-in redirects, implementing the full PKCE (Proof Key for Code Exchange) flow required by ZoomInfo's Okta-based authentication.
+
+**Endpoints:**
+- `GET /api/auth/zoominfo/login` - Initiates the OAuth flow: generates PKCE code verifier/challenge, stores verifier in HTTP-only cookie, redirects user to ZoomInfo login
+- `GET /api/auth/zoominfo/callback` - Handles the redirect from ZoomInfo: validates state (CSRF protection), exchanges authorization code for tokens at `https://okta-login.zoominfo.com/oauth2/default/v1/token`, stores tokens in secure HTTP-only cookies
+- `GET /auth/error` - Displays authentication error details with retry option
+
+**Methodology & Rationale:**
+- **PKCE with S256**: Required by ZoomInfo's Okta instance for all OAuth clients. Prevents authorization code interception attacks by binding the code exchange to the original authorization request via a cryptographic code challenge.
+- **HTTP-only secure cookies**: PKCE code verifier and tokens are stored in HTTP-only, Secure, SameSite=Lax cookies. This prevents client-side JavaScript from accessing sensitive tokens (XSS mitigation) while maintaining the stateless nature of the Next.js API routes.
+- **State parameter validation**: A cryptographically random UUID state token is generated per login attempt and validated on callback to prevent CSRF attacks.
+- **Server-side token exchange**: The authorization code is exchanged for tokens server-side (in the API route), keeping the client secret out of the browser.
+
+**Required Environment Variables (set in Vercel dashboard):**
+- `ZOOMINFO_CLIENT_ID` - OAuth Client ID from ZoomInfo Developer Portal
+- `ZOOMINFO_CLIENT_SECRET` - OAuth Client Secret from ZoomInfo Developer Portal
+- `ZOOMINFO_SCOPES` (optional) - Space-separated scopes, defaults to `openid`
+
+**ZoomInfo Developer Portal Configuration:**
+When creating your app in the ZoomInfo Developer Portal, set the **Sign-in redirect URI** to:
+```
+https://frontend-eight-rho-17.vercel.app/api/auth/zoominfo/callback
+```
+
+**Test Coverage:** 15 tests across 2 test suites (`zoominfo-pkce.test.ts`, `zoominfo-auth.test.ts`)
+
+### ZoomInfo GTM API Integration (Backend Data Source)
+
+ZoomInfo is integrated as a third premium data source alongside Apollo.io and PeopleDataLabs in the intelligence gathering pipeline.
+
+**Endpoints Used:**
+- `POST /data/v1/companies/enrich` - Company firmographic data (employee count, revenue, industry, HQ, founded year)
+- `POST /data/v1/contacts/search` - Executive/C-suite contact discovery (name, title, email, phone, LinkedIn)
+- `POST /data/v1/intent/enrich` - Buyer intent signals with topic scores and audience strength
+- `POST /data/v1/scoops/search` - Business events (new hires, funding, expansion, M&A, product launches)
+- `POST /data/v1/news/search` - Company news articles
+- `POST /data/v1/technologies/enrich` - Installed technology stack
+
+**Integration Points:**
+- **IntelligenceGatherer**: ZoomInfo added as `DataSource.ZOOMINFO` with circuit breaker and parallel fetching
+- **LLM Council**: ZoomInfo data weighted as TIER_1 (premium source), acts as tiebreaker when Apollo and PDL disagree
+- **Orchestrator**: ZoomInfo mapped to 40+ granular data points across executive snapshot, buying signals, opportunity themes, and stakeholder map
+- **Debug Mode**: ZoomInfo process step, API responses, and intent signal analysis visible in debug panel
+
+**Design Decisions:**
+- **Optional integration**: System gracefully degrades without `ZOOMINFO_ACCESS_TOKEN` - existing Apollo/PDL pipeline unaffected
+- **Rate limiting**: Token-bucket at 25 req/sec per ZoomInfo API limits
+- **Data normalization**: ZoomInfo camelCase fields normalized to snake_case at client boundary to match Apollo/PDL schema
+- **Intent/scoops as bonus signals**: Unique ZoomInfo data (intent scores, business scoops, tech stack) enriches LLM-generated pain points and opportunities
+
+**Test Coverage:** 31 tests across 2 test suites (`test_zoominfo_client.py`, `test_zoominfo_integration.py`)
+
+---
 
 ### Complete Data Unavailability Handling
 The Gamma template now provides comprehensive "Data unavailable at the time" messaging when company data cannot be retrieved:
@@ -61,8 +117,8 @@ All critical sections show explicit "Data unavailable at the time" when data is 
 ### Real API Data Integration
 All fields in Gamma slideshows now populated with **real data** from live APIs:
 
-**1. Executive/Stakeholder Profiles** (Apollo + PDL + Hunter.io)
-- Fetches C-level executives from Apollo and PeopleDataLabs
+**1. Executive/Stakeholder Profiles** (Apollo + PDL + ZoomInfo + Hunter.io)
+- Fetches C-level executives from Apollo, PeopleDataLabs, and ZoomInfo
 - Extracts names, titles, emails, phone numbers, LinkedIn profiles
 - Verifies emails using Hunter.io with confidence scores
 - Finds missing emails using Hunter.io email finder
@@ -90,7 +146,7 @@ All fields in Gamma slideshows now populated with **real data** from live APIs:
 ### Methodologies & Rationale
 
 **Multi-Source Data Fusion**
-*Rationale*: Single-source data is often incomplete or outdated. By combining Apollo, PDL, and Hunter.io, we achieve 95%+ data completeness with verified contact information.
+*Rationale*: Single-source data is often incomplete or outdated. By combining Apollo, PDL, ZoomInfo, and Hunter.io, we achieve 95%+ data completeness with verified contact information. ZoomInfo acts as a premium tiebreaker in the LLM council when Apollo and PDL disagree.
 
 **LLM-Based Enrichment**
 *Rationale*: Raw company data lacks context and sales insights. LLM enrichment transforms generic data into actionable pain points, opportunities, and conversation starters tailored to HP's solutions.
@@ -118,7 +174,7 @@ RADTest is a comprehensive company intelligence gathering and profile generation
 - **Frontend**: Next.js/React (Deployed on Vercel)
 - **Backend**: FastAPI (Python) (Deployed on Render.com)
 - **Database**: Supabase (PostgreSQL)
-- **Intelligence Sources**: PeopleDataLabs (primary), Apollo.io (fallback)
+- **Intelligence Sources**: PeopleDataLabs, Apollo.io, ZoomInfo (premium enrichment, intent signals, scoops)
 - **LLM Provider**: OpenAI (GPT-4) - optional validation
 - **Slideshow Generation**: Gamma API
 
@@ -640,11 +696,14 @@ RADTest/
 │   │   ├── llm_validator.py         # LLM validation
 │   │   ├── llm_council.py           # Council & Revolver
 │   │   ├── gamma_slideshow.py       # Slideshow generation
+│   │   ├── zoominfo_client.py      # ZoomInfo GTM API client
 │   │   ├── Dockerfile               # Worker container
 │   │   └── requirements.txt         # Worker dependencies
 │   ├── tests/
 │   │   ├── test_profile_endpoint.py
 │   │   ├── test_railway_graphql.py
+│   │   ├── test_zoominfo_client.py    # ZoomInfo client tests (23 tests)
+│   │   ├── test_zoominfo_integration.py # ZoomInfo pipeline tests (8 tests)
 │   │   └── test_debug_endpoints.py   # Debug endpoint tests (018-021)
 │   ├── requirements.txt
 │   └── pytest.ini
@@ -703,6 +762,12 @@ NEXT_PUBLIC_API_URL=<backend-api-url>
 
 # Production (set in Vercel dashboard)
 # NEXT_PUBLIC_API_URL=https://your-backend.railway.app
+
+# ZoomInfo OAuth 2.0 (PKCE Flow)
+# Obtain from ZoomInfo Developer Portal
+ZOOMINFO_CLIENT_ID=<provided-via-env>
+ZOOMINFO_CLIENT_SECRET=<provided-via-env>
+ZOOMINFO_SCOPES=openid  # Optional, defaults to "openid"
 ```
 
 ### Backend API
@@ -726,6 +791,9 @@ SUPABASE_KEY=<provided-via-env>
 APOLLO_API_KEY=<provided-via-env>
 PDL_API_KEY=<provided-via-env>
 
+# ZoomInfo (optional - system works without it)
+ZOOMINFO_ACCESS_TOKEN=<provided-via-env>
+
 # LLM Provider
 OPENAI_API_KEY=<provided-via-env>
 
@@ -742,6 +810,9 @@ SUPABASE_URL=<provided-via-env>
 SUPABASE_KEY=<provided-via-env>
 OPENAI_API_KEY=<provided-via-env>
 GAMMA_API_KEY=<provided-via-env>
+
+# ZoomInfo (optional - system works without it)
+ZOOMINFO_ACCESS_TOKEN=<provided-via-env>
 ```
 
 ---
@@ -888,10 +959,10 @@ railway up
 ### Backend ✅ FULLY CONFIGURED
 - **Platform**: Ready for Render/Railway deployment
 - **Status**: All core APIs configured and operational
-- **Intelligence Gathering**: ✅ Apollo + PDL operational
+- **Intelligence Gathering**: ✅ Apollo + PDL + ZoomInfo operational
 - **LLM Council**: ✅ Multi-agent validation operational
 - **Features Working**:
-  - ✅ Parallel data fetching from Apollo.io and PeopleDataLabs
+  - ✅ Parallel data fetching from Apollo.io, PeopleDataLabs, and ZoomInfo
   - ✅ Multi-agent conflict resolution (10-20 LLM agents + revolver)
   - ✅ Intelligent source reliability weighting
   - ✅ Field-type specific validation rules
@@ -962,7 +1033,7 @@ curl -X POST http://localhost:8000/profile-request \
 
 **Current Capabilities**:
 - ✅ Frontend deployed at https://frontend-eight-rho-17.vercel.app
-- ✅ Apollo + PDL intelligence gathering operational
+- ✅ Apollo + PDL + ZoomInfo intelligence gathering operational
 - ✅ LLM Council multi-agent validation operational
 - ✅ Data extraction from API responses
 - ✅ Company database fallback (17 major companies)

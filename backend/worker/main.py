@@ -14,6 +14,7 @@ from llm_validator import LLMValidator
 from llm_council import LLMCouncil, SourceTier
 from gamma_slideshow import GammaSlideshowCreator
 from hunter_client import HunterClient
+from zoominfo_client import ZoomInfoClient
 
 # Configure logging
 logging.basicConfig(
@@ -49,6 +50,7 @@ class WorkerOrchestrator:
         self.supabase_key = os.environ.get("SUPABASE_KEY")
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.gamma_api_key = os.environ.get("GAMMA_API_KEY")
+        self.zoominfo_access_token = os.environ.get("ZOOMINFO_ACCESS_TOKEN")
 
         # Validate environment variables
         self._validate_environment()
@@ -56,7 +58,8 @@ class WorkerOrchestrator:
         # Initialize components
         self.intelligence_gatherer = IntelligenceGatherer(
             apollo_api_key=self.apollo_api_key,
-            pdl_api_key=self.pdl_api_key
+            pdl_api_key=self.pdl_api_key,
+            zoominfo_access_token=self.zoominfo_access_token
         )
 
         self.supabase_injector = SupabaseInjector(
@@ -80,6 +83,17 @@ class WorkerOrchestrator:
         self.hunter_client = HunterClient(
             api_key=os.environ.get("HUNTER_API_KEY")
         )
+
+        # Initialize ZoomInfo client (optional - for intent/scoops/tech data)
+        self.zoominfo_client = None
+        if self.zoominfo_access_token:
+            try:
+                self.zoominfo_client = ZoomInfoClient(
+                    access_token=self.zoominfo_access_token
+                )
+                logger.info("ZoomInfo client initialized")
+            except ValueError as e:
+                logger.warning(f"ZoomInfo client initialization failed: {e}")
 
         logger.info("Worker orchestrator initialized successfully")
 
@@ -134,10 +148,13 @@ class WorkerOrchestrator:
         try:
             # Step 1: Gather intelligence from external sources
             logger.info("Step 1: Gathering intelligence")
+            sources = [DataSource.APOLLO, DataSource.PDL]
+            if self.zoominfo_access_token:
+                sources.append(DataSource.ZOOMINFO)
             intelligence_results = await self.intelligence_gatherer.gather_company_intelligence(
                 company_name=company_name,
                 domain=domain,
-                sources=[DataSource.APOLLO, DataSource.PDL]
+                sources=sources
             )
 
             # Step 2: Inject raw data into Supabase
@@ -181,6 +198,27 @@ class WorkerOrchestrator:
                 logger.warning(f"News gathering failed, continuing without news: {e}")
                 news_data = {"success": False}
 
+            # Step 4.5: Fetch ZoomInfo intent signals, scoops, and tech data
+            zoominfo_signals = {}
+            if self.zoominfo_client:
+                try:
+                    logger.info("Step 4.5: Fetching ZoomInfo intent signals and scoops")
+                    intent_result, scoops_result, tech_result = await asyncio.gather(
+                        self.zoominfo_client.enrich_intent(domain),
+                        self.zoominfo_client.search_scoops(domain),
+                        self.zoominfo_client.enrich_technologies(domain),
+                        return_exceptions=True
+                    )
+                    if isinstance(intent_result, dict) and intent_result.get("success"):
+                        zoominfo_signals["intent_signals"] = intent_result["intent_signals"]
+                    if isinstance(scoops_result, dict) and scoops_result.get("success"):
+                        zoominfo_signals["scoops"] = scoops_result["scoops"]
+                    if isinstance(tech_result, dict) and tech_result.get("success"):
+                        zoominfo_signals["technologies"] = tech_result["technologies"]
+                    logger.info(f"ZoomInfo signals collected: {list(zoominfo_signals.keys())}")
+                except Exception as e:
+                    logger.warning(f"ZoomInfo signals fetch failed, continuing: {e}")
+
             # Step 5: Data validation and normalization
             logger.info("Step 5: Validating and normalizing data")
             validated_data = await self._validate_and_normalize(
@@ -196,7 +234,8 @@ class WorkerOrchestrator:
                 enriched_data = await self._enrich_with_llm(
                     validated_data["data"],
                     news_data,
-                    stakeholder_profiles
+                    stakeholder_profiles,
+                    zoominfo_signals=zoominfo_signals
                 )
                 # Merge enriched data
                 validated_data["data"].update(enriched_data)
@@ -251,7 +290,8 @@ class WorkerOrchestrator:
         self,
         company_data: Dict[str, Any],
         news_data: Dict[str, Any],
-        stakeholder_profiles: list
+        stakeholder_profiles: list,
+        zoominfo_signals: Dict[str, Any] = None
     ) -> Dict[str, Any]:
         """
         Enrich company data with LLM-generated insights.
@@ -260,16 +300,25 @@ class WorkerOrchestrator:
             company_data: Validated company data
             news_data: News articles and summaries
             stakeholder_profiles: List of stakeholder profiles
+            zoominfo_signals: Optional ZoomInfo intent/scoops/tech data
 
         Returns:
             Dictionary with enriched data fields
         """
         enriched = {}
+        zoominfo_signals = zoominfo_signals or {}
 
-        # Generate pain points
+        # Merge ZoomInfo intent signals into news data for richer context
+        enrichment_context = dict(news_data) if news_data else {}
+        if zoominfo_signals.get("intent_signals"):
+            enrichment_context["zoominfo_intent"] = zoominfo_signals["intent_signals"]
+        if zoominfo_signals.get("scoops"):
+            enrichment_context["zoominfo_scoops"] = zoominfo_signals["scoops"]
+
+        # Generate pain points (enhanced with ZoomInfo intent/scoops)
         pain_points = await self.llm_council.generate_pain_points(
             company_data,
-            news_data
+            enrichment_context
         )
         if pain_points:
             enriched["pain_points"] = pain_points
@@ -282,10 +331,10 @@ class WorkerOrchestrator:
         if opportunities:
             enriched["sales_opportunities"] = opportunities
 
-        # Generate intent topics
+        # Generate intent topics (enhanced with ZoomInfo buyer intent)
         intent_topics = await self.llm_council.generate_intent_topics(
             company_data,
-            news_data
+            enrichment_context
         )
         if intent_topics:
             enriched["intent_topics"] = intent_topics
@@ -301,6 +350,14 @@ class WorkerOrchestrator:
         # Add news summaries
         if news_data.get("success"):
             enriched["news_triggers"] = news_data.get("summaries", {})
+
+        # Add ZoomInfo-specific enrichment data
+        if zoominfo_signals.get("technologies"):
+            enriched["technology_stack"] = zoominfo_signals["technologies"]
+        if zoominfo_signals.get("intent_signals"):
+            enriched["buyer_intent_signals"] = zoominfo_signals["intent_signals"]
+        if zoominfo_signals.get("scoops"):
+            enriched["business_scoops"] = zoominfo_signals["scoops"]
 
         logger.info(f"Enriched data with {len(enriched)} new fields")
         return enriched
@@ -342,6 +399,13 @@ class WorkerOrchestrator:
                         phone = person.get("phone_numbers", [None])[0]
                         linkedin = person.get("linkedin_url")
                         title = person.get("job_title", "")
+                    elif result.source.value == "zoominfo":
+                        # ZoomInfo contacts already normalized by ZoomInfoClient
+                        name = person.get("name", "")
+                        email = person.get("email")
+                        phone = person.get("phone")
+                        linkedin = person.get("linkedin")
+                        title = person.get("title", "")
                     else:
                         continue
 
@@ -398,7 +462,8 @@ class WorkerOrchestrator:
         # Define source reliability
         source_reliability = {
             "apollo": SourceTier.TIER_1,
-            "peopledatalabs": SourceTier.TIER_1
+            "peopledatalabs": SourceTier.TIER_1,
+            "zoominfo": SourceTier.TIER_1
         }
 
         # Fields to validate
