@@ -256,6 +256,28 @@ class WorkerOrchestrator:
                 logger.warning(f"LLM enrichment failed, continuing with basic data: {e}")
                 # Continue without enrichment
 
+            # Step 6.5: Determine strategic roles and filter to top 3 REAL contacts
+            try:
+                logger.info("Step 6.5: Determining strategic roles and filtering contacts")
+                strategic_roles = await self.llm_council.determine_strategic_roles(
+                    validated_data["data"],
+                    pain_points=enriched_data.get("pain_points")
+                )
+                logger.info(f"Strategic roles identified: {strategic_roles}")
+
+                # Filter stakeholder_profiles to match strategic roles (REAL contacts only)
+                strategic_contacts = self._match_strategic_contacts(
+                    stakeholder_profiles,
+                    strategic_roles
+                )
+
+                # Update validated_data with filtered strategic contacts
+                validated_data["data"]["stakeholder_profiles"] = strategic_contacts
+                logger.info(f"Filtered to {len(strategic_contacts)} strategic contacts matching target roles")
+
+            except Exception as e:
+                logger.warning(f"Strategic role filtering failed, using all contacts: {e}")
+
             # Step 7: Inject finalized data
             logger.info("Step 7: Injecting finalized data")
             finalize_result = await self.supabase_injector.inject_finalized_data(
@@ -393,6 +415,106 @@ class WorkerOrchestrator:
 
         logger.info(f"Enriched data with {len(enriched)} new fields")
         return enriched
+
+    def _match_strategic_contacts(
+        self,
+        stakeholder_profiles: list,
+        strategic_roles: list
+    ) -> list:
+        """
+        Match real contacts to strategic roles identified by LLM Council.
+
+        Prioritizes contacts whose roles match the strategic target roles.
+        Returns up to 3 contacts matching strategic roles (REAL contacts only).
+
+        Args:
+            stakeholder_profiles: All available real contacts
+            strategic_roles: 3 strategic roles to target (from LLM Council)
+
+        Returns:
+            Filtered list of up to 3 stakeholder profiles matching strategic roles
+        """
+        if not stakeholder_profiles:
+            logger.warning("No stakeholder profiles available to match strategic roles")
+            return []
+
+        if not strategic_roles:
+            logger.warning("No strategic roles provided, returning all profiles")
+            return stakeholder_profiles[:3]
+
+        matched_contacts = []
+        used_roles = set()
+
+        # For each strategic role, find the best matching real contact
+        for target_role in strategic_roles:
+            if len(matched_contacts) >= 3:
+                break
+
+            # Normalize target role for matching
+            target_role_lower = target_role.lower().strip()
+            target_role_words = target_role_lower.split()
+
+            best_match = None
+            best_score = 0
+
+            for contact in stakeholder_profiles:
+                # Skip if already matched
+                if contact in matched_contacts:
+                    continue
+
+                title = contact.get('title', '').lower()
+
+                # Calculate match score
+                score = 0
+
+                # Exact match
+                if target_role_lower in title:
+                    score = 100
+                # Partial match (e.g., "CIO" in "Chief Information Officer")
+                elif any(word in title for word in target_role_words if len(word) >= 3):
+                    score = 80
+                # Role acronym match (e.g., "cio" matches "chief information officer")
+                elif target_role_lower == 'cio' and ('chief information' in title or 'information officer' in title):
+                    score = 90
+                elif target_role_lower == 'cto' and ('chief technology' in title or 'technology officer' in title):
+                    score = 90
+                elif target_role_lower == 'cfo' and ('chief financial' in title or 'financial officer' in title):
+                    score = 90
+                elif target_role_lower == 'ciso' and ('chief security' in title or 'security officer' in title or 'chief information security' in title):
+                    score = 90
+                elif target_role_lower == 'coo' and ('chief operating' in title or 'operating officer' in title):
+                    score = 90
+                elif target_role_lower == 'cpo' and ('chief product' in title or 'product officer' in title):
+                    score = 90
+                # VP matches
+                elif 'vp' in target_role_lower and 'vp' in title:
+                    # Check if department matches
+                    if any(word in title for word in target_role_words if word not in ['vp', 'of']):
+                        score = 70
+                    else:
+                        score = 50
+
+                if score > best_score:
+                    best_score = score
+                    best_match = contact
+
+            # Add best match if found and score is decent
+            if best_match and best_score >= 50:
+                matched_contacts.append(best_match)
+                used_roles.add(target_role)
+                logger.info(f"Matched {best_match.get('title')} to strategic role {target_role} (score: {best_score})")
+
+        # If we don't have 3 matches, add highest-level remaining contacts
+        if len(matched_contacts) < 3:
+            logger.info(f"Only found {len(matched_contacts)} matching strategic roles, adding senior contacts")
+            for contact in stakeholder_profiles:
+                if contact not in matched_contacts:
+                    matched_contacts.append(contact)
+                    if len(matched_contacts) >= 3:
+                        break
+
+        logger.info(f"Final strategic contacts: {len(matched_contacts)}")
+        return matched_contacts[:3]
 
     def _process_people_data(self, intelligence_results: list) -> list:
         """

@@ -610,6 +610,244 @@ Format as JSON array:
             logger.error(f"Failed to generate intent topics: {e}")
             return []
 
+    async def determine_strategic_roles(
+        self,
+        company_data: Dict[str, Any],
+        pain_points: List[Dict[str, Any]] = None
+    ) -> List[str]:
+        """
+        Determine the top 3 most strategic decision-maker roles for HP to target.
+
+        Analyzes company size, industry, tech stack, pain points, and buying signals
+        to identify which C-suite/VP roles are most critical for HP sales success.
+
+        Args:
+            company_data: Company information (industry, size, tech, etc.)
+            pain_points: Identified pain points/challenges
+
+        Returns:
+            List of 3 role titles (e.g., ["CIO", "CFO", "CISO"])
+        """
+        try:
+            # Extract relevant context
+            company_name = company_data.get('company_name', 'Company')
+            industry = company_data.get('industry', 'Technology')
+            employee_count = company_data.get('employee_count', 'Unknown')
+            revenue = company_data.get('revenue', company_data.get('annual_revenue', 'Unknown'))
+            tech_stack = company_data.get('technologies', company_data.get('technology', []))
+            intent_topics = company_data.get('intent_topics', company_data.get('intent_signals', []))
+
+            # Format tech stack
+            if isinstance(tech_stack, list):
+                tech_str = ', '.join(tech_stack[:10])
+            else:
+                tech_str = str(tech_stack)
+
+            # Format intent topics
+            intent_str = ""
+            if intent_topics:
+                intent_list = []
+                for topic in intent_topics[:5]:
+                    if isinstance(topic, dict):
+                        intent_list.append(topic.get('topic', topic.get('topic_name', str(topic))))
+                    else:
+                        intent_list.append(str(topic))
+                intent_str = ', '.join(intent_list)
+
+            # Format pain points
+            pain_str = ""
+            if pain_points:
+                pain_list = []
+                for pain in pain_points[:3]:
+                    if isinstance(pain, dict):
+                        pain_list.append(pain.get('title', pain.get('name', str(pain))))
+                    else:
+                        pain_list.append(str(pain))
+                pain_str = '\n'.join([f"- {p}" for p in pain_list])
+
+            prompt = f"""You are an HP enterprise sales strategist. Analyze this company and determine the TOP 3 decision-maker roles that HP should target for IT infrastructure, devices, and managed services sales.
+
+Company Profile:
+- Company: {company_name}
+- Industry: {industry}
+- Size: {employee_count} employees, Revenue: {revenue}
+- Tech Stack: {tech_str if tech_str else 'Unknown'}
+- Intent Signals: {intent_str if intent_str else 'None detected'}
+
+Pain Points:
+{pain_str if pain_str else 'To be determined'}
+
+Available Roles to Choose From:
+- CIO (Chief Information Officer) - IT strategy, infrastructure, operations
+- CTO (Chief Technology Officer) - Technology innovation, engineering, product tech
+- CISO (Chief Information Security Officer) - Cybersecurity, compliance, risk
+- CFO (Chief Financial Officer) - Budget, ROI, cost optimization, procurement
+- COO (Chief Operating Officer) - Operations efficiency, business continuity
+- CPO (Chief Product Officer) - Product development, user experience
+- CEO (Chief Executive Officer) - Strategic vision, company direction
+- VP of IT - IT operations, infrastructure management
+- VP of Operations - Operational efficiency, process improvement
+- VP of Engineering - Engineering teams, technical infrastructure
+
+Select the TOP 3 roles most critical for HP's sales success at this company. Consider:
+1. Company size and complexity (larger = need IT leadership)
+2. Industry requirements (finance/healthcare = need CISO, manufacturing = need COO)
+3. Intent signals and pain points (security issues = CISO, cost concerns = CFO)
+4. IT infrastructure decision authority
+
+Return ONLY a JSON array of exactly 3 role titles:
+["Role1", "Role2", "Role3"]
+
+Examples:
+- Enterprise tech company: ["CIO", "CISO", "CFO"]
+- Mid-size manufacturer: ["COO", "CIO", "CFO"]
+- Financial services: ["CISO", "CIO", "CFO"]
+- Healthcare: ["CISO", "CIO", "COO"]"""
+
+            response = await openai.ChatCompletion.acreate(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an HP enterprise sales strategist specializing in identifying key decision-makers."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.2,  # Low temperature for consistent strategic decisions
+                max_tokens=100
+            )
+
+            import json
+            content = response.choices[0].message.content.strip()
+            roles = json.loads(content)
+
+            if not isinstance(roles, list) or len(roles) != 3:
+                logger.warning(f"LLM returned invalid roles format, using defaults: {roles}")
+                # Default based on company size
+                if employee_count and isinstance(employee_count, int):
+                    if employee_count > 10000:
+                        roles = ["CIO", "CISO", "CFO"]
+                    elif employee_count > 1000:
+                        roles = ["CIO", "CFO", "COO"]
+                    else:
+                        roles = ["CIO", "CFO", "VP of IT"]
+                else:
+                    roles = ["CIO", "CFO", "CISO"]  # Universal default
+
+            logger.info(f"Determined strategic roles for {company_name}: {roles}")
+            return roles[:3]
+
+        except Exception as e:
+            logger.error(f"Failed to determine strategic roles: {e}")
+            # Fallback to universal default
+            return ["CIO", "CFO", "CISO"]
+
+    async def generate_synthetic_profile(
+        self,
+        role_title: str,
+        company_data: Dict[str, Any],
+        pain_points: List[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Generate a complete synthetic stakeholder profile for a role when no real contact exists.
+
+        Creates a strategic profile with priorities, communication preferences, and
+        conversation starters tailored to the role and company context.
+
+        Args:
+            role_title: Role to generate (e.g., "CIO", "CFO", "CISO")
+            company_data: Company information for context
+            pain_points: Company pain points for relevance
+
+        Returns:
+            Complete stakeholder profile dictionary
+        """
+        try:
+            company_name = company_data.get('company_name', 'Company')
+            industry = company_data.get('industry', 'Technology')
+            employee_count = company_data.get('employee_count', 'Unknown')
+
+            # Format pain points
+            pain_str = ""
+            if pain_points:
+                pain_list = []
+                for pain in pain_points[:3]:
+                    if isinstance(pain, dict):
+                        pain_list.append(pain.get('title', pain.get('name', str(pain))))
+                    else:
+                        pain_list.append(str(pain))
+                pain_str = '\n'.join([f"- {p}" for p in pain_list])
+
+            prompt = f"""Generate a complete strategic profile for the {role_title} at {company_name} ({industry} industry, {employee_count} employees).
+
+Company Pain Points:
+{pain_str if pain_str else 'General IT infrastructure and operational efficiency'}
+
+Generate a comprehensive profile with:
+1. bio: 2-3 sentence bio describing their role focus and background (realistic, not generic)
+2. strategic_priorities: 3 priorities (each with name and description) specific to this role and company
+3. communication_preference: Preferred contact methods (e.g., "Email / LinkedIn / Executive Events")
+4. conversation_starters: 3 conversation starters (each with topic and specific question) tied to pain points
+
+Format as JSON:
+{{
+  "bio": "...",
+  "strategic_priorities": [
+    {{"name": "...", "description": "..."}}
+  ],
+  "communication_preference": "...",
+  "conversation_starters": [
+    {{"topic": "...", "question": "..."}}
+  ]
+}}"""
+
+            response = await openai.ChatCompletion.acreate(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": "You are an HP enterprise sales intelligence analyst creating strategic buyer profiles."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.4,
+                max_tokens=800
+            )
+
+            import json
+            content = response.choices[0].message.content.strip()
+            profile_data = json.loads(content)
+
+            # Build complete synthetic profile
+            profile = {
+                "name": f"{role_title} (Strategic Contact)",
+                "title": role_title,
+                "email": "Contact via company website or LinkedIn",
+                "phone": "Available upon introduction",
+                "linkedin": f"Search LinkedIn: {role_title} at {company_name}",
+                "source": "llm_generated",
+                "is_synthetic": True,
+                **profile_data  # Add bio, strategic_priorities, communication_preference, conversation_starters
+            }
+
+            logger.info(f"Generated synthetic profile for {role_title} at {company_name}")
+            return profile
+
+        except Exception as e:
+            logger.error(f"Failed to generate synthetic profile for {role_title}: {e}")
+            # Fallback minimal profile
+            return {
+                "name": f"{role_title} (Strategic Contact)",
+                "title": role_title,
+                "email": "Contact via company website",
+                "phone": "Available upon introduction",
+                "linkedin": "Search on LinkedIn",
+                "source": "llm_generated",
+                "is_synthetic": True,
+                "bio": f"Strategic decision-maker responsible for {role_title} functions at {company_data.get('company_name', 'Company')}.",
+                "strategic_priorities": [
+                    {"name": "Strategic Initiative", "description": "Leading strategic initiatives for organizational success."}
+                ],
+                "communication_preference": "Email / LinkedIn",
+                "conversation_starters": [
+                    {"topic": "Strategic Planning", "question": "What are your top priorities for the coming year?"}
+                ]
+            }
+
     async def enrich_stakeholder_profiles(
         self,
         stakeholders: List[Dict[str, str]],

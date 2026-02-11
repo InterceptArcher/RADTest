@@ -1078,7 +1078,9 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
 
         # ============================================================
-        # SLIDES 5+: Stakeholder Map: Role Profiles (ONE PER STAKEHOLDER)
+        # SLIDES 5+: Stakeholder Map: Strategic Role Profiles (ONE PER CONTACT)
+        # NOTE: stakeholder_profiles now contains up to 3 STRATEGIC REAL contacts
+        # selected by LLM Council as most important roles for HP to target
         # ============================================================
 
         if data_unavailable:
@@ -1090,46 +1092,21 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             markdown += "Please verify the company name and try again, or conduct manual research through LinkedIn, company website, and other professional networks.\n\n"
             markdown += "---\n\n"
         else:
-            # Get all stakeholders
+            # Get strategic stakeholders (ALREADY filtered to up to 3 by LLM Council in orchestrator)
+            # These are REAL contacts only, matched to strategic roles
             stakeholders = validated_data.get('stakeholder_profiles') or validated_data.get('stakeholders', [])
-            hunter_contacts = validated_data.get('hunter_contacts', [])
 
-            # Combine and deduplicate stakeholders
+            # Use strategic stakeholders directly (NO hunter contacts, NO CEO fallback)
+            # These are REAL contacts that match the 3 strategic roles
             all_stakeholders = []
 
             if isinstance(stakeholders, list):
-                all_stakeholders.extend(stakeholders)
+                all_stakeholders = stakeholders  # Use directly, already filtered
             elif isinstance(stakeholders, dict):
                 for role, profile in stakeholders.items():
                     if isinstance(profile, dict):
                         profile['role_type'] = role
                         all_stakeholders.append(profile)
-
-            # Add hunter contacts if not already present
-            if hunter_contacts:
-                existing_names = [s.get('name', '').lower() for s in all_stakeholders]
-                for contact in hunter_contacts:
-                    name = f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
-                    if name.lower() not in existing_names and name:
-                        all_stakeholders.append({
-                            'name': name,
-                            'title': contact.get('position', ''),
-                            'email': contact.get('value', contact.get('email', '')),
-                            'phone': contact.get('phone_number', ''),
-                            'linkedin': contact.get('linkedin', ''),
-                            'department': contact.get('department', ''),
-                            'confidence': contact.get('confidence', 0)
-                        })
-
-            # If no stakeholders found, add CEO if available
-            if not all_stakeholders:
-                ceo = validated_data.get('ceo', '')
-                if ceo:
-                    all_stakeholders.append({
-                        'name': ceo,
-                        'title': 'Chief Executive Officer',
-                        'role_type': 'CEO'
-                    })
 
             # If still no stakeholders, show minimal unavailable message
             if not all_stakeholders:
