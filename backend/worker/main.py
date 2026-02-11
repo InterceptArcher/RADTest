@@ -265,15 +265,19 @@ class WorkerOrchestrator:
                 )
                 logger.info(f"Strategic roles identified: {strategic_roles}")
 
-                # Filter stakeholder_profiles to match strategic roles (REAL contacts only)
+                # Get ENRICHED stakeholders (with strategic_priorities, conversation_starters)
+                # Use enriched version if available, otherwise use original
+                stakeholders_to_filter = enriched_data.get("stakeholder_profiles", stakeholder_profiles)
+
+                # Filter enriched stakeholder_profiles to match strategic roles (REAL contacts only)
                 strategic_contacts = self._match_strategic_contacts(
-                    stakeholder_profiles,
+                    stakeholders_to_filter,
                     strategic_roles
                 )
 
-                # Update validated_data with filtered strategic contacts
+                # Update validated_data with filtered strategic contacts (with enrichment preserved)
                 validated_data["data"]["stakeholder_profiles"] = strategic_contacts
-                logger.info(f"Filtered to {len(strategic_contacts)} strategic contacts matching target roles")
+                logger.info(f"Filtered to {len(strategic_contacts)} enriched strategic contacts matching target roles")
 
             except Exception as e:
                 logger.warning(f"Strategic role filtering failed, using all contacts: {e}")
