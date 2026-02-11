@@ -131,8 +131,10 @@ class GammaSlideshowCreator:
         validated_data = company_data.get("validated_data", {})
         company_name = validated_data.get('company_name', 'Company')
 
-        from datetime import datetime
-        current_date = datetime.now().strftime("%B %d, %Y")
+        from datetime import datetime, timedelta, timezone
+        # EST is UTC-5 (or UTC-4 during EDT, but using fixed EST offset)
+        est = timezone(timedelta(hours=-5))
+        current_date = datetime.now(est).strftime("%B %d, %Y")
 
         # Build comprehensive, data-rich structured content
         data = f"""ACCOUNT INTELLIGENCE REPORT
@@ -446,9 +448,11 @@ Technology Stack: {', '.join(validated_data.get('technologies', validated_data.g
         validation_result = self._validate_company_data(company_data)
         data_unavailable = not validation_result['is_valid']
 
-        # Get current date for report
-        from datetime import datetime
-        current_date = datetime.now().strftime("%B %d, %Y")
+        # Get current date for report in EST
+        from datetime import datetime, timedelta, timezone
+        # EST is UTC-5 (or UTC-4 during EDT, but using fixed EST offset)
+        est = timezone(timedelta(hours=-5))
+        current_date = datetime.now(est).strftime("%B %d, %Y")
 
         # User email (person pulling data)
         preparer_email = user_email or company_data.get('user_email', '[salesperson@hp.com]')
