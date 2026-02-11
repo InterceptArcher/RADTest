@@ -676,6 +676,22 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             else:
                 markdown += "**Estimated Annual IT Budget:** Contact for estimate\n\n"
 
+        # Contact Information - DISPLAY PHONE NUMBERS
+        markdown += "**Contact Information:**\n\n"
+        phone = validated_data.get('phone', '')
+        fax = validated_data.get('fax', '')
+        corporate_email = validated_data.get('corporate_email', '')
+
+        if phone:
+            markdown += f"- **Phone:** {phone}\n"
+        if fax:
+            markdown += f"- **Fax:** {fax}\n"
+        if corporate_email:
+            markdown += f"- **Corporate Email:** {corporate_email}\n"
+        if not (phone or fax or corporate_email):
+            markdown += "Contact information available through company website\n"
+        markdown += "\n"
+
         # Installed Technologies - COMPREHENSIVE with ZoomInfo tech installs
         markdown += "**Installed Technologies:**\n\n"
         if data_unavailable:
@@ -1165,10 +1181,13 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             else:
                 markdown += "**Start date:** Currently unavailable\n\n"
 
-            # Phone numbers
-            phone = stakeholder.get('phone', stakeholder.get('phone_number', ''))
-            mobile = stakeholder.get('mobile', stakeholder.get('mobile_phone', ''))
-            direct_phone = stakeholder.get('direct_phone', '')
+            # Phone numbers - check ALL possible field variations from all sources
+            # ZoomInfo: phone, mobile_phone, direct_phone
+            # Apollo: phone, phone_number
+            # PDL: phone, mobile_phone
+            phone = stakeholder.get('phone', stakeholder.get('phone_number', stakeholder.get('phoneNumber', '')))
+            mobile = stakeholder.get('mobile', stakeholder.get('mobile_phone', stakeholder.get('mobilePhone', '')))
+            direct_phone = stakeholder.get('direct_phone', stakeholder.get('directPhone', ''))
 
             if direct_phone:
                 markdown += f"**Direct Phone:** {direct_phone}\n\n"
