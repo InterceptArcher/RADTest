@@ -51,6 +51,8 @@ class WorkerOrchestrator:
         self.openai_api_key = os.environ.get("OPENAI_API_KEY")
         self.gamma_api_key = os.environ.get("GAMMA_API_KEY")
         self.zoominfo_access_token = os.environ.get("ZOOMINFO_ACCESS_TOKEN")
+        self.zoominfo_client_id = os.environ.get("ZOOMINFO_CLIENT_ID")
+        self.zoominfo_client_secret = os.environ.get("ZOOMINFO_CLIENT_SECRET")
 
         # Validate environment variables
         self._validate_environment()
@@ -59,7 +61,9 @@ class WorkerOrchestrator:
         self.intelligence_gatherer = IntelligenceGatherer(
             apollo_api_key=self.apollo_api_key,
             pdl_api_key=self.pdl_api_key,
-            zoominfo_access_token=self.zoominfo_access_token
+            zoominfo_access_token=self.zoominfo_access_token,
+            zoominfo_client_id=self.zoominfo_client_id,
+            zoominfo_client_secret=self.zoominfo_client_secret
         )
 
         self.supabase_injector = SupabaseInjector(
@@ -86,12 +90,21 @@ class WorkerOrchestrator:
 
         # Initialize ZoomInfo client (optional - for intent/scoops/tech data)
         self.zoominfo_client = None
-        if self.zoominfo_access_token:
+        if self.zoominfo_client_id and self.zoominfo_client_secret:
+            try:
+                self.zoominfo_client = ZoomInfoClient(
+                    client_id=self.zoominfo_client_id,
+                    client_secret=self.zoominfo_client_secret
+                )
+                logger.info("ZoomInfo client initialized (auto-auth)")
+            except ValueError as e:
+                logger.warning(f"ZoomInfo client initialization failed: {e}")
+        elif self.zoominfo_access_token:
             try:
                 self.zoominfo_client = ZoomInfoClient(
                     access_token=self.zoominfo_access_token
                 )
-                logger.info("ZoomInfo client initialized")
+                logger.info("ZoomInfo client initialized (static token)")
             except ValueError as e:
                 logger.warning(f"ZoomInfo client initialization failed: {e}")
 
@@ -149,7 +162,7 @@ class WorkerOrchestrator:
             # Step 1: Gather intelligence from external sources
             logger.info("Step 1: Gathering intelligence")
             sources = [DataSource.APOLLO, DataSource.PDL]
-            if self.zoominfo_access_token:
+            if self.zoominfo_access_token or (self.zoominfo_client_id and self.zoominfo_client_secret):
                 sources.append(DataSource.ZOOMINFO)
             intelligence_results = await self.intelligence_gatherer.gather_company_intelligence(
                 company_name=company_name,

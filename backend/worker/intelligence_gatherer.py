@@ -100,6 +100,8 @@ class IntelligenceGatherer:
         apollo_api_key: str,
         pdl_api_key: str,
         zoominfo_access_token: Optional[str] = None,
+        zoominfo_client_id: Optional[str] = None,
+        zoominfo_client_secret: Optional[str] = None,
         max_retries: int = 3,
         timeout: int = 30
     ):
@@ -109,13 +111,17 @@ class IntelligenceGatherer:
         Args:
             apollo_api_key: Apollo.io API key (from environment)
             pdl_api_key: PeopleDataLabs API key (from environment)
-            zoominfo_access_token: ZoomInfo access token (optional, from environment)
+            zoominfo_access_token: ZoomInfo static token (optional)
+            zoominfo_client_id: ZoomInfo client ID for auto-auth (optional, preferred)
+            zoominfo_client_secret: ZoomInfo client secret for auto-auth (optional)
             max_retries: Maximum retry attempts per request
             timeout: Request timeout in seconds
         """
         self.apollo_api_key = apollo_api_key
         self.pdl_api_key = pdl_api_key
         self.zoominfo_access_token = zoominfo_access_token
+        self.zoominfo_client_id = zoominfo_client_id
+        self.zoominfo_client_secret = zoominfo_client_secret
         self.max_retries = max_retries
         self.timeout = timeout
 
@@ -126,16 +132,20 @@ class IntelligenceGatherer:
             DataSource.ZOOMINFO: CircuitBreaker()
         }
 
-        # Initialize ZoomInfo client if token provided
+        # Initialize ZoomInfo client (prefer client_id/secret for auto-refresh)
         self.zoominfo_client = None
-        if zoominfo_access_token:
+        has_zi_creds = zoominfo_client_id and zoominfo_client_secret
+        has_zi_token = bool(zoominfo_access_token)
+        if has_zi_creds or has_zi_token:
             try:
                 from zoominfo_client import ZoomInfoClient
-                self.zoominfo_client = ZoomInfoClient(
-                    access_token=zoominfo_access_token,
-                    timeout=timeout,
-                    max_retries=max_retries
-                )
+                kwargs = {"timeout": timeout, "max_retries": max_retries}
+                if has_zi_creds:
+                    kwargs["client_id"] = zoominfo_client_id
+                    kwargs["client_secret"] = zoominfo_client_secret
+                else:
+                    kwargs["access_token"] = zoominfo_access_token
+                self.zoominfo_client = ZoomInfoClient(**kwargs)
                 logger.info("ZoomInfo client initialized successfully")
             except Exception as e:
                 logger.warning(f"ZoomInfo client could not be initialized: {e}")

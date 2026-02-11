@@ -6,6 +6,7 @@ import pytest
 import asyncio
 import os
 import sys
+import time
 from unittest.mock import AsyncMock, patch, MagicMock
 
 # Add worker directory to path for imports
@@ -32,7 +33,7 @@ class TestZoomInfoClientInit:
         """Client raises ValueError when no token is available."""
         from zoominfo_client import ZoomInfoClient
         with patch.dict("os.environ", {}, clear=True):
-            with pytest.raises(ValueError, match="ZOOMINFO_ACCESS_TOKEN"):
+            with pytest.raises(ValueError, match="credentials required"):
                 ZoomInfoClient()
 
     def test_default_timeout(self):
@@ -354,3 +355,114 @@ class TestErrorHandling:
                           side_effect=httpx.ConnectError("Connection refused")):
             result = await client.enrich_company(domain="acme.com")
             assert result["success"] is False
+
+
+class TestAutoAuthentication:
+    """Test automatic token refresh using client_credentials grant."""
+
+    def test_init_with_client_credentials(self):
+        """Client accepts client_id + client_secret for auto-auth."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(client_id="test-id", client_secret="test-secret")
+        assert client._client_id == "test-id"
+        assert client._client_secret == "test-secret"
+        assert client._auto_auth is True
+
+    def test_init_prefers_client_credentials_over_env_token(self):
+        """Client_id + client_secret takes priority over ZOOMINFO_ACCESS_TOKEN env."""
+        from zoominfo_client import ZoomInfoClient
+        with patch.dict("os.environ", {"ZOOMINFO_ACCESS_TOKEN": "env-token"}):
+            client = ZoomInfoClient(client_id="test-id", client_secret="test-secret")
+            assert client._auto_auth is True
+
+    def test_static_token_disables_auto_auth(self):
+        """When access_token is provided directly, auto_auth is False."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="static-token")
+        assert client._auto_auth is False
+
+    def test_init_without_any_credentials_raises(self):
+        """Raises ValueError when no credentials are provided."""
+        from zoominfo_client import ZoomInfoClient
+        with patch.dict("os.environ", {}, clear=True):
+            with pytest.raises(ValueError):
+                ZoomInfoClient()
+
+    @pytest.mark.asyncio
+    async def test_authenticate_fetches_token(self):
+        """_authenticate() POSTs to token endpoint and stores access_token."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(client_id="test-id", client_secret="test-secret")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "access_token": "fresh-jwt-token",
+            "token_type": "Bearer",
+            "expires_in": 3600
+        }
+        mock_response.raise_for_status = MagicMock()
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            await client._authenticate()
+
+            assert client.access_token == "fresh-jwt-token"
+            assert client._token_expires_at > time.time()
+            mock_client.post.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_authenticate_caches_token(self):
+        """Second call to _ensure_valid_token doesn't re-authenticate if not expired."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(client_id="test-id", client_secret="test-secret")
+        # Simulate already authenticated
+        client.access_token = "cached-token"
+        client._token_expires_at = time.time() + 3600  # Expires in 1 hour
+        client.headers["Authorization"] = "Bearer cached-token"
+
+        await client._ensure_valid_token()
+        # Token should remain the same (no auth call)
+        assert client.access_token == "cached-token"
+
+    @pytest.mark.asyncio
+    async def test_auto_refreshes_expired_token(self):
+        """_ensure_valid_token re-authenticates when token is expired."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(client_id="test-id", client_secret="test-secret")
+        # Simulate expired token
+        client.access_token = "old-token"
+        client._token_expires_at = time.time() - 10  # Already expired
+
+        with patch.object(client, "_authenticate", new_callable=AsyncMock) as mock_auth:
+            await client._ensure_valid_token()
+            mock_auth.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_authenticate_failure_raises(self):
+        """Bad credentials raise ValueError during authentication."""
+        import httpx
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(client_id="bad-id", client_secret="bad-secret")
+
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_response.text = "Unauthorized"
+        mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+            "Unauthorized", request=MagicMock(), response=mock_response
+        )
+
+        with patch("httpx.AsyncClient") as mock_client_cls:
+            mock_client = AsyncMock()
+            mock_client.post.return_value = mock_response
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            with pytest.raises(ValueError, match="authentication failed"):
+                await client._authenticate()

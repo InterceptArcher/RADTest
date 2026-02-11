@@ -89,10 +89,21 @@ class Settings(BaseSettings):
     )
 
     # ZoomInfo settings (optional - graceful degradation without it)
+    # Preferred: use client_id + client_secret for automatic token refresh
+    zoominfo_client_id: Optional[str] = Field(
+        default=None,
+        env="ZOOMINFO_CLIENT_ID",
+        description="ZoomInfo OAuth client ID for auto-auth. Must be provided via environment variables."
+    )
+    zoominfo_client_secret: Optional[str] = Field(
+        default=None,
+        env="ZOOMINFO_CLIENT_SECRET",
+        description="ZoomInfo OAuth client secret for auto-auth. Must be provided via environment variables."
+    )
     zoominfo_access_token: Optional[str] = Field(
         default=None,
         env="ZOOMINFO_ACCESS_TOKEN",
-        description="ZoomInfo API access token. Optional. Must be provided via environment variables."
+        description="ZoomInfo static access token (alternative to client_id/secret). Must be provided via environment variables."
     )
 
     # Timeout settings

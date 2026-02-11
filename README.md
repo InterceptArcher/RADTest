@@ -792,7 +792,11 @@ APOLLO_API_KEY=<provided-via-env>
 PDL_API_KEY=<provided-via-env>
 
 # ZoomInfo (optional - system works without it)
-ZOOMINFO_ACCESS_TOKEN=<provided-via-env>
+# Preferred: client_id + client_secret for automatic token refresh
+ZOOMINFO_CLIENT_ID=<provided-via-env>
+ZOOMINFO_CLIENT_SECRET=<provided-via-env>
+# Alternative: static token (expires after ~1 hour)
+# ZOOMINFO_ACCESS_TOKEN=<provided-via-env>
 
 # LLM Provider
 OPENAI_API_KEY=<provided-via-env>
@@ -812,7 +816,9 @@ OPENAI_API_KEY=<provided-via-env>
 GAMMA_API_KEY=<provided-via-env>
 
 # ZoomInfo (optional - system works without it)
-ZOOMINFO_ACCESS_TOKEN=<provided-via-env>
+# Preferred: client_id + client_secret for automatic token refresh
+ZOOMINFO_CLIENT_ID=<provided-via-env>
+ZOOMINFO_CLIENT_SECRET=<provided-via-env>
 ```
 
 ---

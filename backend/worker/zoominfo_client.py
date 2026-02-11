@@ -2,10 +2,15 @@
 ZoomInfo API client for company enrichment, contact search,
 intent signals, scoops, news, and technology data.
 
-All requests use Bearer token authentication.
-The access token must be provided via environment variables.
+Supports two authentication modes:
+1. Auto-auth (preferred): Provide client_id + client_secret for automatic
+   token refresh via OAuth2 client_credentials grant.
+2. Static token: Provide access_token directly (expires, no auto-refresh).
+
+All credentials must be provided via environment variables.
 """
 import asyncio
+import base64
 import logging
 import os
 import time
@@ -16,6 +21,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 ZOOMINFO_BASE_URL = "https://api.zoominfo.com/gtm"
+ZOOMINFO_TOKEN_URL = "https://okta-login.zoominfo.com/oauth2/default/v1/token"
 
 ENDPOINTS = {
     "company_enrich": "/data/v1/companies/enrich",
@@ -73,29 +79,85 @@ class ZoomInfoClient:
     def __init__(
         self,
         access_token: Optional[str] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
         timeout: int = 30,
         max_retries: int = 3
     ):
-        self.access_token = access_token or os.getenv("ZOOMINFO_ACCESS_TOKEN")
-        if not self.access_token:
-            raise ValueError(
-                "ZOOMINFO_ACCESS_TOKEN is required. "
-                "This value must be provided via environment variables."
-            )
+        self._client_id = client_id or os.getenv("ZOOMINFO_CLIENT_ID")
+        self._client_secret = client_secret or os.getenv("ZOOMINFO_CLIENT_SECRET")
+        self._auto_auth = bool(self._client_id and self._client_secret)
+        self._token_expires_at = 0.0
+
+        if self._auto_auth:
+            # Auto-auth mode: token will be fetched on first request
+            self.access_token = None
+        else:
+            # Static token mode
+            self.access_token = access_token or os.getenv("ZOOMINFO_ACCESS_TOKEN")
+            if not self.access_token:
+                raise ValueError(
+                    "ZoomInfo credentials required. Provide either "
+                    "client_id + client_secret (recommended) or access_token. "
+                    "These values must be provided via environment variables."
+                )
+
         self.base_url = ZOOMINFO_BASE_URL
         self.timeout = timeout
         self.max_retries = max_retries
         self.headers = {
-            "Authorization": f"Bearer {self.access_token}",
             "Content-Type": "application/vnd.api+json",
             "Accept": "application/json"
         }
+        if self.access_token:
+            self.headers["Authorization"] = f"Bearer {self.access_token}"
         self.rate_limiter = ZoomInfoRateLimiter()
+
+    async def _authenticate(self) -> None:
+        """Fetch a fresh access token using client_credentials grant."""
+        credentials = f"{self._client_id}:{self._client_secret}"
+        basic_auth = base64.b64encode(credentials.encode()).decode()
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    ZOOMINFO_TOKEN_URL,
+                    headers={
+                        "Authorization": f"Basic {basic_auth}",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    data="grant_type=client_credentials&scope=openid",
+                )
+                response.raise_for_status()
+                token_data = response.json()
+
+            self.access_token = token_data["access_token"]
+            expires_in = token_data.get("expires_in", 3600)
+            # Refresh 5 minutes early to avoid edge-case expiry
+            self._token_expires_at = time.time() + expires_in - 300
+            self.headers["Authorization"] = f"Bearer {self.access_token}"
+            logger.info("ZoomInfo token refreshed, expires in %ds", expires_in)
+
+        except httpx.HTTPStatusError as e:
+            raise ValueError(
+                f"ZoomInfo authentication failed: HTTP {e.response.status_code}. "
+                "Check client_id and client_secret."
+            )
+        except Exception as e:
+            raise ValueError(f"ZoomInfo authentication failed: {e}")
+
+    async def _ensure_valid_token(self) -> None:
+        """Re-authenticate if the current token is expired or missing."""
+        if self._auto_auth and (
+            not self.access_token or time.time() >= self._token_expires_at
+        ):
+            await self._authenticate()
 
     async def _make_request(
         self, endpoint: str, payload: Dict[str, Any]
     ) -> Dict[str, Any]:
         """Make an authenticated POST request to ZoomInfo API."""
+        await self._ensure_valid_token()
         await self.rate_limiter.acquire()
         url = f"{self.base_url}{endpoint}"
         async with httpx.AsyncClient(timeout=self.timeout) as client:
