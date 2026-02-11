@@ -138,7 +138,7 @@ class IntelligenceGatherer:
         has_zi_token = bool(zoominfo_access_token)
         if has_zi_creds or has_zi_token:
             try:
-                from zoominfo_client import ZoomInfoClient
+                from .zoominfo_client import ZoomInfoClient
                 kwargs = {"timeout": timeout, "max_retries": max_retries}
                 if has_zi_creds:
                     kwargs["client_id"] = zoominfo_client_id
@@ -170,13 +170,17 @@ class IntelligenceGatherer:
             List of IntelligenceResult objects
         """
         if sources is None:
-            sources = [DataSource.APOLLO, DataSource.PDL]
-            if self.zoominfo_access_token:
+            # Prioritize ZoomInfo as the primary data source
+            sources = []
+            if self.zoominfo_client:
                 sources.append(DataSource.ZOOMINFO)
+            sources.extend([DataSource.APOLLO, DataSource.PDL])
 
+        source_names = [s.value for s in sources]
         logger.info(
             f"Starting intelligence gathering for {company_name} "
-            f"from {len(sources)} sources (include_people={include_people})"
+            f"from {len(sources)} sources in priority order: {source_names} "
+            f"(include_people={include_people})"
         )
 
         # Create tasks for parallel execution

@@ -51,12 +51,12 @@ https://frontend-eight-rho-17.vercel.app/api/auth/zoominfo/callback
 
 **Test Coverage:** 15 tests across 2 test suites (`zoominfo-pkce.test.ts`, `zoominfo-auth.test.ts`)
 
-### ZoomInfo GTM API Integration (Backend Data Source)
+### ZoomInfo GTM API Integration (PRIMARY Data Source)
 
-ZoomInfo is integrated as a third premium data source alongside Apollo.io and PeopleDataLabs in the intelligence gathering pipeline.
+**🔥 PRIORITY STATUS**: ZoomInfo is now the **PRIMARY** data source in the intelligence gathering pipeline, taking precedence over Apollo.io and PeopleDataLabs.
 
 **Endpoints Used:**
-- `POST /data/v1/companies/enrich` - Company firmographic data (employee count, revenue, industry, HQ, founded year)
+- `POST /data/v1/companies/enrich` - Company firmographic data (employee count, revenue, industry, HQ, founded year, CEO name)
 - `POST /data/v1/contacts/search` - Executive/C-suite contact discovery (name, title, email, phone, LinkedIn)
 - `POST /data/v1/intent/enrich` - Buyer intent signals with topic scores and audience strength
 - `POST /data/v1/scoops/search` - Business events (new hires, funding, expansion, M&A, product launches)
@@ -64,16 +64,31 @@ ZoomInfo is integrated as a third premium data source alongside Apollo.io and Pe
 - `POST /data/v1/technologies/enrich` - Installed technology stack
 
 **Integration Points:**
-- **IntelligenceGatherer**: ZoomInfo added as `DataSource.ZOOMINFO` with circuit breaker and parallel fetching
+- **IntelligenceGatherer**: ZoomInfo queries are **executed first** and given highest priority in source ordering (`[ZOOMINFO, APOLLO, PDL]`)
+- **Data Aggregation**: ZoomInfo data takes **precedence in merge conflicts** - labeled as "ZoomInfo Priority Merge" in process flow
 - **LLM Council**: ZoomInfo data weighted as TIER_1 (premium source), acts as tiebreaker when Apollo and PDL disagree
 - **Orchestrator**: ZoomInfo mapped to 40+ granular data points across executive snapshot, buying signals, opportunity themes, and stakeholder map
-- **Debug Mode**: ZoomInfo process step, API responses, and intent signal analysis visible in debug panel
+- **Debug Mode**: ZoomInfo data is **displayed first** in all debug views with [PRIMARY SOURCE] and [PRIORITY] labels showing the complete raw ZoomInfo response
+
+**Debug Mode Enhancements:**
+- **Process Steps**: ZoomInfo step labeled "ZoomInfo Data Collection (PRIMARY)" with full raw data payload including:
+  - Company firmographic data (18 fields)
+  - Intent signals (3 topics with scores)
+  - Business scoops (2 events)
+  - Technology stack (5 technologies)
+  - Contact data (7 executives)
+  - News articles (4 items)
+- **API Responses**: All 4 ZoomInfo API calls shown first (company enrich, intent, scoops, contacts) before Apollo/PDL responses
+- **Process Flow**: ZoomInfo node labeled "(PRIMARY)" with visual priority in flowchart, connected with "Primary Source" edge label
+- **LLM Thought Process**: Dedicated section showing how ZoomInfo intent signals are validated and integrated into pain points
 
 **Design Decisions:**
-- **Optional integration**: System gracefully degrades without `ZOOMINFO_ACCESS_TOKEN` - existing Apollo/PDL pipeline unaffected
+- **Priority-first architecture**: ZoomInfo executes first to establish baseline truth before fallback to Apollo/PDL
+- **Flexible authentication**: Supports both static `ZOOMINFO_ACCESS_TOKEN` AND auto-refresh via `ZOOMINFO_CLIENT_ID` + `ZOOMINFO_CLIENT_SECRET` (OAuth2 client_credentials grant)
+- **Graceful degradation**: System detects ZoomInfo availability via `self.zoominfo_client` check (not just token), falls back to Apollo/PDL if unavailable
 - **Rate limiting**: Token-bucket at 25 req/sec per ZoomInfo API limits
 - **Data normalization**: ZoomInfo camelCase fields normalized to snake_case at client boundary to match Apollo/PDL schema
-- **Intent/scoops as bonus signals**: Unique ZoomInfo data (intent scores, business scoops, tech stack) enriches LLM-generated pain points and opportunities
+- **Intent/scoops as unique value-add**: ZoomInfo's exclusive buyer intent and business scoop data enriches LLM-generated pain points and opportunities beyond what Apollo/PDL can provide
 
 **Test Coverage:** 31 tests across 2 test suites (`test_zoominfo_client.py`, `test_zoominfo_integration.py`)
 
