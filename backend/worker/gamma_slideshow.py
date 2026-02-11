@@ -373,12 +373,54 @@ Technology Stack: {', '.join(validated_data.get('technologies', validated_data.g
 
         return data
 
+    def _validate_company_data(self, company_data: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Validate if company data is minimally viable for report generation.
+
+        Returns:
+            Dict with 'is_valid' boolean and 'reason' string
+        """
+        validated_data = company_data.get("validated_data", {})
+        company_name = validated_data.get('company_name', '')
+
+        # Check if we have at minimum: company name and industry
+        if not company_name or company_name == 'Company':
+            return {
+                'is_valid': False,
+                'reason': 'Company name not available'
+            }
+
+        # Check if we have ANY substantive data beyond name
+        has_data = any([
+            validated_data.get('company_overview'),
+            validated_data.get('description'),
+            validated_data.get('industry'),
+            validated_data.get('employee_count'),
+            validated_data.get('technology'),
+            validated_data.get('stakeholder_profiles'),
+            validated_data.get('stakeholder_map')
+        ])
+
+        if not has_data:
+            return {
+                'is_valid': False,
+                'reason': 'Insufficient company data - company may not exist or APIs failed'
+            }
+
+        return {
+            'is_valid': True,
+            'reason': 'Sufficient data available'
+        }
+
     def _generate_markdown(self, company_data: Dict[str, Any], user_email: str = None) -> str:
         """
         Generate markdown content from company data following HP RAD Intelligence template.
 
         IMPORTANT: This maintains ALL content verbatim - DO NOT simplify.
         Prioritizes data/charts over AI images. HP branded.
+
+        If company data is insufficient (company doesn't exist or APIs failed),
+        displays "Data unavailable at the time" messaging throughout.
 
         Slide Structure:
         1. Title: Account Intelligence Report
@@ -399,6 +441,10 @@ Technology Stack: {', '.join(validated_data.get('technologies', validated_data.g
         """
         validated_data = company_data.get("validated_data", {})
         company_name = validated_data.get('company_name', 'Company')
+
+        # Validate if we have sufficient company data
+        validation_result = self._validate_company_data(company_data)
+        data_unavailable = not validation_result['is_valid']
 
         # Get current date for report
         from datetime import datetime
@@ -451,6 +497,13 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         markdown += f"# Account Intelligence Report: {company_name}\n\n"
         markdown += f"**Prepared for:** {preparer_email} by the HP RAD Intelligence Desk\n\n"
         markdown += f"**This information was pulled on:** {current_date}\n\n"
+
+        # Add warning banner if data is unavailable
+        if data_unavailable:
+            markdown += "\n⚠️ **DATA QUALITY WARNING** ⚠️\n\n"
+            markdown += f"**Reason:** {validation_result['reason']}\n\n"
+            markdown += "Most sections will show 'Data unavailable at the time.' Manual research is required.\n\n"
+
         markdown += "**Confidential - for internal HP use only**\n\n"
         markdown += "---\n\n"
 
@@ -463,11 +516,14 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
         # Company Overview - FULL TEXT, do not simplify
         markdown += "**Company Overview:**\n\n"
-        overview = validated_data.get('company_overview') or validated_data.get('description') or validated_data.get('summary', '')
-        if overview:
-            markdown += f"{overview}\n\n"
+        if data_unavailable:
+            markdown += f"**Data unavailable at the time.** Comprehensive company information for {company_name} could not be retrieved. This may indicate the company name is incorrect, the company is private/unlisted, or external data sources are temporarily unavailable.\n\n"
         else:
-            markdown += f"{company_name} is an organization operating in the {validated_data.get('industry', 'technology')} sector. Further details available through company research.\n\n"
+            overview = validated_data.get('company_overview') or validated_data.get('description') or validated_data.get('summary', '')
+            if overview:
+                markdown += f"{overview}\n\n"
+            else:
+                markdown += f"{company_name} is an organization operating in the {validated_data.get('industry', 'technology')} sector. Further details available through company research.\n\n"
 
         # Account Type
         account_type = validated_data.get('account_type', '')
@@ -505,19 +561,22 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
         # Installed Technologies - FULL LIST
         markdown += "**Installed Technologies:**\n\n"
-        tech_stack = validated_data.get('technology') or validated_data.get('tech_stack') or validated_data.get('technologies', [])
-        if isinstance(tech_stack, list) and tech_stack:
-            # Group by category if possible
-            tech_list = ', '.join(tech_stack)
-            markdown += f"{tech_list}\n\n"
-            # Add last seen date if available
-            tech_last_seen = validated_data.get('technology_last_seen', '')
-            if tech_last_seen:
-                markdown += f"*(Last seen: {tech_last_seen})*\n\n"
-        elif isinstance(tech_stack, str) and tech_stack:
-            markdown += f"{tech_stack}\n\n"
+        if data_unavailable:
+            markdown += "**Data unavailable at the time.** Technology stack information could not be retrieved.\n\n"
         else:
-            markdown += "CRM, Marketing Automation, Sales Tools, Infrastructure - detailed technology stack available through research channels\n\n"
+            tech_stack = validated_data.get('technology') or validated_data.get('tech_stack') or validated_data.get('technologies', [])
+            if isinstance(tech_stack, list) and tech_stack:
+                # Group by category if possible
+                tech_list = ', '.join(tech_stack)
+                markdown += f"{tech_list}\n\n"
+                # Add last seen date if available
+                tech_last_seen = validated_data.get('technology_last_seen', '')
+                if tech_last_seen:
+                    markdown += f"*(Last seen: {tech_last_seen})*\n\n"
+            elif isinstance(tech_stack, str) and tech_stack:
+                markdown += f"{tech_stack}\n\n"
+            else:
+                markdown += "CRM, Marketing Automation, Sales Tools, Infrastructure - detailed technology stack available through research channels\n\n"
 
         markdown += "---\n\n"
 
@@ -528,32 +587,36 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
         # Top 3 Intent Topics with scores and "What this means"
         markdown += "## Top 3 Intent Topics\n\n"
-        intent_topics = validated_data.get('intent_topics') or validated_data.get('buying_signals', {}).get('intent_topics', [])
 
-        # NOTE: Intent topics should be generated by the enrichment pipeline with scores and interpretations
-        # If missing, generate basic topics from company industry/tech stack
-        if not intent_topics:
-            intent_topics = [
-                {'topic': 'Cloud Infrastructure & Migration', 'score': 85},
-                {'topic': 'Cybersecurity & Compliance', 'score': 78},
-                {'topic': 'AI & Machine Learning Solutions', 'score': 72}
-            ]
+        if data_unavailable:
+            markdown += "**Data unavailable at the time.** Intent signal data could not be retrieved for this account.\n\n"
+        else:
+            intent_topics = validated_data.get('intent_topics') or validated_data.get('buying_signals', {}).get('intent_topics', [])
 
-        # Format for chart visualization
-        markdown += "| Intent Topic | Score |\n"
-        markdown += "|-------------|-------|\n"
-        for i, topic in enumerate(intent_topics[:3], 1):
-            if isinstance(topic, dict):
-                topic_name = topic.get('topic', topic.get('name', f'Topic {i}'))
-                topic_score = topic.get('score', topic.get('intent_score', 70 + i*5))
-            else:
-                topic_name = str(topic)
-                topic_score = 80 - i*5
-            markdown += f"| {topic_name} | {topic_score} |\n"
-        markdown += "\n"
+            # NOTE: Intent topics should be generated by the enrichment pipeline with scores and interpretations
+            # If missing, generate basic topics from company industry/tech stack
+            if not intent_topics:
+                intent_topics = [
+                    {'topic': 'Cloud Infrastructure & Migration', 'score': 85},
+                    {'topic': 'Cybersecurity & Compliance', 'score': 78},
+                    {'topic': 'AI & Machine Learning Solutions', 'score': 72}
+                ]
 
-        # Intent Score explanation
-        markdown += "*Intent scores based on digital behavior analysis and research activity. Higher scores indicate stronger buying intent.*\n\n"
+            # Format for chart visualization
+            markdown += "| Intent Topic | Score |\n"
+            markdown += "|-------------|-------|\n"
+            for i, topic in enumerate(intent_topics[:3], 1):
+                if isinstance(topic, dict):
+                    topic_name = topic.get('topic', topic.get('name', f'Topic {i}'))
+                    topic_score = topic.get('score', topic.get('intent_score', 70 + i*5))
+                else:
+                    topic_name = str(topic)
+                    topic_score = 80 - i*5
+                markdown += f"| {topic_name} | {topic_score} |\n"
+            markdown += "\n"
+
+            # Intent Score explanation
+            markdown += "*Intent scores based on digital behavior analysis and research activity. Higher scores indicate stronger buying intent.*\n\n"
 
         # Top Partner Mentions
         markdown += "## Top Partner Mentions\n\n"
@@ -647,10 +710,15 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
         # Pain Points
         markdown += "## Pain points\n\n"
-        pain_points = validated_data.get('pain_points') or validated_data.get('opportunity_themes', {}).get('pain_points', [])
+
+        if data_unavailable:
+            markdown += "**Data unavailable at the time.** Pain points and challenges could not be identified due to insufficient company data.\n\n"
+            pain_points = []  # Skip pain point generation
+        else:
+            pain_points = validated_data.get('pain_points') or validated_data.get('opportunity_themes', {}).get('pain_points', [])
 
         # NOTE: Pain points should be generated by LLM Council based on company data, news, and industry
-        if not pain_points:
+        if not pain_points and not data_unavailable:
             industry = validated_data.get('industry', 'technology')
             employee_count = validated_data.get('employee_count', 0)
 
@@ -690,10 +758,15 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
         # Sales opportunities
         markdown += "## Sales opportunities\n\n"
-        opportunities = validated_data.get('sales_opportunities') or validated_data.get('opportunities', [])
+
+        if data_unavailable:
+            markdown += "**Data unavailable at the time.** Sales opportunities could not be identified due to insufficient company data.\n\n"
+            opportunities = []  # Skip opportunity generation
+        else:
+            opportunities = validated_data.get('sales_opportunities') or validated_data.get('opportunities', [])
 
         # NOTE: Sales opportunities should be generated by LLM Council based on pain points, intent signals, and company profile
-        if not opportunities:
+        if not opportunities and not data_unavailable:
             industry = validated_data.get('industry', 'technology')
 
             opportunities = []
@@ -732,10 +805,15 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
         # Recommended solution areas
         markdown += "## Recommended solution areas\n\n"
-        solutions = validated_data.get('recommended_solutions') or validated_data.get('recommended_focus') or validated_data.get('opportunity_themes', {}).get('solutions', [])
+
+        if data_unavailable:
+            markdown += "**Data unavailable at the time.** Recommended solutions could not be identified due to insufficient company data.\n\n"
+            solutions = []  # Skip solution generation
+        else:
+            solutions = validated_data.get('recommended_solutions') or validated_data.get('recommended_focus') or validated_data.get('opportunity_themes', {}).get('solutions', [])
 
         # NOTE: Solution areas should be generated by LLM Council based on pain points and opportunities
-        if not solutions:
+        if not solutions and not data_unavailable:
             industry = validated_data.get('industry', 'technology')
 
             solutions = []
@@ -789,51 +867,68 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         # ============================================================
         # SLIDES 5+: Stakeholder Map: Role Profiles (ONE PER STAKEHOLDER)
         # ============================================================
-        # Get all stakeholders
-        stakeholders = validated_data.get('stakeholder_profiles') or validated_data.get('stakeholders', [])
-        hunter_contacts = validated_data.get('hunter_contacts', [])
 
-        # Combine and deduplicate stakeholders
-        all_stakeholders = []
+        if data_unavailable:
+            # Show data unavailable slide for stakeholders
+            markdown += "# Stakeholder Map: Role Profiles\n\n"
+            markdown += "## Data Unavailable\n\n"
+            markdown += f"**Data unavailable at the time.** Stakeholder and contact information for {company_name} could not be retrieved. This may indicate:\n\n"
+            markdown += "- The company name is incorrect or the company does not exist\n- The company is private or unlisted with limited public information\n- External data sources are temporarily unavailable\n- Contact data requires manual research or verification\n\n"
+            markdown += "Please verify the company name and try again, or conduct manual research through LinkedIn, company website, and other professional networks.\n\n"
+            markdown += "---\n\n"
+        else:
+            # Get all stakeholders
+            stakeholders = validated_data.get('stakeholder_profiles') or validated_data.get('stakeholders', [])
+            hunter_contacts = validated_data.get('hunter_contacts', [])
 
-        if isinstance(stakeholders, list):
-            all_stakeholders.extend(stakeholders)
-        elif isinstance(stakeholders, dict):
-            for role, profile in stakeholders.items():
-                if isinstance(profile, dict):
-                    profile['role_type'] = role
-                    all_stakeholders.append(profile)
+            # Combine and deduplicate stakeholders
+            all_stakeholders = []
 
-        # Add hunter contacts if not already present
-        if hunter_contacts:
-            existing_names = [s.get('name', '').lower() for s in all_stakeholders]
-            for contact in hunter_contacts:
-                name = f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
-                if name.lower() not in existing_names and name:
+            if isinstance(stakeholders, list):
+                all_stakeholders.extend(stakeholders)
+            elif isinstance(stakeholders, dict):
+                for role, profile in stakeholders.items():
+                    if isinstance(profile, dict):
+                        profile['role_type'] = role
+                        all_stakeholders.append(profile)
+
+            # Add hunter contacts if not already present
+            if hunter_contacts:
+                existing_names = [s.get('name', '').lower() for s in all_stakeholders]
+                for contact in hunter_contacts:
+                    name = f"{contact.get('first_name', '')} {contact.get('last_name', '')}".strip()
+                    if name.lower() not in existing_names and name:
+                        all_stakeholders.append({
+                            'name': name,
+                            'title': contact.get('position', ''),
+                            'email': contact.get('value', contact.get('email', '')),
+                            'phone': contact.get('phone_number', ''),
+                            'linkedin': contact.get('linkedin', ''),
+                            'department': contact.get('department', ''),
+                            'confidence': contact.get('confidence', 0)
+                        })
+
+            # If no stakeholders found, add CEO if available
+            if not all_stakeholders:
+                ceo = validated_data.get('ceo', '')
+                if ceo:
                     all_stakeholders.append({
-                        'name': name,
-                        'title': contact.get('position', ''),
-                        'email': contact.get('value', contact.get('email', '')),
-                        'phone': contact.get('phone_number', ''),
-                        'linkedin': contact.get('linkedin', ''),
-                        'department': contact.get('department', ''),
-                        'confidence': contact.get('confidence', 0)
+                        'name': ceo,
+                        'title': 'Chief Executive Officer',
+                        'role_type': 'CEO'
                     })
 
-        # If no stakeholders found, add CEO if available
-        if not all_stakeholders:
-            ceo = validated_data.get('ceo', '')
-            if ceo:
-                all_stakeholders.append({
-                    'name': ceo,
-                    'title': 'Chief Executive Officer',
-                    'role_type': 'CEO'
-                })
+            # If still no stakeholders, show minimal unavailable message
+            if not all_stakeholders:
+                markdown += "# Stakeholder Map: Role Profiles\n\n"
+                markdown += "## Data Unavailable\n\n"
+                markdown += f"**Stakeholder data unavailable at the time.** Contact information for {company_name} could not be retrieved. Manual research recommended.\n\n"
+                markdown += "---\n\n"
 
-        # Generate a slide for EACH stakeholder
-        for stakeholder in all_stakeholders:
-            name = stakeholder.get('name', 'Contact Name')
-            title = stakeholder.get('title', stakeholder.get('role_type', stakeholder.get('position', 'Executive')))
+            # Generate a slide for EACH stakeholder
+            for stakeholder in all_stakeholders:
+                name = stakeholder.get('name', 'Contact Name')
+                title = stakeholder.get('title', stakeholder.get('role_type', stakeholder.get('position', 'Executive')))
 
             # Determine persona type from title
             persona = "Executive"

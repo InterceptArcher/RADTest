@@ -21,6 +21,41 @@
 
 ---
 
+## 🚀 Latest Features (2026-02-11)
+
+### Complete Data Unavailability Handling
+The Gamma template now provides comprehensive "Data unavailable at the time" messaging when company data cannot be retrieved:
+
+**1. Company Validation Check**
+- Validates if company data is minimally viable before generating slides
+- Checks for company name AND at least one substantive data field
+- Identifies if company doesn't exist or APIs failed
+
+**2. Data Quality Warning Banner**
+- Title slide displays warning when data is insufficient
+- Shows reason: company doesn't exist, APIs failed, or insufficient data
+- Clear indication that manual research is required
+
+**3. Section-Level Fallback Messaging**
+All critical sections show explicit "Data unavailable at the time" when data is missing:
+- **Company Overview**: Indicates company may not exist or data unavailable
+- **Technology Stack**: Shows unavailable message instead of empty section
+- **Intent Topics**: Indicates intent signals could not be retrieved
+- **Pain Points**: Shows unavailable message when analysis impossible
+- **Sales Opportunities**: Indicates opportunities could not be identified
+- **Recommended Solutions**: Shows unavailable message when solutions cannot be recommended
+- **Stakeholder Profiles**: Dedicated slide explaining contact data unavailable with guidance for manual research
+
+**4. Test Coverage**
+- New test file: `test_gamma_data_unavailable.py`
+- Tests with non-existent company (no data)
+- Tests with minimal but viable data
+- Verifies all sections display appropriate messaging
+
+**Rationale**: When a company doesn't exist or API calls fail, the system should still generate a complete report but explicitly indicate which sections lack data. This prevents confusion, maintains professional appearance, and guides users toward next steps (verify company name, conduct manual research).
+
+---
+
 ## 🚀 Latest Features (2026-02-10)
 
 ### Real API Data Integration
