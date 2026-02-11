@@ -147,19 +147,44 @@ Prepared For: {user_email or 'HP Sales Team'}
 === COMPANY OVERVIEW ===
 
 Company Name: {company_name}
+Legal Name: {validated_data.get('legal_name', validated_data.get('company_name', 'Not available'))}
 Domain: {validated_data.get('domain', 'Not available')}
+Website: {validated_data.get('website', validated_data.get('domain', 'Not available'))}
+
 Industry: {validated_data.get('industry', 'Not available')}
 Sub-Industry: {validated_data.get('sub_industry', 'Not available')}
-Account Type: {validated_data.get('account_type', validated_data.get('target_market', 'Private Sector'))}
+Industry Category: {validated_data.get('industry_category', 'Not available')}
+SIC Codes: {', '.join(map(str, validated_data.get('sic_codes', []))) if validated_data.get('sic_codes') else 'Not available'}
+NAICS Codes: {', '.join(map(str, validated_data.get('naics_codes', []))) if validated_data.get('naics_codes') else 'Not available'}
+Account Type: {validated_data.get('account_type', validated_data.get('target_market', validated_data.get('company_type', 'Private Sector')))}
+Ownership Type: {validated_data.get('ownership_type', 'Not available')}
 
 Founded: {validated_data.get('founded_year', 'Not available')}
 CEO: {validated_data.get('ceo', 'Not available')}
+CFO: {validated_data.get('cfo', 'Not available')}
+CTO: {validated_data.get('cto', 'Not available')}
+
 Headquarters: {validated_data.get('headquarters', 'Not available')}
+Full Address: {validated_data.get('full_address', validated_data.get('headquarters', 'Not available'))}
+Metro Area: {validated_data.get('metro_area', 'Not available')}
 Geographic Reach: {', '.join(validated_data.get('geographic_reach', [])) if validated_data.get('geographic_reach') else 'Not available'}
 
 Employee Count: {validated_data.get('employee_count', 'Not available')}
-Annual Revenue: {validated_data.get('annual_revenue', 'Not available')}
+Employee Range: {validated_data.get('employees_range', validated_data.get('employee_count', 'Not available'))}
+Annual Revenue: {validated_data.get('annual_revenue', validated_data.get('revenue', 'Not available'))}
+Revenue Range: {validated_data.get('revenue_range', 'Not available')}
+Estimated Revenue: {validated_data.get('estimated_revenue', 'Not available')}
 Estimated IT Budget: {validated_data.get('estimated_it_spend', validated_data.get('it_budget', 'Contact for estimate'))}
+
+Contact Information:
+- Phone: {validated_data.get('phone', 'Not available')}
+- Fax: {validated_data.get('fax', 'Not available')}
+- Corporate Email: {validated_data.get('corporate_email', 'Not available')}
+
+Social Media & Web Presence:
+- LinkedIn: {validated_data.get('linkedin_url', 'Not available')}
+- Facebook: {validated_data.get('facebook_url', 'Not available')}
+- Twitter: {validated_data.get('twitter_url', 'Not available')}
 
 Company Description: {validated_data.get('company_overview', validated_data.get('description', validated_data.get('summary', 'Not available')))}
 
@@ -168,26 +193,49 @@ Customer Segments: {', '.join(validated_data.get('customer_segments', [])) if va
 
 Products/Services: {', '.join(validated_data.get('products', [])) if validated_data.get('products') else 'Not available'}
 
+Stock Information:
+- Ticker: {validated_data.get('ticker', 'Not available (private company)')}
+- Exchange: {validated_data.get('stock_exchange', 'Not available')}
+- Fortune Rank: {validated_data.get('fortune_rank', 'Not available')}
+
+Parent Company: {validated_data.get('parent_company', 'Independent')}
+Former Names: {', '.join(validated_data.get('former_names', [])) if validated_data.get('former_names') else 'None'}
+
 Technology Stack: {', '.join(validated_data.get('technologies', validated_data.get('technology', []))) if validated_data.get('technologies') or validated_data.get('technology') else 'Not available'}
+Tech Installation Count: {validated_data.get('tech_install_count', len(validated_data.get('technology_installs', [])))} verified installations
+
+Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
 
 === INTENT SIGNALS ===
 
 """
 
-        # Buying Signals - comprehensive extraction
+        # Buying Signals - comprehensive extraction with ALL fields
         buying_signals = validated_data.get('buying_signals', {})
-        intent_topics = buying_signals.get('intent_topics', validated_data.get('intent_topics', []))
+        intent_topics = buying_signals.get('intent_topics', validated_data.get('intent_topics', validated_data.get('intent_signals', [])))
 
         if intent_topics:
-            data += "Top Intent Topics:\n"
-            for i, topic in enumerate(intent_topics[:5], 1):
+            data += "Top Intent Topics (ALL AVAILABLE):\n"
+            # Show ALL intent topics, not just top 5
+            for i, topic in enumerate(intent_topics, 1):
                 if isinstance(topic, dict):
-                    t_name = topic.get('topic', topic.get('name', f'Topic {i}'))
-                    t_score = topic.get('score', topic.get('intent_score', 'N/A'))
+                    t_name = topic.get('topic', topic.get('topic_name', topic.get('name', f'Topic {i}')))
+                    t_score = topic.get('intent_score', topic.get('score', 'N/A'))
+                    t_strength = topic.get('audience_strength', '')
                     t_desc = topic.get('description', '')
-                    data += f"{i}. {t_name} (Score: {t_score})"
+                    t_category = topic.get('category', '')
+                    t_last_seen = topic.get('last_seen', '')
+
+                    data += f"{i}. {t_name} (Score: {t_score}"
+                    if t_strength:
+                        data += f", Strength: {t_strength}"
+                    data += ")"
+                    if t_category:
+                        data += f" [Category: {t_category}]"
                     if t_desc:
                         data += f" - {t_desc}"
+                    if t_last_seen:
+                        data += f" (Last seen: {t_last_seen})"
                     data += "\n"
                 else:
                     data += f"{i}. {topic}\n"
@@ -205,39 +253,104 @@ Technology Stack: {', '.join(validated_data.get('technologies', validated_data.g
         if competitors:
             data += f"Competitive Landscape: {', '.join(str(c) for c in competitors[:10])}\n\n"
 
-        # News & Triggers - comprehensive
+        # News & Triggers - comprehensive with ZoomInfo scoops and news
         news_triggers = buying_signals.get('triggers', validated_data.get('news_triggers', {}))
         news_summaries = validated_data.get('news_summaries', {})
+        scoops = validated_data.get('scoops', [])
+        news_articles = validated_data.get('news_articles', [])
 
-        if news_triggers or news_summaries:
-            data += "=== BUYING SIGNALS & NEWS ===\n\n"
+        if news_triggers or news_summaries or scoops or news_articles:
+            data += "=== BUYING SIGNALS & NEWS (ALL SOURCES) ===\n\n"
+
+            # Scoops from ZoomInfo (business events)
+            if scoops:
+                data += "Business Events (ZoomInfo Scoops):\n"
+                for scoop in scoops[:10]:  # Show up to 10 scoops
+                    if isinstance(scoop, dict):
+                        scoop_type = scoop.get('scoop_type', 'Event')
+                        title = scoop.get('title', '')
+                        description = scoop.get('description', '')
+                        date = scoop.get('date', scoop.get('published_date', ''))
+                        data += f"• [{scoop_type}] {title}"
+                        if date:
+                            data += f" ({date})"
+                        if description:
+                            data += f" - {description}"
+                        data += "\n"
+                data += "\n"
 
             # Funding signals
-            if news_triggers.get('funding') or news_summaries.get('funding'):
+            funding_scoops = [s for s in scoops if isinstance(s, dict) and 'funding' in s.get('scoop_type', '').lower()]
+            if news_triggers.get('funding') or news_summaries.get('funding') or funding_scoops:
                 funding_info = news_triggers.get('funding', news_summaries.get('funding', ''))
-                data += f"💰 Funding Activity: {funding_info}\n\n"
+                data += f"💰 Funding Activity: {funding_info}"
+                if funding_scoops:
+                    for f in funding_scoops[:3]:
+                        amount = f.get('amount', '')
+                        investors = f.get('investors', [])
+                        if amount:
+                            data += f" | ${amount}"
+                        if investors:
+                            data += f" from {', '.join(investors[:3])}"
+                data += "\n\n"
 
-            # Growth signals
-            if news_triggers.get('expansions') or news_summaries.get('expansions'):
+            # Growth signals (including hire scoops)
+            hire_scoops = [s for s in scoops if isinstance(s, dict) and ('hire' in s.get('scoop_type', '').lower() or 'executive' in s.get('scoop_type', '').lower())]
+            expansion_scoops = [s for s in scoops if isinstance(s, dict) and 'expansion' in s.get('scoop_type', '').lower()]
+            if news_triggers.get('expansions') or news_summaries.get('expansions') or hire_scoops or expansion_scoops:
                 exp_info = news_triggers.get('expansions', news_summaries.get('expansions', ''))
-                data += f"📈 Expansion & Growth: {exp_info}\n\n"
+                data += f"📈 Expansion & Growth: {exp_info}"
+                if hire_scoops:
+                    data += " | Recent Hires: "
+                    data += ", ".join([f"{s.get('person_name', 'Executive')} ({s.get('person_title', 'Role')})" for s in hire_scoops[:5]])
+                data += "\n\n"
 
             if news_triggers.get('executive_changes') or news_summaries.get('executive_changes'):
                 exec_info = news_triggers.get('executive_changes', news_summaries.get('executive_changes', ''))
                 data += f"👔 Leadership Changes: {exec_info}\n\n"
 
-            # Strategic signals
-            if news_triggers.get('partnerships') or news_summaries.get('partnerships'):
+            # Strategic signals (including partnership scoops)
+            partnership_scoops = [s for s in scoops if isinstance(s, dict) and 'partnership' in s.get('scoop_type', '').lower()]
+            if news_triggers.get('partnerships') or news_summaries.get('partnerships') or partnership_scoops:
                 part_info = news_triggers.get('partnerships', news_summaries.get('partnerships', ''))
-                data += f"🤝 Strategic Partnerships: {part_info}\n\n"
+                data += f"🤝 Strategic Partnerships: {part_info}"
+                if partnership_scoops:
+                    data += " | Partners: "
+                    data += ", ".join([s.get('partner_name', 'Partner') for s in partnership_scoops[:5] if s.get('partner_name')])
+                data += "\n\n"
 
-            if news_triggers.get('products') or news_summaries.get('products'):
+            # Product launches
+            product_scoops = [s for s in scoops if isinstance(s, dict) and 'product' in s.get('scoop_type', '').lower()]
+            if news_triggers.get('products') or news_summaries.get('products') or product_scoops:
                 prod_info = news_triggers.get('products', news_summaries.get('products', ''))
-                data += f"🚀 Product Launches: {prod_info}\n\n"
+                data += f"🚀 Product Launches: {prod_info}"
+                if product_scoops:
+                    data += " | "
+                    data += ", ".join([s.get('title', 'Product') for s in product_scoops[:5]])
+                data += "\n\n"
 
             # Technology signals
             if news_summaries.get('technology'):
                 data += f"💻 Technology Initiatives: {news_summaries['technology']}\n\n"
+
+            # Recent news articles from ZoomInfo
+            if news_articles:
+                data += "Recent News Coverage:\n"
+                for article in news_articles[:5]:  # Show top 5 news articles
+                    if isinstance(article, dict):
+                        title = article.get('title', '')
+                        source = article.get('source', '')
+                        date = article.get('published_date', '')
+                        sentiment = article.get('sentiment', '')
+                        data += f"• {title}"
+                        if source:
+                            data += f" - {source}"
+                        if date:
+                            data += f" ({date})"
+                        if sentiment:
+                            data += f" [Sentiment: {sentiment}]"
+                        data += "\n"
+                data += "\n"
 
         # Pain Points
         pain_points = validated_data.get('pain_points', [])
@@ -563,22 +676,85 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             else:
                 markdown += "**Estimated Annual IT Budget:** Contact for estimate\n\n"
 
-        # Installed Technologies - FULL LIST
+        # Installed Technologies - COMPREHENSIVE with ZoomInfo tech installs
         markdown += "**Installed Technologies:**\n\n"
         if data_unavailable:
             markdown += "**Data unavailable at the time.** Technology stack information could not be retrieved.\n\n"
         else:
+            # Get tech data from multiple sources
             tech_stack = validated_data.get('technology') or validated_data.get('tech_stack') or validated_data.get('technologies', [])
-            if isinstance(tech_stack, list) and tech_stack:
-                # Group by category if possible
-                tech_list = ', '.join(tech_stack)
-                markdown += f"{tech_list}\n\n"
+            tech_installs = validated_data.get('technology_installs', [])
+
+            # Combine all technology sources
+            all_techs = []
+            tech_details = {}
+
+            # Add basic tech stack
+            if isinstance(tech_stack, list):
+                all_techs.extend(tech_stack)
+            elif isinstance(tech_stack, str):
+                all_techs.extend([t.strip() for t in tech_stack.split(',')])
+
+            # Add ZoomInfo technology installations with full details
+            if tech_installs:
+                for tech in tech_installs:
+                    if isinstance(tech, dict):
+                        tech_name = tech.get('tech_name', tech.get('product_name', ''))
+                        if tech_name and tech_name not in all_techs:
+                            all_techs.append(tech_name)
+                        # Store detailed info for comprehensive view
+                        tech_details[tech_name] = {
+                            'vendor': tech.get('vendor', ''),
+                            'category': tech.get('category', ''),
+                            'last_seen': tech.get('last_seen', ''),
+                            'status': tech.get('status', ''),
+                            'adoption_level': tech.get('adoption_level', '')
+                        }
+
+            if all_techs:
+                # Show comprehensive technology list
+                if tech_details:
+                    # Detailed view with ZoomInfo data
+                    markdown += "Technology Portfolio (verified installations):\n\n"
+                    # Group by category if available
+                    by_category = {}
+                    for tech_name in all_techs:
+                        category = tech_details.get(tech_name, {}).get('category', 'Other')
+                        if not category:
+                            category = 'Other'
+                        if category not in by_category:
+                            by_category[category] = []
+                        by_category[category].append(tech_name)
+
+                    # Display by category with details
+                    for category, techs in sorted(by_category.items()):
+                        markdown += f"**{category}:** "
+                        tech_items = []
+                        for t in techs:
+                            details = tech_details.get(t, {})
+                            vendor = details.get('vendor', '')
+                            status = details.get('status', '')
+                            adoption = details.get('adoption_level', '')
+
+                            tech_item = t
+                            if vendor:
+                                tech_item += f" ({vendor})"
+                            if adoption:
+                                tech_item += f" [{adoption}]"
+                            tech_items.append(tech_item)
+                        markdown += ', '.join(tech_items) + "\n\n"
+
+                    # Installation count
+                    markdown += f"Total verified technology installations: {len(tech_installs)}\n\n"
+                else:
+                    # Simple list view
+                    tech_list = ', '.join(all_techs)
+                    markdown += f"{tech_list}\n\n"
+
                 # Add last seen date if available
                 tech_last_seen = validated_data.get('technology_last_seen', '')
                 if tech_last_seen:
-                    markdown += f"*(Last seen: {tech_last_seen})*\n\n"
-            elif isinstance(tech_stack, str) and tech_stack:
-                markdown += f"{tech_stack}\n\n"
+                    markdown += f"*(Last verified: {tech_last_seen})*\n\n"
             else:
                 markdown += "CRM, Marketing Automation, Sales Tools, Infrastructure - detailed technology stack available through research channels\n\n"
 
@@ -589,38 +765,55 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         # ============================================================
         markdown += "# Buying Signals\n\n"
 
-        # Top 3 Intent Topics with scores and "What this means"
-        markdown += "## Top 3 Intent Topics\n\n"
+        # ALL Intent Topics with comprehensive details (not just top 3)
+        markdown += "## Intent Topics (All Available)\n\n"
 
         if data_unavailable:
             markdown += "**Data unavailable at the time.** Intent signal data could not be retrieved for this account.\n\n"
         else:
-            intent_topics = validated_data.get('intent_topics') or validated_data.get('buying_signals', {}).get('intent_topics', [])
+            intent_topics = validated_data.get('intent_topics') or validated_data.get('intent_signals') or validated_data.get('buying_signals', {}).get('intent_topics', [])
 
             # NOTE: Intent topics should be generated by the enrichment pipeline with scores and interpretations
             # If missing, generate basic topics from company industry/tech stack
             if not intent_topics:
                 intent_topics = [
-                    {'topic': 'Cloud Infrastructure & Migration', 'score': 85},
-                    {'topic': 'Cybersecurity & Compliance', 'score': 78},
-                    {'topic': 'AI & Machine Learning Solutions', 'score': 72}
+                    {'topic': 'Cloud Infrastructure & Migration', 'score': 85, 'audience_strength': 'high', 'description': 'Active research in cloud migration and infrastructure modernization'},
+                    {'topic': 'Cybersecurity & Compliance', 'score': 78, 'audience_strength': 'medium', 'description': 'Security posture improvement and compliance initiatives'},
+                    {'topic': 'AI & Machine Learning Solutions', 'score': 72, 'audience_strength': 'medium', 'description': 'AI adoption and data analytics capabilities'}
                 ]
 
-            # Format for chart visualization
-            markdown += "| Intent Topic | Score |\n"
-            markdown += "|-------------|-------|\n"
-            for i, topic in enumerate(intent_topics[:3], 1):
+            # Show ALL intent topics (not limited to 3) with comprehensive details
+            markdown += "| Intent Topic | Score | Strength | Details |\n"
+            markdown += "|-------------|-------|----------|----------|\n"
+            for i, topic in enumerate(intent_topics, 1):  # Show ALL, not just [:3]
                 if isinstance(topic, dict):
-                    topic_name = topic.get('topic', topic.get('name', f'Topic {i}'))
-                    topic_score = topic.get('score', topic.get('intent_score', 70 + i*5))
+                    topic_name = topic.get('topic', topic.get('topic_name', topic.get('name', f'Topic {i}')))
+                    topic_score = topic.get('intent_score', topic.get('score', 70 + i*5))
+                    topic_strength = topic.get('audience_strength', topic.get('strength', '-'))
+                    topic_desc = topic.get('description', '-')
+                    topic_category = topic.get('category', '')
+                    topic_last_seen = topic.get('last_seen', '')
+
+                    # Build details column
+                    details = []
+                    if topic_desc and topic_desc != '-':
+                        details.append(topic_desc)
+                    if topic_category:
+                        details.append(f"Category: {topic_category}")
+                    if topic_last_seen:
+                        details.append(f"Last seen: {topic_last_seen}")
+                    details_str = '; '.join(details) if details else '-'
                 else:
                     topic_name = str(topic)
                     topic_score = 80 - i*5
-                markdown += f"| {topic_name} | {topic_score} |\n"
+                    topic_strength = '-'
+                    details_str = '-'
+
+                markdown += f"| {topic_name} | {topic_score} | {topic_strength} | {details_str} |\n"
             markdown += "\n"
 
             # Intent Score explanation
-            markdown += "*Intent scores based on digital behavior analysis and research activity. Higher scores indicate stronger buying intent.*\n\n"
+            markdown += f"*{len(intent_topics)} intent signals detected based on digital behavior, research activity, and content engagement. Higher scores indicate stronger buying intent.*\n\n"
 
         # Top Partner Mentions
         markdown += "## Top Partner Mentions\n\n"

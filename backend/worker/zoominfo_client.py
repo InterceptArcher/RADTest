@@ -253,10 +253,10 @@ class ZoomInfoClient:
 
     async def enrich_intent(self, domain: str) -> Dict[str, Any]:
         """
-        Get buyer intent signals for a company.
+        Get buyer intent signals for a company with full field extraction.
 
         Returns:
-            Dict with success, intent_signals (list), error
+            Dict with success, intent_signals (normalized list), raw_data, error
         """
         payload: Dict[str, Any] = {
             "data": {
@@ -271,25 +271,32 @@ class ZoomInfoClient:
             response = await self._make_request(
                 ENDPOINTS["intent_enrich"], payload
             )
-            signals = response.get("data", [])
-            return {"success": True, "intent_signals": signals, "error": None}
+            raw_signals = response.get("data", [])
+            # Normalize each intent signal to extract all fields
+            normalized_signals = [self._normalize_intent_signal(sig) for sig in raw_signals]
+            return {
+                "success": True,
+                "intent_signals": normalized_signals,
+                "raw_data": raw_signals,
+                "error": None
+            }
 
         except httpx.TimeoutException:
-            return {"success": False, "intent_signals": [], "error": "Request timeout"}
+            return {"success": False, "intent_signals": [], "raw_data": [], "error": "Request timeout"}
         except httpx.HTTPStatusError as e:
-            return {"success": False, "intent_signals": [], "error": f"HTTP {e.response.status_code}"}
+            return {"success": False, "intent_signals": [], "raw_data": [], "error": f"HTTP {e.response.status_code}"}
         except Exception as e:
             logger.error(f"ZoomInfo intent enrich failed: {e}")
-            return {"success": False, "intent_signals": [], "error": str(e)}
+            return {"success": False, "intent_signals": [], "raw_data": [], "error": str(e)}
 
     async def search_scoops(
         self, domain: str, scoop_types: Optional[List[str]] = None
     ) -> Dict[str, Any]:
         """
-        Search for business scoops/events at a company.
+        Search for business scoops/events at a company with full field extraction.
 
         Returns:
-            Dict with success, scoops (list), error
+            Dict with success, scoops (normalized list), raw_data, error
         """
         payload: Dict[str, Any] = {
             "data": {
@@ -306,23 +313,30 @@ class ZoomInfoClient:
             response = await self._make_request(
                 ENDPOINTS["scoops_search"], payload
             )
-            scoops = response.get("data", [])
-            return {"success": True, "scoops": scoops, "error": None}
+            raw_scoops = response.get("data", [])
+            # Normalize each scoop to extract all fields
+            normalized_scoops = [self._normalize_scoop(scoop) for scoop in raw_scoops]
+            return {
+                "success": True,
+                "scoops": normalized_scoops,
+                "raw_data": raw_scoops,
+                "error": None
+            }
 
         except httpx.TimeoutException:
-            return {"success": False, "scoops": [], "error": "Request timeout"}
+            return {"success": False, "scoops": [], "raw_data": [], "error": "Request timeout"}
         except httpx.HTTPStatusError as e:
-            return {"success": False, "scoops": [], "error": f"HTTP {e.response.status_code}"}
+            return {"success": False, "scoops": [], "raw_data": [], "error": f"HTTP {e.response.status_code}"}
         except Exception as e:
             logger.error(f"ZoomInfo scoops search failed: {e}")
-            return {"success": False, "scoops": [], "error": str(e)}
+            return {"success": False, "scoops": [], "raw_data": [], "error": str(e)}
 
     async def search_news(self, company_name: str) -> Dict[str, Any]:
         """
-        Search for company news articles.
+        Search for company news articles with full field extraction.
 
         Returns:
-            Dict with success, articles (list), error
+            Dict with success, articles (normalized list), raw_data, error
         """
         payload: Dict[str, Any] = {
             "data": {
@@ -337,23 +351,30 @@ class ZoomInfoClient:
             response = await self._make_request(
                 ENDPOINTS["news_search"], payload
             )
-            articles = response.get("data", [])
-            return {"success": True, "articles": articles, "error": None}
+            raw_articles = response.get("data", [])
+            # Normalize each article to extract all fields
+            normalized_articles = [self._normalize_news_article(article) for article in raw_articles]
+            return {
+                "success": True,
+                "articles": normalized_articles,
+                "raw_data": raw_articles,
+                "error": None
+            }
 
         except httpx.TimeoutException:
-            return {"success": False, "articles": [], "error": "Request timeout"}
+            return {"success": False, "articles": [], "raw_data": [], "error": "Request timeout"}
         except httpx.HTTPStatusError as e:
-            return {"success": False, "articles": [], "error": f"HTTP {e.response.status_code}"}
+            return {"success": False, "articles": [], "raw_data": [], "error": f"HTTP {e.response.status_code}"}
         except Exception as e:
             logger.error(f"ZoomInfo news search failed: {e}")
-            return {"success": False, "articles": [], "error": str(e)}
+            return {"success": False, "articles": [], "raw_data": [], "error": str(e)}
 
     async def enrich_technologies(self, domain: str) -> Dict[str, Any]:
         """
-        Get installed technologies for a company.
+        Get installed technologies for a company with full field extraction.
 
         Returns:
-            Dict with success, technologies (list), error
+            Dict with success, technologies (normalized list), raw_data, error
         """
         payload: Dict[str, Any] = {
             "data": {
@@ -368,45 +389,307 @@ class ZoomInfoClient:
             response = await self._make_request(
                 ENDPOINTS["tech_enrich"], payload
             )
-            technologies = response.get("data", [])
-            return {"success": True, "technologies": technologies, "error": None}
+            raw_technologies = response.get("data", [])
+            # Normalize each technology to extract all fields
+            normalized_technologies = [self._normalize_technology(tech) for tech in raw_technologies]
+            return {
+                "success": True,
+                "technologies": normalized_technologies,
+                "raw_data": raw_technologies,
+                "error": None
+            }
 
         except httpx.TimeoutException:
-            return {"success": False, "technologies": [], "error": "Request timeout"}
+            return {"success": False, "technologies": [], "raw_data": [], "error": "Request timeout"}
         except httpx.HTTPStatusError as e:
-            return {"success": False, "technologies": [], "error": f"HTTP {e.response.status_code}"}
+            return {"success": False, "technologies": [], "raw_data": [], "error": f"HTTP {e.response.status_code}"}
         except Exception as e:
             logger.error(f"ZoomInfo tech enrich failed: {e}")
-            return {"success": False, "technologies": [], "error": str(e)}
+            return {"success": False, "technologies": [], "raw_data": [], "error": str(e)}
+
+    @staticmethod
+    def _normalize_scoop(raw: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize ZoomInfo scoop/business event to extract ALL fields.
+
+        Scoops include: funding, acquisitions, new hires, expansions, partnerships,
+        product launches, awards, and other significant business events.
+        """
+        return {
+            # Identification
+            "scoop_id": raw.get("scoopId", raw.get("id", "")),
+            "scoop_type": raw.get("scoopType", raw.get("type", "")),
+            "title": raw.get("title", raw.get("headline", "")),
+
+            # Content
+            "description": raw.get("description", raw.get("summary", "")),
+            "full_text": raw.get("fullText", raw.get("body", "")),
+            "snippet": raw.get("snippet", ""),
+
+            # Temporal
+            "date": raw.get("date", raw.get("publishedDate", "")),
+            "published_date": raw.get("publishedDate", raw.get("date", "")),
+            "discovered_date": raw.get("discoveredDate", ""),
+            "last_updated": raw.get("lastUpdated", ""),
+
+            # Source
+            "source": raw.get("source", ""),
+            "source_url": raw.get("sourceUrl", raw.get("url", "")),
+            "author": raw.get("author", ""),
+
+            # Classification
+            "category": raw.get("category", ""),
+            "tags": raw.get("tags", []),
+            "keywords": raw.get("keywords", []),
+
+            # Impact & relevance
+            "relevance_score": raw.get("relevanceScore", 0),
+            "importance": raw.get("importance", ""),
+            "sentiment": raw.get("sentiment", ""),
+
+            # Additional details (type-specific)
+            "amount": raw.get("amount", ""),  # for funding
+            "investors": raw.get("investors", []),  # for funding
+            "person_name": raw.get("personName", ""),  # for new hires
+            "person_title": raw.get("personTitle", ""),  # for new hires
+            "location": raw.get("location", ""),  # for expansions
+            "partner_name": raw.get("partnerName", ""),  # for partnerships
+        }
+
+    @staticmethod
+    def _normalize_news_article(raw: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize ZoomInfo news article to extract ALL fields.
+        """
+        return {
+            # Identification
+            "article_id": raw.get("articleId", raw.get("id", "")),
+            "title": raw.get("title", raw.get("headline", "")),
+
+            # Content
+            "description": raw.get("description", raw.get("summary", "")),
+            "full_text": raw.get("fullText", raw.get("body", raw.get("content", ""))),
+            "snippet": raw.get("snippet", ""),
+            "excerpt": raw.get("excerpt", ""),
+
+            # Source
+            "source": raw.get("source", raw.get("publisher", "")),
+            "url": raw.get("url", raw.get("sourceUrl", "")),
+            "author": raw.get("author", ""),
+            "source_domain": raw.get("sourceDomain", ""),
+
+            # Temporal
+            "published_date": raw.get("publishedDate", raw.get("date", "")),
+            "discovered_date": raw.get("discoveredDate", ""),
+            "last_updated": raw.get("lastUpdated", ""),
+
+            # Classification
+            "category": raw.get("category", ""),
+            "subcategory": raw.get("subcategory", ""),
+            "tags": raw.get("tags", []),
+            "keywords": raw.get("keywords", []),
+            "topics": raw.get("topics", []),
+
+            # Engagement & impact
+            "relevance_score": raw.get("relevanceScore", 0),
+            "sentiment": raw.get("sentiment", ""),
+            "sentiment_score": raw.get("sentimentScore", 0),
+            "language": raw.get("language", "en"),
+
+            # Media
+            "image_url": raw.get("imageUrl", raw.get("thumbnailUrl", "")),
+            "video_url": raw.get("videoUrl", ""),
+        }
+
+    @staticmethod
+    def _normalize_technology(raw: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize ZoomInfo technology installation data to extract ALL fields.
+        """
+        return {
+            # Technology identification
+            "tech_id": raw.get("technologyId", raw.get("id", "")),
+            "tech_name": raw.get("technologyName", raw.get("name", raw.get("technology", ""))),
+            "product_name": raw.get("productName", ""),
+            "vendor": raw.get("vendor", raw.get("vendorName", "")),
+
+            # Classification
+            "category": raw.get("category", ""),
+            "subcategory": raw.get("subcategory", ""),
+            "tech_type": raw.get("technologyType", raw.get("type", "")),
+            "tags": raw.get("tags", []),
+
+            # Installation details
+            "install_date": raw.get("installDate", raw.get("installedDate", "")),
+            "first_seen": raw.get("firstSeen", ""),
+            "last_seen": raw.get("lastSeen", ""),
+            "status": raw.get("status", "active"),  # active, inactive, unknown
+
+            # Usage & adoption
+            "adoption_level": raw.get("adoptionLevel", ""),  # enterprise-wide, departmental, etc.
+            "usage_frequency": raw.get("usageFrequency", ""),
+            "user_count": raw.get("userCount", 0),
+            "license_count": raw.get("licenseCount", 0),
+
+            # Technical details
+            "version": raw.get("version", ""),
+            "deployment_type": raw.get("deploymentType", ""),  # cloud, on-premise, hybrid
+            "integration_points": raw.get("integrationPoints", []),
+
+            # Confidence & quality
+            "confidence_score": raw.get("confidenceScore", 0),
+            "data_source": raw.get("dataSource", ""),
+            "last_verified": raw.get("lastVerified", ""),
+        }
+
+    @staticmethod
+    def _normalize_intent_signal(raw: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Normalize ZoomInfo intent signal to extract ALL fields.
+
+        ZoomInfo intent signals contain:
+        - Topic identification: topicId, topicName, topic
+        - Scoring: intentScore, score, audienceStrength
+        - Context: description, category, subcategory
+        - Temporal: lastSeen, firstSeen, timestamp
+        - Engagement: activityLevel, engagementScore
+        """
+        return {
+            # Topic identification
+            "topic_id": raw.get("topicId", raw.get("id", "")),
+            "topic": raw.get("topicName", raw.get("topic", raw.get("name", ""))),
+            "topic_name": raw.get("topicName", raw.get("topic", "")),
+
+            # Scoring metrics
+            "intent_score": raw.get("intentScore", raw.get("score", 0)),
+            "score": raw.get("intentScore", raw.get("score", 0)),
+            "audience_strength": raw.get("audienceStrength", raw.get("strength", "")),
+            "engagement_score": raw.get("engagementScore", 0),
+            "activity_level": raw.get("activityLevel", ""),
+
+            # Context and classification
+            "description": raw.get("description", ""),
+            "category": raw.get("category", ""),
+            "subcategory": raw.get("subcategory", ""),
+            "keywords": raw.get("keywords", []),
+            "topic_type": raw.get("topicType", raw.get("type", "")),
+
+            # Temporal information
+            "last_seen": raw.get("lastSeen", raw.get("lastSeenDate", "")),
+            "first_seen": raw.get("firstSeen", raw.get("firstSeenDate", "")),
+            "timestamp": raw.get("timestamp", ""),
+            "duration_days": raw.get("durationDays", 0),
+
+            # Additional metrics
+            "research_count": raw.get("researchCount", 0),
+            "page_views": raw.get("pageViews", 0),
+            "unique_visitors": raw.get("uniqueVisitors", 0),
+            "trend": raw.get("trend", ""),  # increasing, stable, decreasing
+
+            # Confidence and quality
+            "confidence": raw.get("confidence", raw.get("confidenceScore", 0)),
+            "data_quality": raw.get("dataQuality", ""),
+        }
 
     @staticmethod
     def _normalize_company_data(raw: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Normalize ZoomInfo fields to the common schema used by Apollo/PDL.
+        Normalize ZoomInfo fields to extract ALL available company data.
 
-        Mapping:
-          companyName    -> company_name
-          employeeCount  -> employee_count
-          revenue        -> revenue
-          industry       -> industry
-          city+state     -> headquarters
-          yearFounded    -> founded_year
-          ceoName        -> ceo
+        Extracts comprehensive firmographic data including:
+        - Basic info: name, domain, description
+        - Financial: revenue, revenue range, employee count
+        - Contact: phone, fax, emails
+        - Social: LinkedIn, Facebook, Twitter
+        - Classification: industry, sub-industry, SIC, NAICS codes
+        - Location: address, city, state, zip, country
+        - Leadership: CEO, executives
+        - Other: founded year, ticker symbol, company type
         """
+        # Location data
         city = raw.get("city", "")
         state = raw.get("state", "")
-        headquarters = ", ".join(filter(None, [city, state]))
+        country = raw.get("country", "")
+        headquarters = ", ".join(filter(None, [city, state, country]))
+
+        # Full address if available
+        street = raw.get("street", raw.get("address", ""))
+        zip_code = raw.get("zipCode", raw.get("zip", ""))
+        full_address = ", ".join(filter(None, [street, city, state, zip_code, country]))
 
         return {
+            # Basic identification
             "company_name": raw.get("companyName", ""),
-            "employee_count": raw.get("employeeCount"),
-            "revenue": raw.get("revenue"),
-            "industry": raw.get("industry", ""),
+            "domain": raw.get("domain", raw.get("website", "")),
+            "company_type": raw.get("companyType", raw.get("type", "")),
+            "description": raw.get("description", raw.get("companyDescription", "")),
+
+            # Financial data
+            "employee_count": raw.get("employeeCount", raw.get("employees", "")),
+            "employees_range": raw.get("employeesRange", raw.get("employeeRange", "")),
+            "revenue": raw.get("revenue", raw.get("revenueUSD", "")),
+            "revenue_range": raw.get("revenueRange", ""),
+            "estimated_revenue": raw.get("estimatedRevenue", ""),
+
+            # Industry classification
+            "industry": raw.get("industry", raw.get("primaryIndustry", "")),
+            "sub_industry": raw.get("subIndustry", raw.get("secondaryIndustry", "")),
+            "industry_category": raw.get("industryCategory", ""),
+            "sic_codes": raw.get("sicCodes", raw.get("sic", [])),
+            "naics_codes": raw.get("naicsCodes", raw.get("naics", [])),
+
+            # Location
             "headquarters": headquarters,
-            "founded_year": raw.get("yearFounded"),
-            "ceo": raw.get("ceoName", ""),
-            "domain": raw.get("domain", ""),
-            "country": raw.get("country", ""),
+            "full_address": full_address,
+            "street": street,
+            "city": city,
+            "state": state,
+            "zip_code": zip_code,
+            "country": country,
+            "metro_area": raw.get("metroArea", ""),
+
+            # Contact information
+            "phone": raw.get("phone", raw.get("phoneNumber", "")),
+            "fax": raw.get("fax", raw.get("faxNumber", "")),
+            "corporate_email": raw.get("email", raw.get("corporateEmail", "")),
+
+            # Social media & web presence
+            "linkedin_url": raw.get("linkedInUrl", raw.get("linkedinUrl", raw.get("linkedin", ""))),
+            "facebook_url": raw.get("facebookUrl", raw.get("facebook", "")),
+            "twitter_url": raw.get("twitterUrl", raw.get("twitter", "")),
+            "website": raw.get("website", raw.get("websiteUrl", "")),
+
+            # Leadership
+            "ceo": raw.get("ceoName", raw.get("ceo", "")),
+            "cfo": raw.get("cfoName", raw.get("cfo", "")),
+            "cto": raw.get("ctoName", raw.get("cto", "")),
+            "executives": raw.get("executives", []),
+
+            # Organizational details
+            "founded_year": raw.get("yearFounded", raw.get("foundedYear", "")),
+            "ticker": raw.get("ticker", raw.get("tickerSymbol", "")),
+            "stock_exchange": raw.get("stockExchange", ""),
+            "parent_company": raw.get("parentCompany", ""),
+            "ownership_type": raw.get("ownershipType", raw.get("ownership", "")),
+
+            # Additional firmographic data
+            "company_size": raw.get("companySize", ""),
+            "fiscal_year_end": raw.get("fiscalYearEnd", ""),
+            "legal_name": raw.get("legalName", ""),
+            "dba_name": raw.get("dbaName", raw.get("doingBusinessAs", "")),
+            "former_names": raw.get("formerNames", []),
+
+            # Technology & operations
+            "technologies": raw.get("technologies", []),
+            "tech_install_count": raw.get("techInstallCount", 0),
+            "alexa_rank": raw.get("alexaRank", ""),
+            "fortune_rank": raw.get("fortuneRank", ""),
+
+            # Additional metadata
+            "company_id": raw.get("companyId", raw.get("id", "")),
+            "logo_url": raw.get("logoUrl", raw.get("logo", "")),
+            "last_updated": raw.get("lastUpdated", ""),
+            "data_quality_score": raw.get("dataQualityScore", raw.get("confidenceScore", "")),
         }
 
     @staticmethod

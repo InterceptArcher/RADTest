@@ -592,14 +592,21 @@ class IntelligenceGatherer:
         domain: str
     ) -> IntelligenceResult:
         """
-        Fetch company data from ZoomInfo with circuit breaker.
+        Fetch comprehensive company data from ZoomInfo including:
+        - Company firmographic data
+        - Intent signals (buyer intent topics)
+        - Business scoops (funding, hires, expansions)
+        - News articles
+        - Technology installations
+
+        All ZoomInfo endpoints are called in parallel for maximum data density.
 
         Args:
             company_name: Name of the company
             domain: Company domain
 
         Returns:
-            IntelligenceResult with ZoomInfo company data
+            IntelligenceResult with comprehensive ZoomInfo data
         """
         source = DataSource.ZOOMINFO
         circuit_breaker = self.circuit_breakers[source]
@@ -612,26 +619,113 @@ class IntelligenceGatherer:
             )
 
         try:
-            result = await self.zoominfo_client.enrich_company(
+            # Call ALL ZoomInfo endpoints in parallel for comprehensive data
+            logger.info(f"Fetching comprehensive ZoomInfo data for {company_name} from 5 endpoints")
+
+            company_task = self.zoominfo_client.enrich_company(
                 domain=domain, company_name=company_name
             )
-            if result.get("success"):
+            intent_task = self.zoominfo_client.enrich_intent(domain=domain)
+            scoops_task = self.zoominfo_client.search_scoops(domain=domain)
+            news_task = self.zoominfo_client.search_news(company_name=company_name)
+            tech_task = self.zoominfo_client.enrich_technologies(domain=domain)
+
+            # Execute all in parallel
+            company_result, intent_result, scoops_result, news_result, tech_result = await asyncio.gather(
+                company_task, intent_task, scoops_task, news_task, tech_task,
+                return_exceptions=True
+            )
+
+            # Check if any result is an exception
+            for result, name in [
+                (company_result, "company"),
+                (intent_result, "intent"),
+                (scoops_result, "scoops"),
+                (news_result, "news"),
+                (tech_result, "technologies")
+            ]:
+                if isinstance(result, Exception):
+                    logger.warning(f"ZoomInfo {name} enrichment failed: {result}")
+
+            # Combine all successful results
+            combined_data = {}
+
+            # Company data (base)
+            if isinstance(company_result, dict) and company_result.get("success"):
+                combined_data.update(company_result.get("normalized", {}))
+                combined_data["_raw_company"] = company_result.get("data", {})
+                logger.info(f"✓ ZoomInfo company data: {len(combined_data)} fields")
+            else:
+                logger.warning("ZoomInfo company enrichment failed or returned no data")
+
+            # Intent signals
+            if isinstance(intent_result, dict) and intent_result.get("success"):
+                intent_signals = intent_result.get("intent_signals", [])
+                combined_data["intent_signals"] = intent_signals
+                combined_data["_raw_intent"] = intent_result.get("raw_data", [])
+                logger.info(f"✓ ZoomInfo intent signals: {len(intent_signals)} signals")
+            else:
+                combined_data["intent_signals"] = []
+                logger.info("✗ ZoomInfo intent signals: no data")
+
+            # Business scoops
+            if isinstance(scoops_result, dict) and scoops_result.get("success"):
+                scoops = scoops_result.get("scoops", [])
+                combined_data["scoops"] = scoops
+                combined_data["_raw_scoops"] = scoops_result.get("raw_data", [])
+                logger.info(f"✓ ZoomInfo scoops: {len(scoops)} events")
+            else:
+                combined_data["scoops"] = []
+                logger.info("✗ ZoomInfo scoops: no data")
+
+            # News articles
+            if isinstance(news_result, dict) and news_result.get("success"):
+                articles = news_result.get("articles", [])
+                combined_data["news_articles"] = articles
+                combined_data["_raw_news"] = news_result.get("raw_data", [])
+                logger.info(f"✓ ZoomInfo news: {len(articles)} articles")
+            else:
+                combined_data["news_articles"] = []
+                logger.info("✗ ZoomInfo news: no data")
+
+            # Technology installations
+            if isinstance(tech_result, dict) and tech_result.get("success"):
+                technologies = tech_result.get("technologies", [])
+                combined_data["technology_installs"] = technologies
+                combined_data["_raw_tech"] = tech_result.get("raw_data", [])
+                logger.info(f"✓ ZoomInfo technologies: {len(technologies)} installs")
+            else:
+                combined_data["technology_installs"] = []
+                logger.info("✗ ZoomInfo technologies: no data")
+
+            # Log summary
+            total_data_points = (
+                len(combined_data.get("intent_signals", [])) +
+                len(combined_data.get("scoops", [])) +
+                len(combined_data.get("news_articles", [])) +
+                len(combined_data.get("technology_installs", []))
+            )
+
+            if combined_data:
                 circuit_breaker.record_success()
-                logger.info(f"Successfully fetched ZoomInfo data for {company_name}")
+                logger.info(
+                    f"Successfully fetched comprehensive ZoomInfo data for {company_name}: "
+                    f"{len(combined_data)} total fields, {total_data_points} enrichment data points"
+                )
                 return IntelligenceResult(
                     source=source, success=True,
-                    data=result.get("normalized", result.get("data", {})),
+                    data=combined_data,
                     error=None, attempt_count=1
                 )
             else:
                 circuit_breaker.record_failure()
                 return IntelligenceResult(
                     source=source, success=False, data=None,
-                    error=result.get("error", "Unknown error"), attempt_count=1
+                    error="All ZoomInfo endpoints returned no data", attempt_count=1
                 )
 
         except Exception as e:
-            logger.error(f"Unexpected error with ZoomInfo: {e}")
+            logger.error(f"Unexpected error with ZoomInfo comprehensive fetch: {e}")
             circuit_breaker.record_failure()
             return IntelligenceResult(
                 source=source, success=False, data=None,
