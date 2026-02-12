@@ -215,45 +215,87 @@ class ZoomInfoClient:
     ) -> Dict[str, Any]:
         """
         Search for executive and key contacts at a company.
+        Uses multiple search strategies for maximum coverage:
+        1. Management level search (C-Level, VP, Director, Manager)
+        2. Broad job title keyword search as fallback
 
         Returns:
             Dict with success, people (normalized list), error
         """
-        if job_titles is None:
-            job_titles = [
-                "CEO", "CTO", "CFO", "CIO", "CISO", "COO", "CPO", "CMO",
-                "President", "VP", "Vice President", "SVP", "EVP",
-                "Director", "Head of", "Manager"
-            ]
+        all_people = []
+        seen_ids = set()
 
-        payload: Dict[str, Any] = {
-            "data": {
-                "type": "ContactSearch",
-                "attributes": {
-                    "companyDomain": domain,
-                    "jobTitle": job_titles,
-                    "pageSize": max_results
+        # Strategy 1: Search by management level — most reliable for finding decision makers
+        management_levels = [
+            "C-Level", "VP-Level", "Director", "Manager"
+        ]
+        for level in management_levels:
+            try:
+                payload: Dict[str, Any] = {
+                    "data": {
+                        "type": "ContactSearch",
+                        "attributes": {
+                            "companyDomain": domain,
+                            "managementLevel": level,
+                            "pageSize": min(max_results, 10)
+                        }
+                    }
                 }
-            }
-        }
+                response = await self._make_request(
+                    ENDPOINTS["contact_search"], payload
+                )
+                data_list = response.get("data", [])
+                for c in data_list:
+                    person = self._normalize_contact(c)
+                    pid = person.get("person_id") or person.get("email") or person.get("name")
+                    if pid and pid not in seen_ids:
+                        seen_ids.add(pid)
+                        all_people.append(person)
+                logger.info(f"ZoomInfo managementLevel={level}: found {len(data_list)} contacts")
+            except Exception as e:
+                logger.warning(f"ZoomInfo managementLevel={level} search failed: {e}")
 
-        try:
-            response = await self._make_request(
-                ENDPOINTS["contact_search"], payload
-            )
-            data_list = response.get("data", [])
-            people = [self._normalize_contact(c) for c in data_list]
-            return {"success": True, "people": people, "error": None}
+        # Strategy 2: Broad job title search for any remaining roles
+        if len(all_people) < max_results:
+            if job_titles is None:
+                job_titles = [
+                    "Chief", "President", "Vice President", "VP",
+                    "SVP", "EVP", "Director", "Head",
+                    "Manager", "Senior Manager", "General Manager",
+                    "Partner", "Principal", "Fellow", "Lead",
+                    "Analyst", "Architect", "Engineer",
+                ]
 
-        except httpx.TimeoutException:
-            logger.warning("ZoomInfo contact search timed out")
-            return {"success": False, "people": [], "error": "Request timeout"}
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"ZoomInfo contact search HTTP error: {e.response.status_code}")
-            return {"success": False, "people": [], "error": f"HTTP {e.response.status_code}"}
-        except Exception as e:
-            logger.error(f"ZoomInfo contact search failed: {e}")
-            return {"success": False, "people": [], "error": str(e)}
+            try:
+                payload = {
+                    "data": {
+                        "type": "ContactSearch",
+                        "attributes": {
+                            "companyDomain": domain,
+                            "jobTitle": job_titles,
+                            "pageSize": max_results
+                        }
+                    }
+                }
+                response = await self._make_request(
+                    ENDPOINTS["contact_search"], payload
+                )
+                data_list = response.get("data", [])
+                for c in data_list:
+                    person = self._normalize_contact(c)
+                    pid = person.get("person_id") or person.get("email") or person.get("name")
+                    if pid and pid not in seen_ids:
+                        seen_ids.add(pid)
+                        all_people.append(person)
+                logger.info(f"ZoomInfo jobTitle search: found {len(data_list)} additional contacts")
+            except Exception as e:
+                logger.warning(f"ZoomInfo jobTitle search failed: {e}")
+
+        logger.info(f"ZoomInfo total contacts found: {len(all_people)}")
+        if all_people:
+            return {"success": True, "people": all_people, "error": None}
+        else:
+            return {"success": True, "people": [], "error": None}
 
     async def enrich_contacts(
         self,

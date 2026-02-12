@@ -1582,16 +1582,12 @@ def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
         # Use shared role type inference
         role_type = _infer_role_type(position)
 
-        # Skip unknown roles
-        if role_type == "Unknown":
-            continue
-
-        # Skip if C-suite role already seen (allow multiple VPs/Directors/Managers)
+        # Skip if C-suite role already seen (allow multiple VPs/Directors/Managers/Unknown)
         executive_roles = {"CIO", "CTO", "CISO", "COO", "CFO", "CPO", "CEO", "CMO"}
         if role_type in executive_roles and role_type in seen_roles:
             continue
-        # For non-exec roles, only add if we have few stakeholders
-        if role_type not in executive_roles and len(stakeholders) >= 10:
+        # Cap non-exec contacts at 15
+        if role_type not in executive_roles and len(stakeholders) >= 15:
             continue
 
         if role_type in executive_roles:
@@ -1620,8 +1616,8 @@ def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
         stakeholders.append(stakeholder)
         logger.info(f"Hunter.io: Found stakeholder {role_type}: {name} ({email_entry.get('position')})")
 
-        # Limit to 10 stakeholders
-        if len(stakeholders) >= 10:
+        # Limit to 20 stakeholders
+        if len(stakeholders) >= 20:
             break
 
     logger.info(f"Hunter.io: Extracted {len(stakeholders)} stakeholders from contacts")
@@ -1636,18 +1632,14 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
 
     import httpx
 
-    # Expanded target titles: C-suite + VPs + Directors for sales outreach
+    # Broad target titles for sales outreach — cast a wide net
     target_titles = [
-        "CIO", "Chief Information Officer",
-        "CTO", "Chief Technology Officer",
-        "CISO", "Chief Information Security Officer", "Chief Security Officer",
-        "COO", "Chief Operating Officer",
-        "CFO", "Chief Financial Officer",
-        "CPO", "Chief Product Officer", "Chief People Officer",
-        "CEO", "Chief Executive Officer",
-        "CMO", "Chief Marketing Officer",
-        "VP", "Vice President", "SVP", "EVP",
-        "Director", "Head of",
+        "Chief", "President", "CEO", "CTO", "CFO", "CIO", "CISO", "COO", "CMO",
+        "Vice President", "VP", "SVP", "EVP",
+        "Director", "Senior Director", "Managing Director",
+        "Head", "General Manager", "Manager", "Senior Manager",
+        "Partner", "Principal", "Fellow",
+        "Architect", "Lead", "Owner", "Founder",
     ]
 
     stakeholders = []
@@ -1682,22 +1674,24 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
 
                 for person in people:
                     title = person.get("title") or ""
+                    name = f"{person.get('first_name', '')} {person.get('last_name', '')}".strip()
+
+                    # Skip contacts without name or title
+                    if not name or not title:
+                        continue
 
                     # Use shared role type inference
                     role_type = _infer_role_type(title)
 
-                    if role_type == "Unknown":
-                        continue
-
-                    # Deduplicate C-suite (one per role), allow multiple VPs/Directors
+                    # Deduplicate C-suite (one per role), allow multiple others
                     if role_type in executive_roles:
                         if role_type in seen_exec_roles:
                             continue
                         seen_exec_roles.add(role_type)
 
-                    # Limit non-exec contacts
-                    if role_type not in executive_roles and len(stakeholders) >= 20:
-                        continue
+                    # Cap total contacts at 25
+                    if len(stakeholders) >= 25:
+                        break
 
                     # Extract employment history for new hire detection
                     employment_history = person.get("employment_history", [])
@@ -1718,7 +1712,7 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                                 pass
 
                     stakeholder = {
-                        "name": f"{person.get('first_name', '')} {person.get('last_name', '')}".strip(),
+                        "name": name,
                         "title": person.get("title", ""),
                         "role_type": role_type,
                         "email": person.get("email"),
@@ -2071,25 +2065,17 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
 
         if result.get("success"):
             slideshow_url = result.get('slideshow_url')
-            # Validate the URL format
-            if slideshow_url and slideshow_url.startswith('https://gamma.app/'):
+            # Accept any valid URL from Gamma (gamma.app, gamma.to, etc.)
+            if slideshow_url and slideshow_url.startswith('https://'):
                 logger.info(f"✅ Slideshow generated successfully: {slideshow_url}")
                 return result
-            elif slideshow_url:
-                logger.error(f"❌ Invalid slideshow URL format: {slideshow_url}")
-                return {
-                    "success": False,
-                    "slideshow_url": None,
-                    "slideshow_id": None,
-                    "error": f"Invalid slideshow URL format: {slideshow_url}"
-                }
             else:
-                logger.error(f"❌ Slideshow URL is None or empty despite success=True")
+                logger.error(f"❌ Slideshow URL missing or invalid: {slideshow_url}")
                 return {
                     "success": False,
                     "slideshow_url": None,
                     "slideshow_id": None,
-                    "error": "Slideshow URL is None despite success status"
+                    "error": f"Slideshow URL missing or invalid: {slideshow_url}"
                 }
         else:
             logger.error(f"Slideshow generation failed: {result.get('error')}")
