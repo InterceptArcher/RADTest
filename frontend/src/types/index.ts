@@ -460,9 +460,9 @@ export interface StakeholderContact {
 }
 
 /**
- * C-suite role type.
+ * Stakeholder role type including C-suite, VP, Director, and Manager.
  */
-export type StakeholderRoleType = 'CIO' | 'CTO' | 'CISO' | 'COO' | 'CFO' | 'CPO' | 'CEO' | 'CMO' | 'VP' | 'Director' | 'Unknown';
+export type StakeholderRoleType = 'CIO' | 'CTO' | 'CISO' | 'COO' | 'CFO' | 'CPO' | 'CEO' | 'CMO' | 'VP' | 'Director' | 'Manager' | 'Unknown';
 
 /**
  * Individual stakeholder profile.
@@ -521,6 +521,7 @@ export interface StakeholderProfiles {
  */
 export interface StakeholderMap {
   stakeholders: Stakeholder[];
+  otherContacts?: Stakeholder[];
   lastUpdated?: string;
   searchPerformed?: boolean;
 }

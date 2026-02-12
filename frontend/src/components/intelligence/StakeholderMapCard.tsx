@@ -20,6 +20,7 @@ const roleTypeConfig: Record<StakeholderRoleType, { color: string; bgColor: stri
   CMO: { color: 'text-orange-700', bgColor: 'bg-orange-100', description: 'Chief Marketing Officer' },
   VP: { color: 'text-teal-700', bgColor: 'bg-teal-100', description: 'Vice President' },
   Director: { color: 'text-cyan-700', bgColor: 'bg-cyan-100', description: 'Director' },
+  Manager: { color: 'text-violet-700', bgColor: 'bg-violet-100', description: 'Manager' },
   Unknown: { color: 'text-slate-700', bgColor: 'bg-slate-100', description: 'Executive' },
 };
 
@@ -97,78 +98,7 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
           </div>
 
           {/* Contact Info */}
-          <div className="bg-slate-50 rounded-lg p-3">
-            <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide flex items-center">
-              <svg className="w-3 h-3 mr-1 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-              </svg>
-              Contact
-            </h5>
-            <div className="space-y-1.5">
-              {contact.email && (
-                <a href={`mailto:${contact.email}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700 truncate">
-                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-                  </svg>
-                  {contact.email}
-                </a>
-              )}
-              {contact.directPhone && (
-                <a href={`tel:${contact.directPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
-                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  <span className="text-slate-400 mr-1">Direct:</span> {contact.directPhone}
-                </a>
-              )}
-              {contact.mobilePhone && (
-                <a href={`tel:${contact.mobilePhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
-                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
-                  </svg>
-                  <span className="text-slate-400 mr-1">Mobile:</span> {contact.mobilePhone}
-                </a>
-              )}
-              {contact.companyPhone && (
-                <a href={`tel:${contact.companyPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
-                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                  </svg>
-                  <span className="text-slate-400 mr-1">Company:</span> {contact.companyPhone}
-                </a>
-              )}
-              {!contact.directPhone && !contact.mobilePhone && !contact.companyPhone && contact.phone && (
-                <a href={`tel:${contact.phone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
-                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  {contact.phone}
-                </a>
-              )}
-              {contact.linkedinUrl && (
-                <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-xs text-primary-600 hover:text-primary-700">
-                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
-                  </svg>
-                  LinkedIn
-                </a>
-              )}
-              {contact.contactAccuracyScore != null && contact.contactAccuracyScore > 0 && (
-                <div className="flex items-center text-xs mt-1">
-                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
-                    contact.contactAccuracyScore >= 80 ? 'bg-emerald-100 text-emerald-700' :
-                    contact.contactAccuracyScore >= 50 ? 'bg-amber-100 text-amber-700' :
-                    'bg-red-100 text-red-700'
-                  }`}>
-                    {contact.contactAccuracyScore}% accuracy
-                  </span>
-                </div>
-              )}
-              {!contact.email && !contact.phone && !contact.directPhone && !contact.mobilePhone && !contact.linkedinUrl && (
-                <p className="text-xs text-slate-400">Contact info not available</p>
-              )}
-            </div>
-          </div>
+          <ContactInfoBlock contact={contact} />
         </div>
 
         {/* Strategic Priorities - Always show, with fallback */}
@@ -286,7 +216,6 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
 
             {showAssets && (
               <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                {/* Email Template */}
                 {supportingAsset.email_template && (
                   <div className="bg-blue-50 rounded-lg p-3">
                     <h6 className="text-xs font-semibold text-blue-700 mb-2 flex items-center">
@@ -300,8 +229,6 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
                     </pre>
                   </div>
                 )}
-
-                {/* LinkedIn Outreach */}
                 {supportingAsset.linkedin_outreach && (
                   <div className="bg-indigo-50 rounded-lg p-3">
                     <h6 className="text-xs font-semibold text-indigo-700 mb-2 flex items-center">
@@ -315,8 +242,6 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
                     </pre>
                   </div>
                 )}
-
-                {/* Call Script */}
                 {supportingAsset.call_script && (
                   <div className="bg-green-50 rounded-lg p-3">
                     <h6 className="text-xs font-semibold text-green-700 mb-2 flex items-center">
@@ -352,21 +277,148 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
   );
 }
 
+/**
+ * Shared contact info block used by both detail cards and compact rows.
+ */
+function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
+  if (!contact) return null;
+  return (
+    <div className="bg-slate-50 rounded-lg p-3">
+      <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide flex items-center">
+        <svg className="w-3 h-3 mr-1 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+        </svg>
+        Contact
+      </h5>
+      <div className="space-y-1.5">
+        {contact.email && (
+          <a href={`mailto:${contact.email}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700 truncate">
+            <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            {contact.email}
+          </a>
+        )}
+        {contact.directPhone && (
+          <a href={`tel:${contact.directPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+            <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+            </svg>
+            <span className="text-slate-400 mr-1">Direct:</span> {contact.directPhone}
+          </a>
+        )}
+        {contact.mobilePhone && (
+          <a href={`tel:${contact.mobilePhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+            <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+            </svg>
+            <span className="text-slate-400 mr-1">Mobile:</span> {contact.mobilePhone}
+          </a>
+        )}
+        {contact.companyPhone && (
+          <a href={`tel:${contact.companyPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+            <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+            </svg>
+            <span className="text-slate-400 mr-1">Company:</span> {contact.companyPhone}
+          </a>
+        )}
+        {!contact.directPhone && !contact.mobilePhone && !contact.companyPhone && contact.phone && (
+          <a href={`tel:${contact.phone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+            <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+            </svg>
+            {contact.phone}
+          </a>
+        )}
+        {contact.linkedinUrl && (
+          <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+            <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
+            </svg>
+            LinkedIn
+          </a>
+        )}
+        {contact.contactAccuracyScore != null && contact.contactAccuracyScore > 0 && (
+          <div className="flex items-center text-xs mt-1">
+            <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+              contact.contactAccuracyScore >= 80 ? 'bg-emerald-100 text-emerald-700' :
+              contact.contactAccuracyScore >= 50 ? 'bg-amber-100 text-amber-700' :
+              'bg-red-100 text-red-700'
+            }`}>
+              {contact.contactAccuracyScore}% accuracy
+            </span>
+          </div>
+        )}
+        {!contact.email && !contact.phone && !contact.directPhone && !contact.mobilePhone && !contact.linkedinUrl && (
+          <p className="text-xs text-slate-400">Contact info not available</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Compact contact row for "Other Relevant Contacts" section.
+ * Shows name, title, and key contact info without bio/priorities.
+ */
+function CompactContactRow({ stakeholder }: { stakeholder: Stakeholder }) {
+  const roleConfig = roleTypeConfig[stakeholder.roleType] || roleTypeConfig.Unknown;
+  const contact = stakeholder.contact || {};
+
+  return (
+    <div className="flex items-center justify-between bg-white border border-slate-200 rounded-lg px-4 py-3">
+      <div className="flex items-center space-x-3 min-w-0 flex-1">
+        <div className={`w-9 h-9 rounded-lg ${roleConfig.bgColor} flex items-center justify-center flex-shrink-0`}>
+          <span className={`text-xs font-bold ${roleConfig.color}`}>{stakeholder.roleType}</span>
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-medium text-slate-900 truncate">{stakeholder.name}</p>
+          <p className="text-xs text-slate-500 truncate">{stakeholder.title}</p>
+        </div>
+      </div>
+      <div className="flex items-center space-x-3 ml-4 flex-shrink-0">
+        {contact.email && (
+          <a href={`mailto:${contact.email}`} className="text-primary-600 hover:text-primary-700" title={contact.email}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+          </a>
+        )}
+        {(contact.directPhone || contact.mobilePhone || contact.phone) && (
+          <a href={`tel:${contact.directPhone || contact.mobilePhone || contact.phone}`} className="text-primary-600 hover:text-primary-700" title={contact.directPhone || contact.mobilePhone || contact.phone}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+            </svg>
+          </a>
+        )}
+        {contact.linkedinUrl && (
+          <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:text-primary-700" title="LinkedIn">
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
+            </svg>
+          </a>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function StakeholderMapCard({ stakeholderMap, supportingAssets, onGenerateOutreach }: StakeholderMapCardProps) {
   const [expanded, setExpanded] = useState(false);
 
-  // Null safety for stakeholder map data
   if (!stakeholderMap) {
     return null;
   }
 
   const stakeholders = Array.isArray(stakeholderMap.stakeholders) ? stakeholderMap.stakeholders : [];
-  const stakeholderCount = stakeholders.length;
+  const otherContacts = Array.isArray(stakeholderMap.otherContacts) ? stakeholderMap.otherContacts : [];
+  const executiveCount = stakeholders.length;
+  const otherCount = otherContacts.length;
+  const totalCount = executiveCount + otherCount;
 
-  // Get preview stakeholders (first 3)
   const previewStakeholders = stakeholders.slice(0, 3);
 
-  // Helper to find matching supporting asset for a stakeholder
   const findSupportingAsset = (stakeholder: Stakeholder): ContactSupportingAsset | undefined => {
     if (!supportingAssets?.contacts) return undefined;
     return supportingAssets.contacts.find(
@@ -394,10 +446,15 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
               <p className="text-sm text-slate-500">Key decision makers and influencers</p>
             </div>
           </div>
-          <div className="flex items-center space-x-3">
-            {stakeholderCount > 0 && (
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20">
-                {stakeholderCount} Executive{stakeholderCount !== 1 ? 's' : ''}
+          <div className="flex items-center space-x-2">
+            {executiveCount > 0 && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-indigo-50 text-indigo-700 ring-1 ring-inset ring-indigo-600/20">
+                {executiveCount} Executive{executiveCount !== 1 ? 's' : ''}
+              </span>
+            )}
+            {otherCount > 0 && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-600/20">
+                {otherCount} Other
               </span>
             )}
             <svg
@@ -412,7 +469,7 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
         </div>
 
         {/* Preview when collapsed */}
-        {!expanded && stakeholderCount > 0 && (
+        {!expanded && executiveCount > 0 && (
           <div className="mt-4 flex flex-wrap gap-3">
             {previewStakeholders.map((stakeholder, index) => {
               const roleConfig = roleTypeConfig[stakeholder.roleType] || roleTypeConfig.Unknown;
@@ -431,9 +488,9 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
                 </div>
               );
             })}
-            {stakeholderCount > 3 && (
+            {totalCount > 3 && (
               <div className="flex items-center text-xs text-slate-500">
-                +{stakeholderCount - 3} more
+                +{totalCount - 3} more
               </div>
             )}
           </div>
@@ -443,6 +500,7 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
       {/* Expanded Content */}
       {expanded && (
         <div className="px-6 pb-6 border-t border-slate-100">
+          {/* Executive Profiles Section */}
           <div className="mt-6">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-sm font-semibold text-slate-900 flex items-center">
@@ -452,15 +510,15 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
                 Executive Profiles
               </h3>
               <p className="text-xs text-slate-500">
-                Target roles: CIO, CTO, CISO, COO, CFO, CPO
+                C-Suite decision makers
               </p>
             </div>
 
-            {stakeholderCount > 0 ? (
+            {executiveCount > 0 ? (
               <div className="space-y-4">
                 {stakeholders.map((stakeholder, index) => (
                   <StakeholderDetailCard
-                    key={`${stakeholder.name}-${index}`}
+                    key={`exec-${stakeholder.name}-${index}`}
                     stakeholder={stakeholder}
                     supportingAsset={findSupportingAsset(stakeholder)}
                     onGenerateOutreach={onGenerateOutreach}
@@ -474,20 +532,42 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
                   </svg>
                 </div>
-                <p className="text-sm font-medium text-slate-900 mb-1">No stakeholders found</p>
+                <p className="text-sm font-medium text-slate-900 mb-1">No executive stakeholders found</p>
                 <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                  Executive contact data unavailable for this company. We searched for CIO, CTO, CISO, COO, CFO, and CPO roles.
+                  C-suite contact data unavailable for this company.
                 </p>
               </div>
             )}
+          </div>
 
-            {/* Data Source Note */}
-            <div className="mt-6 flex items-start space-x-2 text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
-              <svg className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-              </svg>
-              <p>Stakeholder data sourced from Apollo.io and Hunter.io. Strategic priorities, communication preferences, and recommendations are AI-generated based on role and company context.</p>
+          {/* Other Relevant Contacts Section */}
+          {otherCount > 0 && (
+            <div className="mt-6 border-t border-slate-200 pt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-semibold text-slate-900 flex items-center">
+                  <svg className="w-4 h-4 mr-2 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
+                  </svg>
+                  Other Relevant Contacts
+                </h3>
+                <p className="text-xs text-slate-500">
+                  VPs, Directors, and key personnel
+                </p>
+              </div>
+              <div className="space-y-2">
+                {otherContacts.map((contact, index) => (
+                  <CompactContactRow key={`other-${contact.name}-${index}`} stakeholder={contact} />
+                ))}
+              </div>
             </div>
+          )}
+
+          {/* Data Source Note */}
+          <div className="mt-6 flex items-start space-x-2 text-xs text-slate-500 bg-slate-50 rounded-lg p-3">
+            <svg className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+            <p>Stakeholder data sourced from ZoomInfo, Apollo.io, and Hunter.io. Strategic priorities, communication preferences, and recommendations are AI-generated based on role and company context.</p>
           </div>
         </div>
       )}

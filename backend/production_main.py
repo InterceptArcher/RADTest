@@ -672,6 +672,110 @@ Output JSON:
     return enriched
 
 
+def _infer_role_type(title: str) -> str:
+    """
+    Infer standardized role type from a job title string.
+    Returns one of: CIO, CTO, CISO, COO, CFO, CPO, CEO, CMO, VP, Director, Manager, Unknown.
+
+    Order matters: more specific roles (CIO, CTO, etc.) are checked before generic ones (VP, Director).
+    VP is checked before CEO to prevent "president" matching "vice president".
+    Uses word-boundary matching for short acronyms to avoid "cto" matching "director".
+    """
+    import re
+
+    if not title:
+        return "Unknown"
+
+    t = title.lower().strip()
+
+    # Helper: word-boundary match for short acronyms (prevents "cto" in "director")
+    def _word(acronym):
+        return bool(re.search(r'\b' + re.escape(acronym) + r'\b', t))
+
+    # Check specific C-suite roles FIRST (most specific wins)
+    # CIO-adjacent
+    if "chief information officer" in t or _word("cio"):
+        return "CIO"
+    if any(k in t for k in ["vp of it", "head of it", "it director"]):
+        return "CIO"
+
+    # CTO-adjacent
+    if "chief technology officer" in t or _word("cto"):
+        return "CTO"
+    if any(k in t for k in ["vp of engineering", "head of engineering", "vp technology"]):
+        return "CTO"
+
+    # CISO-adjacent
+    if any(k in t for k in ["chief information security officer", "chief security officer"]) or _word("ciso"):
+        return "CISO"
+    if any(k in t for k in ["security director", "head of security", "vp security"]):
+        return "CISO"
+
+    # COO
+    if "chief operating officer" in t or _word("coo"):
+        return "COO"
+    if any(k in t for k in ["vp operations", "head of operations"]):
+        return "COO"
+
+    # CFO
+    if "chief financial officer" in t or _word("cfo"):
+        return "CFO"
+    if any(k in t for k in ["vp finance", "head of finance", "finance director"]):
+        return "CFO"
+
+    # CPO
+    if any(k in t for k in ["chief product officer", "chief people officer"]) or _word("cpo"):
+        return "CPO"
+    if any(k in t for k in ["vp product", "head of product"]):
+        return "CPO"
+
+    # CMO
+    if "chief marketing officer" in t or _word("cmo"):
+        return "CMO"
+    if any(k in t for k in ["vp marketing", "head of marketing"]):
+        return "CMO"
+
+    # VP — MUST be checked BEFORE CEO to avoid "president" matching "vice president"
+    if any(k in t for k in ["vice president", "svp", "evp"]):
+        return "VP"
+    if _word("vp"):
+        return "VP"
+
+    # CEO — checked AFTER VP so "vice president" doesn't match "president"
+    if "chief executive officer" in t or _word("ceo"):
+        return "CEO"
+    if any(k in t for k in ["founder", "co-founder", "managing director"]):
+        return "CEO"
+    # "president" only if NOT "vice president" (already caught above)
+    if "president" in t and "vice" not in t:
+        return "CEO"
+
+    # Director
+    if "director" in t:
+        return "Director"
+    if t.startswith("head of"):
+        return "Director"
+
+    # Manager
+    if "manager" in t:
+        return "Manager"
+
+    return "Unknown"
+
+
+def _normalize_intent_score(score) -> int:
+    """Convert intent score to 0-100 scale. LLM Council returns 0.0-1.0."""
+    if score is None:
+        return 50
+    try:
+        s = float(score)
+        if s <= 1.0:
+            return max(0, int(s * 100))
+        return min(100, max(0, int(s)))
+    except (ValueError, TypeError):
+        return 50
+
+
 def _get_zoominfo_client():
     """Create ZoomInfo client from environment variables, or return None."""
     try:
@@ -829,10 +933,13 @@ def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -
         zi_email = (zi_contact.get("email") or "").lower().strip()
 
         if zi_name not in existing_names and (not zi_email or zi_email not in existing_emails):
+            # Infer role type from title
+            role_type = _infer_role_type(zi_contact.get("title", ""))
             # Add as new stakeholder
             stakeholders_data.append({
                 "name": zi_contact.get("name", ""),
                 "title": zi_contact.get("title", ""),
+                "role_type": role_type,
                 "email": zi_contact.get("email", ""),
                 "phone": zi_contact.get("phone", ""),
                 "linkedin_url": zi_contact.get("linkedin", ""),
@@ -1086,21 +1193,22 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["current_step"] = "Complete!"
 
         # Build stakeholder map from fetched stakeholders + AI-generated content
-        # Always return a stakeholder_map object so frontend knows search was performed
+        # Split into executives (C-suite) and other relevant contacts (VP, Director, Manager)
+        executive_roles = {"CIO", "CTO", "CISO", "COO", "CFO", "CPO", "CEO", "CMO"}
         stakeholder_map_data = {
             "stakeholders": [],
+            "otherContacts": [],
             "lastUpdated": datetime.utcnow().isoformat(),
             "searchPerformed": True
         }
         if stakeholders_data:
-            # Get AI-generated stakeholder profiles from validated_data
             ai_stakeholder_profiles = validated_data.get("stakeholder_profiles", {})
 
             for s in stakeholders_data:
                 role_type = s.get("role_type", "Unknown")
                 ai_profile = ai_stakeholder_profiles.get(role_type, {})
 
-                stakeholder_map_data["stakeholders"].append({
+                contact_entry = {
                     "name": s.get("name", "Unknown"),
                     "title": s.get("title", ""),
                     "roleType": role_type,
@@ -1121,7 +1229,12 @@ async def process_company_profile(job_id: str, company_data: dict):
                     "strategicPriorities": ai_profile.get("strategic_priorities", []),
                     "communicationPreference": ai_profile.get("communication_preference", ""),
                     "recommendedPlay": ai_profile.get("recommended_play", "")
-                })
+                }
+
+                if role_type in executive_roles:
+                    stakeholder_map_data["stakeholders"].append(contact_entry)
+                else:
+                    stakeholder_map_data["otherContacts"].append(contact_entry)
 
         jobs_store[job_id]["result"] = {
             "success": True,
@@ -1158,7 +1271,7 @@ async def process_company_profile(job_id: str, company_data: dict):
             "supporting_assets": validated_data.get("supporting_assets", {}),
             "sales_program": {
                 "intentLevel": validated_data.get("sales_program", {}).get("intent_level", "Medium"),
-                "intentScore": validated_data.get("sales_program", {}).get("intent_score", 50),
+                "intentScore": _normalize_intent_score(validated_data.get("sales_program", {}).get("intent_score", 50)),
                 "strategyText": validated_data.get("sales_program", {}).get("strategy_text", "")
             } if validated_data.get("sales_program") else None,
             # News intelligence section (NEW - does not replace anything)
@@ -1420,47 +1533,28 @@ def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
     stakeholders = []
     seen_roles = set()
 
-    # Role mapping for Hunter.io positions
-    role_keywords = {
-        "CIO": ["chief information officer", "cio", "it director", "vp of it", "head of it"],
-        "CTO": ["chief technology officer", "cto", "vp of engineering", "head of engineering", "vp technology"],
-        "CISO": ["chief information security officer", "ciso", "security director", "head of security", "vp security"],
-        "COO": ["chief operating officer", "coo", "vp operations", "head of operations"],
-        "CFO": ["chief financial officer", "cfo", "vp finance", "head of finance", "finance director"],
-        "CPO": ["chief product officer", "cpo", "vp product", "head of product", "chief people officer"],
-        "CEO": ["chief executive officer", "ceo", "founder", "co-founder", "president", "managing director"],
-        "CMO": ["chief marketing officer", "cmo", "vp marketing", "head of marketing"],
-        "VP": ["vice president", "vp", "svp", "evp"],
-        "Director": ["director", "head of"],
-    }
-
     for email_entry in emails:
-        position = (email_entry.get("position") or "").lower()
-        department = (email_entry.get("department") or "").lower()
+        position = (email_entry.get("position") or "")
 
-        if not position:
+        if not position.strip():
             continue
 
-        # Determine role type
-        role_type = None
-        for role, keywords in role_keywords.items():
-            for keyword in keywords:
-                if keyword in position:
-                    role_type = role
-                    break
-            if role_type:
-                break
+        # Use shared role type inference
+        role_type = _infer_role_type(position)
 
-        # Skip if not a significant role or already seen
-        if not role_type or role_type in seen_roles:
-            # For non-C-suite, only add directors/VPs if we have few stakeholders
-            if role_type in ["VP", "Director"] and len(stakeholders) < 3:
-                pass  # Allow it
-            else:
-                continue
+        # Skip unknown roles
+        if role_type == "Unknown":
+            continue
 
-        # Only track C-suite as "seen" to allow multiple VPs/Directors
-        if role_type in ["CIO", "CTO", "CISO", "COO", "CFO", "CPO", "CEO", "CMO"]:
+        # Skip if C-suite role already seen (allow multiple VPs/Directors/Managers)
+        executive_roles = {"CIO", "CTO", "CISO", "COO", "CFO", "CPO", "CEO", "CMO"}
+        if role_type in executive_roles and role_type in seen_roles:
+            continue
+        # For non-exec roles, only add if we have few stakeholders
+        if role_type not in executive_roles and len(stakeholders) >= 10:
+            continue
+
+        if role_type in executive_roles:
             seen_roles.add(role_type)
 
         first_name = email_entry.get("first_name", "")
@@ -1495,28 +1589,32 @@ def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
 
 
 async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
-    """Fetch C-suite executives from Apollo.io for stakeholder mapping."""
+    """Fetch executives and key contacts from Apollo.io for stakeholder mapping."""
     if not APOLLO_API_KEY:
         logger.warning("Apollo API key not configured for stakeholder search")
         return []
 
     import httpx
 
-    # Target C-suite roles
+    # Expanded target titles: C-suite + VPs + Directors for sales outreach
     target_titles = [
         "CIO", "Chief Information Officer",
         "CTO", "Chief Technology Officer",
         "CISO", "Chief Information Security Officer", "Chief Security Officer",
         "COO", "Chief Operating Officer",
         "CFO", "Chief Financial Officer",
-        "CPO", "Chief Product Officer", "Chief People Officer"
+        "CPO", "Chief Product Officer", "Chief People Officer",
+        "CEO", "Chief Executive Officer",
+        "CMO", "Chief Marketing Officer",
+        "VP", "Vice President", "SVP", "EVP",
+        "Director", "Head of",
     ]
 
     stakeholders = []
 
     try:
         async with httpx.AsyncClient() as client:
-            logger.info(f"Apollo: Searching for C-suite stakeholders at {domain}")
+            logger.info(f"Apollo: Searching for stakeholders at {domain}")
             response = await client.post(
                 "https://api.apollo.io/v1/mixed_people/search",
                 headers={
@@ -1529,7 +1627,7 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                     "q_organization_domains": domain,
                     "person_titles": target_titles,
                     "page": 1,
-                    "per_page": 25  # Get up to 25 to ensure we find all C-suite
+                    "per_page": 50  # Expanded to capture more contacts
                 },
                 timeout=30.0
             )
@@ -1539,32 +1637,27 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                 people = data.get("people", [])
                 logger.info(f"Apollo: Found {len(people)} potential stakeholders")
 
-                # Map roles to standardized types
-                role_mapping = {
-                    "cio": "CIO", "chief information officer": "CIO",
-                    "cto": "CTO", "chief technology officer": "CTO",
-                    "ciso": "CISO", "chief information security officer": "CISO", "chief security officer": "CISO",
-                    "coo": "COO", "chief operating officer": "COO",
-                    "cfo": "CFO", "chief financial officer": "CFO",
-                    "cpo": "CPO", "chief product officer": "CPO", "chief people officer": "CPO"
-                }
-
-                seen_roles = set()
+                executive_roles = {"CIO", "CTO", "CISO", "COO", "CFO", "CPO", "CEO", "CMO"}
+                seen_exec_roles = set()
 
                 for person in people:
-                    title = (person.get("title") or "").lower()
+                    title = person.get("title") or ""
 
-                    # Determine standardized role type
-                    role_type = None
-                    for keyword, role in role_mapping.items():
-                        if keyword in title:
-                            role_type = role
-                            break
+                    # Use shared role type inference
+                    role_type = _infer_role_type(title)
 
-                    if not role_type or role_type in seen_roles:
+                    if role_type == "Unknown":
                         continue
 
-                    seen_roles.add(role_type)
+                    # Deduplicate C-suite (one per role), allow multiple VPs/Directors
+                    if role_type in executive_roles:
+                        if role_type in seen_exec_roles:
+                            continue
+                        seen_exec_roles.add(role_type)
+
+                    # Limit non-exec contacts
+                    if role_type not in executive_roles and len(stakeholders) >= 20:
+                        continue
 
                     # Extract employment history for new hire detection
                     employment_history = person.get("employment_history", [])
@@ -1576,7 +1669,6 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                         start_date = current_job.get("start_date")
                         if start_date:
                             hire_date = start_date
-                            # Consider "new hire" if started in last 12 months
                             try:
                                 from datetime import datetime, timedelta
                                 start = datetime.fromisoformat(start_date.replace("Z", ""))
@@ -1594,12 +1686,13 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                         "linkedin_url": person.get("linkedin_url"),
                         "is_new_hire": is_new_hire,
                         "hire_date": hire_date,
-                        "photo_url": person.get("photo_url")
+                        "photo_url": person.get("photo_url"),
+                        "source": "apollo"
                     }
                     stakeholders.append(stakeholder)
                     logger.info(f"Apollo: Found {role_type}: {stakeholder['name']}")
 
-                logger.info(f"Apollo: Extracted {len(stakeholders)} unique C-suite stakeholders")
+                logger.info(f"Apollo: Extracted {len(stakeholders)} stakeholders ({len(seen_exec_roles)} executives)")
             else:
                 logger.warning(f"Apollo stakeholder search returned {response.status_code}")
 

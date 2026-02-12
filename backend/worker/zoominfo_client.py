@@ -211,17 +211,20 @@ class ZoomInfoClient:
         self,
         domain: str,
         job_titles: Optional[List[str]] = None,
-        max_results: int = 10
+        max_results: int = 25
     ) -> Dict[str, Any]:
         """
-        Search for executive contacts at a company.
+        Search for executive and key contacts at a company.
 
         Returns:
             Dict with success, people (normalized list), error
         """
         if job_titles is None:
-            job_titles = ["CEO", "CTO", "CFO", "CIO", "CISO", "COO", "CPO",
-                          "President", "VP"]
+            job_titles = [
+                "CEO", "CTO", "CFO", "CIO", "CISO", "COO", "CPO", "CMO",
+                "President", "VP", "Vice President", "SVP", "EVP",
+                "Director", "Head of", "Manager"
+            ]
 
         payload: Dict[str, Any] = {
             "data": {
@@ -298,7 +301,7 @@ class ZoomInfoClient:
         self,
         domain: str,
         job_titles: Optional[List[str]] = None,
-        max_results: int = 10
+        max_results: int = 25
     ) -> Dict[str, Any]:
         """
         Two-step contact enrichment: Search → Enrich.
