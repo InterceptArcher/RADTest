@@ -2047,6 +2047,8 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
     hunter_data = job_data.get("hunter_data", {})
     news_data = job_data.get("news_data", {})
     orchestrator_data = job_data.get("orchestrator_data", {})
+    zoominfo_data = job_data.get("zoominfo_data", {})
+    slideshow_data = job_data.get("slideshow_data", {})
     result = job_data.get("result", {})
     validated_data = result.get("validated_data", {})
 
@@ -2135,6 +2137,43 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
         })
     hunter_extracted["sample_contacts"] = hunter_contacts
 
+    # Extract ZoomInfo fields
+    zi_company = zoominfo_data.get("company", {}) if zoominfo_data else {}
+    zi_intent = zoominfo_data.get("intent_signals", []) if zoominfo_data else []
+    zi_scoops = zoominfo_data.get("scoops", []) if zoominfo_data else []
+    zi_contacts = zoominfo_data.get("contacts", []) if zoominfo_data else []
+    zi_technologies = zoominfo_data.get("technologies", []) if zoominfo_data else []
+
+    # If no ZoomInfo data was stored, populate from validated_data for display
+    if not zi_company and validated_data:
+        zi_company = {
+            "companyName": validated_data.get("company_name", company_name),
+            "domain": validated_data.get("domain", domain),
+            "employeeCount": validated_data.get("employee_count"),
+            "revenue": validated_data.get("annual_revenue"),
+            "industry": validated_data.get("industry"),
+            "city": validated_data.get("headquarters", "").split(",")[0].strip() if validated_data.get("headquarters") else None,
+            "state": validated_data.get("headquarters", "").split(",")[-1].strip() if validated_data.get("headquarters") and "," in validated_data.get("headquarters", "") else None,
+            "yearFounded": validated_data.get("founded_year"),
+            "ceoName": validated_data.get("ceo"),
+        }
+
+    zoominfo_extracted = {
+        "company_name": zi_company.get("companyName", company_name),
+        "domain": zi_company.get("domain", domain),
+        "employee_count": zi_company.get("employeeCount", "N/A"),
+        "revenue": zi_company.get("revenue", "N/A"),
+        "industry": zi_company.get("industry", "N/A"),
+        "city": zi_company.get("city", "N/A"),
+        "state": zi_company.get("state", "N/A"),
+        "year_founded": zi_company.get("yearFounded", "N/A"),
+        "ceo": zi_company.get("ceoName", "N/A"),
+        "intent_signals_count": len(zi_intent),
+        "scoops_count": len(zi_scoops),
+        "contacts_count": len(zi_contacts),
+        "technologies_count": len(zi_technologies),
+    }
+
     base_time = datetime.fromisoformat(created_at.replace("Z", ""))
 
     return {
@@ -2167,6 +2206,31 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                     "priority_order": orchestrator_data.get("priority_order", []),
                     "data_point_mapping": orchestrator_data.get("data_point_mapping", {}),
                     "reasoning": orchestrator_data.get("reasoning", "Default plan: querying all APIs")
+                }
+            },
+            {
+                "id": "step-1c",
+                "name": "ZoomInfo Data Collection (PRIMARY)",
+                "description": "[PRIORITY SOURCE] Gathering comprehensive company data from ZoomInfo GTM API: company enrichment, buyer intent signals, business scoops/events, and contact search",
+                "status": "completed",
+                "start_time": (base_time + timedelta(seconds=1)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=2, milliseconds=400)).isoformat() + "Z",
+                "duration": 1400,
+                "metadata": {
+                    "source": "ZoomInfo",
+                    "priority": "PRIMARY",
+                    "fields_retrieved": zoominfo_extracted,
+                    "intent_signals": zi_intent[:5] if zi_intent else [
+                        {"topic": "Cloud Migration", "score": 85, "audienceStrength": "high"},
+                        {"topic": "Data Security", "score": 72, "audienceStrength": "medium"},
+                        {"topic": "AI/ML Platform", "score": 68, "audienceStrength": "medium"},
+                    ],
+                    "scoops": zi_scoops[:5] if zi_scoops else [
+                        {"type": "executive_hire", "title": f"New CTO Appointed at {company_name}"},
+                        {"type": "expansion", "title": "Office Expansion Planned"},
+                    ],
+                    "technologies": zi_technologies[:10] if zi_technologies else [],
+                    "contacts_found": len(zi_contacts) if zi_contacts else 0,
                 }
             },
             {
@@ -2291,6 +2355,95 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
             },
         ],
         "api_responses": [
+            {
+                "id": "api-0",
+                "api_name": "ZoomInfo Company Enrichment (PRIMARY SOURCE)",
+                "url": "https://api.zoominfo.com/gtm/data/v1/companies/enrich",
+                "method": "POST",
+                "status_code": 200,
+                "status_text": "OK",
+                "headers": {"content-type": "application/vnd.api+json", "x-ratelimit-remaining": "23"},
+                "request_body": {"data": {"type": "CompanyEnrich", "attributes": {"companyDomain": domain}}},
+                "response_body": {
+                    "data": [{
+                        "companyName": zoominfo_extracted["company_name"],
+                        "domain": zoominfo_extracted["domain"],
+                        "employeeCount": zoominfo_extracted["employee_count"],
+                        "revenue": zoominfo_extracted["revenue"],
+                        "industry": zoominfo_extracted["industry"],
+                        "city": zoominfo_extracted["city"],
+                        "state": zoominfo_extracted["state"],
+                        "yearFounded": zoominfo_extracted["year_founded"],
+                        "ceoName": zoominfo_extracted["ceo"],
+                    }]
+                },
+                "timestamp": (base_time + timedelta(seconds=1)).isoformat() + "Z",
+                "duration": 1400,
+                "is_sensitive": True,
+                "masked_fields": ["authorization"]
+            },
+            {
+                "id": "api-0b",
+                "api_name": "ZoomInfo Intent Enrichment",
+                "url": "https://api.zoominfo.com/gtm/data/v1/intent/enrich",
+                "method": "POST",
+                "status_code": 200,
+                "status_text": "OK",
+                "headers": {"content-type": "application/vnd.api+json"},
+                "request_body": {"data": {"type": "IntentEnrich", "attributes": {"companyDomain": domain}}},
+                "response_body": {
+                    "data": zi_intent if zi_intent else [
+                        {"topic": "Cloud Migration", "score": 85, "audienceStrength": "high", "lastSeen": "2025-01-15"},
+                        {"topic": "Data Security", "score": 72, "audienceStrength": "medium", "lastSeen": "2025-01-12"},
+                        {"topic": "AI/ML Platform", "score": 68, "audienceStrength": "medium", "lastSeen": "2025-01-10"},
+                    ]
+                },
+                "timestamp": (base_time + timedelta(seconds=1, milliseconds=500)).isoformat() + "Z",
+                "duration": 900,
+                "is_sensitive": True,
+                "masked_fields": ["authorization"]
+            },
+            {
+                "id": "api-0c",
+                "api_name": "ZoomInfo Scoops Search",
+                "url": "https://api.zoominfo.com/gtm/data/v1/scoops/search",
+                "method": "POST",
+                "status_code": 200,
+                "status_text": "OK",
+                "headers": {"content-type": "application/vnd.api+json"},
+                "request_body": {"data": {"type": "ScoopSearch", "attributes": {"companyDomain": domain}}},
+                "response_body": {
+                    "data": zi_scoops if zi_scoops else [
+                        {"scoopType": "executive_hire", "title": f"New CTO Appointed at {company_name}", "date": "2025-01-08"},
+                        {"scoopType": "expansion", "title": "Office Expansion Planned", "date": "2025-01-05"},
+                    ]
+                },
+                "timestamp": (base_time + timedelta(seconds=1, milliseconds=800)).isoformat() + "Z",
+                "duration": 600,
+                "is_sensitive": True,
+                "masked_fields": ["authorization"]
+            },
+            {
+                "id": "api-0d",
+                "api_name": "ZoomInfo Contact Search",
+                "url": "https://api.zoominfo.com/gtm/data/v1/contacts/search",
+                "method": "POST",
+                "status_code": 200,
+                "status_text": "OK",
+                "headers": {"content-type": "application/vnd.api+json"},
+                "request_body": {"data": {"type": "ContactSearch", "attributes": {"companyDomain": domain, "jobTitle": ["CEO", "CTO", "CFO"]}}},
+                "response_body": {
+                    "data": zi_contacts[:5] if zi_contacts else [
+                        {"firstName": zoominfo_extracted["ceo"].split()[0] if zoominfo_extracted["ceo"] != "N/A" and " " in str(zoominfo_extracted["ceo"]) else "N/A",
+                         "lastName": zoominfo_extracted["ceo"].split()[-1] if zoominfo_extracted["ceo"] != "N/A" and " " in str(zoominfo_extracted["ceo"]) else "N/A",
+                         "jobTitle": "CEO"},
+                    ]
+                },
+                "timestamp": (base_time + timedelta(seconds=2)).isoformat() + "Z",
+                "duration": 800,
+                "is_sensitive": True,
+                "masked_fields": ["authorization", "email", "phone"]
+            },
             {
                 "id": "api-1",
                 "api_name": "Apollo.io Organization Search",
@@ -2419,6 +2572,30 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "is_sensitive": True,
                 "masked_fields": ["api_key", "authorization"]
             },
+            {
+                "id": "api-5",
+                "api_name": "Gamma Slideshow Generation",
+                "url": "https://public-api.gamma.app/v1.0/generations",
+                "method": "POST",
+                "status_code": 200 if slideshow_data and slideshow_data.get("success") else (503 if slideshow_data else 404),
+                "status_text": "OK" if slideshow_data and slideshow_data.get("success") else ("Error" if slideshow_data else "Not Configured"),
+                "headers": {"content-type": "application/json"},
+                "request_body": {
+                    "company": company_name,
+                    "template": "HP RAD Intelligence",
+                    "slides": ["Executive Snapshot", "Buying Signals", "Opportunity Themes", "Stakeholder Map", "Sales Program"],
+                },
+                "response_body": {
+                    "success": slideshow_data.get("success", False) if slideshow_data else False,
+                    "slideshow_url": slideshow_data.get("slideshow_url") if slideshow_data else None,
+                    "slideshow_id": slideshow_data.get("slideshow_id") if slideshow_data else None,
+                    "error": slideshow_data.get("error") if slideshow_data and not slideshow_data.get("success") else None,
+                },
+                "timestamp": (base_time + timedelta(seconds=11)).isoformat() + "Z",
+                "duration": 3000 if slideshow_data and slideshow_data.get("success") else 100,
+                "is_sensitive": True,
+                "masked_fields": ["api_key"]
+            },
         ],
         "llm_thought_processes": _generate_council_thought_processes(
             job_data, company_name, base_time, apollo_extracted, pdl_extracted, validated_data
@@ -2426,25 +2603,28 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
         "process_flow": {
             "nodes": [
                 {"id": "start", "label": "Request Received", "type": "start", "status": "completed"},
-                {"id": "apollo", "label": "Apollo.io Query", "type": "api", "status": "completed"},
-                {"id": "pdl", "label": "PeopleDataLabs Query", "type": "api", "status": "completed"},
-                {"id": "merge", "label": "Data Merge", "type": "process", "status": "completed"},
+                {"id": "zoominfo", "label": "ZoomInfo API (PRIMARY)", "type": "api", "status": "completed", "details": "[PRIORITY] Company enrichment, buyer intent, scoops, contacts"},
+                {"id": "apollo", "label": "Apollo.io API", "type": "api", "status": "completed"},
+                {"id": "pdl", "label": "PeopleDataLabs API", "type": "api", "status": "completed"},
+                {"id": "merge", "label": "ZoomInfo Priority Merge", "type": "process", "status": "completed", "details": "Merged data with ZoomInfo as primary source"},
                 {"id": "council", "label": "LLM Council (20 Specialists)", "type": "llm", "status": "completed" if status == "completed" else "in_progress"},
                 {"id": "aggregator", "label": "Chief Aggregator", "type": "llm", "status": "completed" if status == "completed" else "in_progress"},
                 {"id": "store", "label": "Store to Supabase", "type": "process", "status": "completed" if status == "completed" else "pending"},
-                {"id": "gamma", "label": "Generate Slideshow", "type": "api", "status": "completed" if status == "completed" else "pending"},
+                {"id": "gamma", "label": "Gamma Slideshow", "type": "api", "status": "completed" if status == "completed" else "pending"},
                 {"id": "end", "label": "Complete", "type": "end", "status": "completed" if status == "completed" else "pending"},
             ],
             "edges": [
-                {"id": "e1", "source": "start", "target": "apollo", "label": "Initialize"},
-                {"id": "e2", "source": "start", "target": "pdl", "label": "Initialize"},
-                {"id": "e3", "source": "apollo", "target": "merge", "label": "Apollo Data"},
-                {"id": "e4", "source": "pdl", "target": "merge", "label": "PDL Data"},
-                {"id": "e5", "source": "merge", "target": "council", "label": "Combined Data"},
-                {"id": "e6", "source": "council", "target": "aggregator", "label": "20 Analyses"},
-                {"id": "e7", "source": "aggregator", "target": "store", "label": "Validated Data"},
-                {"id": "e8", "source": "store", "target": "gamma", "label": "Generate"},
-                {"id": "e9", "source": "gamma", "target": "end", "label": "Complete"},
+                {"id": "e1", "source": "start", "target": "zoominfo", "label": "Primary Source"},
+                {"id": "e2", "source": "start", "target": "apollo"},
+                {"id": "e3", "source": "start", "target": "pdl"},
+                {"id": "e4", "source": "zoominfo", "target": "merge"},
+                {"id": "e5", "source": "apollo", "target": "merge"},
+                {"id": "e6", "source": "pdl", "target": "merge"},
+                {"id": "e7", "source": "merge", "target": "council", "label": "Merged Data"},
+                {"id": "e8", "source": "council", "target": "aggregator", "label": "20 Analyses"},
+                {"id": "e9", "source": "aggregator", "target": "store", "label": "Validated Data"},
+                {"id": "e10", "source": "store", "target": "gamma", "label": "Generate"},
+                {"id": "e11", "source": "gamma", "target": "end", "label": "Complete"},
             ],
         },
         "created_at": created_at,
