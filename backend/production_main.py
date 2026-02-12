@@ -994,23 +994,17 @@ async def process_company_profile(job_id: str, company_data: dict):
             "orchestrator_version": getattr(orchestrator_plan, 'orchestrator_version', '1.0')
         }
 
-        # Step 1: Gather intelligence from Apollo.io (if orchestrator selected it)
+        # Step 1: ALWAYS query Apollo.io — primary source for company data and contacts
         jobs_store[job_id]["progress"] = 20
-        if should_query_api("apollo", orchestrator_plan):
-            jobs_store[job_id]["current_step"] = "Querying Apollo.io..."
-            apollo_data = await fetch_apollo_data(company_data)
-        else:
-            logger.info("Orchestrator skipped Apollo.io - not needed for required data points")
-            jobs_store[job_id]["current_step"] = "Skipped Apollo.io (not in orchestrator plan)..."
+        jobs_store[job_id]["current_step"] = "Querying Apollo.io..."
+        apollo_data = await fetch_apollo_data(company_data)
+        logger.info(f"Apollo returned {len(apollo_data)} fields: {list(apollo_data.keys())[:10]}")
 
-        # Step 2: Gather intelligence from PeopleDataLabs (if orchestrator selected it)
+        # Step 2: ALWAYS query PeopleDataLabs — primary source for technographics and firmographics
         jobs_store[job_id]["progress"] = 30
-        if should_query_api("pdl", orchestrator_plan):
-            jobs_store[job_id]["current_step"] = "Querying PeopleDataLabs..."
-            pdl_data = await fetch_pdl_data(company_data)
-        else:
-            logger.info("Orchestrator skipped PeopleDataLabs - not needed for required data points")
-            jobs_store[job_id]["current_step"] = "Skipped PeopleDataLabs (not in orchestrator plan)..."
+        jobs_store[job_id]["current_step"] = "Querying PeopleDataLabs..."
+        pdl_data = await fetch_pdl_data(company_data)
+        logger.info(f"PDL returned {len(pdl_data)} fields: {list(pdl_data.keys())[:10]}")
 
         # Step 2.5: Gather intelligence from Hunter.io (ALWAYS QUERIED - required for contacts)
         # Hunter.io is ALWAYS queried regardless of orchestrator decision because:
@@ -1048,10 +1042,17 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["current_step"] = "Searching for executive stakeholders..."
         stakeholders_data = await fetch_stakeholders(company_data["domain"])
 
+        # Log Apollo stakeholder results
+        logger.info(f"Apollo stakeholders: {len(stakeholders_data)} found")
+        if stakeholders_data:
+            for _s in stakeholders_data[:5]:
+                logger.info(f"  - {_s.get('name')} | {_s.get('title')} | role={_s.get('role_type')}")
+
         # Step 2.8: If Apollo didn't find stakeholders, use Hunter.io contacts
         if not stakeholders_data and hunter_data:
             jobs_store[job_id]["current_step"] = "Extracting contacts from Hunter.io..."
             stakeholders_data = extract_stakeholders_from_hunter(hunter_data)
+            logger.info(f"Hunter fallback: {len(stakeholders_data)} stakeholders extracted")
 
         # Step 2.82: Merge ZoomInfo enriched contacts into stakeholders
         if zoominfo_contacts:
@@ -1187,10 +1188,13 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Store complete slideshow data
         jobs_store[job_id]["slideshow_data"] = slideshow_result
 
-        # Complete
-        jobs_store[job_id]["status"] = "completed"
-        jobs_store[job_id]["progress"] = 100
-        jobs_store[job_id]["current_step"] = "Complete!"
+        jobs_store[job_id]["progress"] = 95
+        jobs_store[job_id]["current_step"] = "Assembling final results..."
+
+        # Defensive: ensure raw data sources are dicts (not None)
+        apollo_data = apollo_data or {}
+        pdl_data = pdl_data or {}
+        zoominfo_data = zoominfo_data or {}
 
         # Build stakeholder map from fetched stakeholders + AI-generated content
         # Split into executives (C-suite) and other relevant contacts (VP, Director, Manager)
@@ -1304,6 +1308,24 @@ async def process_company_profile(job_id: str, company_data: dict):
         # zoominfo_data already stored during ZoomInfo step
         # orchestrator_data already stored during orchestration step
 
+        # Log result structure for debugging
+        _result = jobs_store[job_id]["result"]
+        _exec_count = len(stakeholder_map_data.get("stakeholders", []))
+        _other_count = len(stakeholder_map_data.get("otherContacts", []))
+        _overview_fields = [f for f in ["industry", "employee_count", "headquarters", "ceo", "annual_revenue", "founded_year", "company_type"] if _result.get(f)]
+        logger.info(
+            f"RESULT SUMMARY for {job_id}: "
+            f"stakeholders={_exec_count} executives + {_other_count} other, "
+            f"overview_fields={len(_overview_fields)}/7 ({', '.join(_overview_fields)}), "
+            f"slideshow={'yes' if _result.get('slideshow_url') else 'no'}, "
+            f"executive_snapshot={'yes' if _result.get('executive_snapshot') else 'no'}, "
+            f"buying_signals={'yes' if _result.get('buying_signals') else 'no'}"
+        )
+
+        # Mark as completed ONLY AFTER result is fully assembled
+        jobs_store[job_id]["status"] = "completed"
+        jobs_store[job_id]["progress"] = 100
+        jobs_store[job_id]["current_step"] = "Complete!"
         logger.info(f"Completed processing for job {job_id}")
 
     except Exception as e:
