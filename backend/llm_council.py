@@ -579,7 +579,11 @@ ORIGINAL DATA SOURCES:
 Apollo.io: {apollo_data}
 PeopleDataLabs: {pdl_data}
 Hunter.io: {hunter_data}
+ZoomInfo (PRIMARY): {zoominfo_data}
 Stakeholders: {stakeholders_data}
+
+CONFLICT RESOLUTION: When data sources disagree on a field (e.g., CEO name, headquarters, revenue),
+ZoomInfo takes priority as the tiebreaker. Cross-reference all sources for accuracy.
 
 Output ONLY valid JSON, no explanation."""
 
@@ -614,7 +618,7 @@ async def call_openai(prompt: str, system_prompt: str, model: str = "gpt-4o-mini
         return {}
 
 
-async def run_specialist(specialist: Dict, company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, stakeholders_data: List[Dict] = None, news_data: Dict = None) -> Dict[str, Any]:
+async def run_specialist(specialist: Dict, company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, stakeholders_data: List[Dict] = None, news_data: Dict = None, zoominfo_data: Dict = None) -> Dict[str, Any]:
     """Run a single specialist LLM."""
     stakeholders_text = ""
     if stakeholders_data:
@@ -623,6 +627,10 @@ async def run_specialist(specialist: Dict, company_data: Dict, apollo_data: Dict
     hunter_text = ""
     if hunter_data:
         hunter_text = f"\nHunter.io Data: {json.dumps(hunter_data, indent=2)}"
+
+    zoominfo_text = ""
+    if zoominfo_data:
+        zoominfo_text = f"\nZoomInfo Data (PRIMARY - use as tiebreaker when sources disagree): {json.dumps(zoominfo_data, indent=2)}"
 
     news_text = ""
     if news_data and news_data.get("success"):
@@ -641,8 +649,11 @@ Apollo.io Data: {json.dumps(apollo_data, indent=2) if apollo_data else 'No data'
 
 PeopleDataLabs Data: {json.dumps(pdl_data, indent=2) if pdl_data else 'No data'}
 {hunter_text}
+{zoominfo_text}
 {stakeholders_text}
 {news_text}
+
+CONFLICT RESOLUTION: When Apollo and PDL disagree on a data point, ZoomInfo data takes priority as the tiebreaker.
 
 Analyze this data for your specialty: {specialist['focus']}
 """
@@ -658,7 +669,7 @@ Analyze this data for your specialty: {specialist['focus']}
     }
 
 
-async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, stakeholders_data: List[Dict] = None, news_data: Dict = None) -> Dict[str, Any]:
+async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, stakeholders_data: List[Dict] = None, news_data: Dict = None, zoominfo_data: Dict = None) -> Dict[str, Any]:
     """
     Run the full LLM Council:
     1. Run specialists in batches of 5 to avoid rate limits
@@ -675,7 +686,7 @@ async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hun
         logger.info(f"Running specialist batch {i//batch_size + 1}/{(len(SPECIALISTS) + batch_size - 1)//batch_size}")
 
         batch_tasks = [
-            run_specialist(specialist, company_data, apollo_data, pdl_data, hunter_data, stakeholders_data, news_data)
+            run_specialist(specialist, company_data, apollo_data, pdl_data, hunter_data, stakeholders_data, news_data, zoominfo_data)
             for specialist in batch
         ]
 
@@ -726,6 +737,7 @@ async def run_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hun
         apollo_data=json.dumps(apollo_data, indent=2) if apollo_data else "No data",
         pdl_data=json.dumps(pdl_data, indent=2) if pdl_data else "No data",
         hunter_data=json.dumps(hunter_data, indent=2) if hunter_data else "No data",
+        zoominfo_data=json.dumps(zoominfo_data, indent=2) if zoominfo_data else "No data",
         stakeholders_data=json.dumps(stakeholders_data, indent=2) if stakeholders_data else "No stakeholder data"
     ) + f"\n\nNEWS DATA:\n{news_summary_text}"
 
@@ -777,7 +789,7 @@ def title_case_name(name: str) -> str:
     return ' '.join(result)
 
 
-def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, news_data: Dict = None) -> Dict[str, Any]:
+def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, news_data: Dict = None, zoominfo_data: Dict = None) -> Dict[str, Any]:
     """Extract data directly from API responses as fallback."""
     result = {
         "company_name": title_case_name(company_data.get("company_name", "Unknown")),
@@ -904,6 +916,47 @@ def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hun
             if hunter_contacts:
                 result["hunter_contacts"] = hunter_contacts
 
+    # Extract from ZoomInfo data (PRIMARY SOURCE — overrides conflicting data)
+    if zoominfo_data:
+        if zoominfo_data.get("company_name"):
+            result["company_name"] = title_case_name(zoominfo_data["company_name"])
+        if zoominfo_data.get("industry"):
+            result["industry"] = title_case_name(zoominfo_data["industry"])
+        if zoominfo_data.get("employee_count"):
+            result["employee_count"] = zoominfo_data["employee_count"]
+        if zoominfo_data.get("revenue"):
+            result["annual_revenue"] = zoominfo_data["revenue"]
+        if zoominfo_data.get("headquarters"):
+            result["headquarters"] = zoominfo_data["headquarters"]
+        if zoominfo_data.get("founded_year"):
+            result["founded_year"] = zoominfo_data["founded_year"]
+        if zoominfo_data.get("ceo"):
+            result["ceo"] = title_case_name(zoominfo_data["ceo"])
+        if zoominfo_data.get("linkedin_url"):
+            result["linkedin_url"] = zoominfo_data["linkedin_url"]
+        # Growth metrics (ZoomInfo exclusive)
+        if zoominfo_data.get("one_year_employee_growth"):
+            result["one_year_employee_growth"] = zoominfo_data["one_year_employee_growth"]
+        if zoominfo_data.get("two_year_employee_growth"):
+            result["two_year_employee_growth"] = zoominfo_data["two_year_employee_growth"]
+        if zoominfo_data.get("funding_amount"):
+            result["funding_amount"] = zoominfo_data["funding_amount"]
+        if zoominfo_data.get("fortune_rank"):
+            result["fortune_rank"] = zoominfo_data["fortune_rank"]
+        if zoominfo_data.get("num_locations"):
+            result["num_locations"] = zoominfo_data["num_locations"]
+        if zoominfo_data.get("business_model"):
+            result["business_model"] = zoominfo_data["business_model"]
+        # Intent signals
+        if zoominfo_data.get("intent_signals"):
+            result["intent_signals"] = zoominfo_data["intent_signals"]
+        # Scoops
+        if zoominfo_data.get("scoops"):
+            result["scoops"] = zoominfo_data["scoops"]
+        # Technology installs
+        if zoominfo_data.get("technology_installs"):
+            result["technology_installs"] = zoominfo_data["technology_installs"]
+
     # Extract news data summaries
     if news_data and news_data.get("success"):
         news_summaries = news_data.get("summaries", {})
@@ -968,14 +1021,14 @@ def apply_formatting(data: Dict[str, Any]) -> Dict[str, Any]:
     return result
 
 
-async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, stakeholders_data: List[Dict] = None, news_data: Dict = None) -> Dict[str, Any]:
+async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, stakeholders_data: List[Dict] = None, news_data: Dict = None, zoominfo_data: Dict = None) -> Dict[str, Any]:
     """
     Main entry point for LLM Council validation.
     Returns validated, concise, fact-driven company data with expanded intelligence.
     Falls back to direct extraction if council fails.
     """
     # Always extract base data first as fallback
-    base_data = extract_base_data(company_data, apollo_data, pdl_data, hunter_data, news_data)
+    base_data = extract_base_data(company_data, apollo_data, pdl_data, hunter_data, news_data, zoominfo_data)
 
     # Add stakeholder data to base_data if available
     if stakeholders_data:
@@ -990,7 +1043,7 @@ async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data:
         return apply_formatting(base_data)
 
     try:
-        result = await run_council(company_data, apollo_data, pdl_data, hunter_data, stakeholders_data, news_data)
+        result = await run_council(company_data, apollo_data, pdl_data, hunter_data, stakeholders_data, news_data, zoominfo_data)
 
         # Check if council returned useful data (more than just metadata)
         useful_fields = [k for k in result.keys() if not k.startswith("_") and result[k]]

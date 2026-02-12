@@ -372,6 +372,11 @@ export interface ExecutiveSnapshot {
   estimatedITSpend?: string;
   installedTechnologies?: InstalledTechnology[];
   technologyStack?: TechnologyStack | TechnologyItem[];
+  oneYearEmployeeGrowth?: string;
+  twoYearEmployeeGrowth?: string;
+  fundingAmount?: string;
+  fortuneRank?: string;
+  numLocations?: number | string;
 }
 
 /**
@@ -447,7 +452,11 @@ export interface BuyingSignals {
 export interface StakeholderContact {
   email?: string;
   phone?: string;
+  directPhone?: string;
+  mobilePhone?: string;
+  companyPhone?: string;
   linkedinUrl?: string;
+  contactAccuracyScore?: number;
 }
 
 /**
@@ -471,6 +480,8 @@ export interface Stakeholder {
   recommendedPlay?: string;
   conversationStarters?: string;
   recommendedNextSteps?: string[];
+  factCheckScore?: number;
+  factCheckNotes?: string;
 }
 
 /**

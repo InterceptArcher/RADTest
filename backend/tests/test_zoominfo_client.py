@@ -466,3 +466,164 @@ class TestAutoAuthentication:
 
             with pytest.raises(ValueError, match="authentication failed"):
                 await client._authenticate()
+
+
+class TestContactEnrich:
+    """Test ZoomInfo Contact Enrich endpoint (Search → Enrich 2-step)."""
+
+    @pytest.mark.asyncio
+    async def test_enrich_contacts_by_person_ids(self):
+        """Enriches contacts by person IDs returning full profile data."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        mock_response = {
+            "data": [{
+                "personId": "123",
+                "firstName": "Satya",
+                "lastName": "Nadella",
+                "jobTitle": "Chief Executive Officer",
+                "email": "satya@microsoft.com",
+                "directPhone": "+1-425-555-0100",
+                "mobilePhone": "+1-425-555-0101",
+                "companyPhone": "+1-425-882-8080",
+                "contactAccuracyScore": 95,
+                "department": "C-Suite",
+                "managementLevel": "C-Level",
+                "linkedInUrl": "linkedin.com/in/satyanadella"
+            }]
+        }
+        with patch.object(client, "_make_request", new_callable=AsyncMock,
+                          return_value=mock_response):
+            result = await client.enrich_contacts(person_ids=["123"])
+            assert result["success"] is True
+            assert len(result["people"]) == 1
+            person = result["people"][0]
+            assert person["direct_phone"] == "+1-425-555-0100"
+            assert person["mobile_phone"] == "+1-425-555-0101"
+            assert person["company_phone"] == "+1-425-882-8080"
+            assert person["contact_accuracy_score"] == 95
+            assert person["department"] == "C-Suite"
+            assert person["management_level"] == "C-Level"
+            assert person["person_id"] == "123"
+
+    @pytest.mark.asyncio
+    async def test_enrich_contacts_empty(self):
+        """Returns empty list when no contacts enriched."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        with patch.object(client, "_make_request", new_callable=AsyncMock,
+                          return_value={"data": []}):
+            result = await client.enrich_contacts(person_ids=["999"])
+            assert result["success"] is True
+            assert result["people"] == []
+
+    @pytest.mark.asyncio
+    async def test_search_and_enrich_contacts(self):
+        """Convenience method: search then enrich in 2 steps."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        # Mock search_contacts returning person with ID
+        search_result = {
+            "success": True,
+            "people": [{"name": "Jane Doe", "title": "CTO", "person_id": "456",
+                         "email": "jane@acme.com", "phone": "", "linkedin": "",
+                         "direct_phone": "", "mobile_phone": "", "company_phone": "",
+                         "contact_accuracy_score": 0, "department": "", "management_level": ""}],
+            "error": None
+        }
+        # Mock enrich_contacts returning enriched data
+        enrich_result = {
+            "success": True,
+            "people": [{"name": "Jane Doe", "title": "CTO", "person_id": "456",
+                         "email": "jane@acme.com", "phone": "+1-555-0100",
+                         "linkedin": "linkedin.com/in/janedoe",
+                         "direct_phone": "+1-555-0200", "mobile_phone": "+1-555-0300",
+                         "company_phone": "+1-555-0400", "contact_accuracy_score": 88,
+                         "department": "Technology", "management_level": "C-Level"}],
+            "error": None
+        }
+        with patch.object(client, "search_contacts", new_callable=AsyncMock,
+                          return_value=search_result):
+            with patch.object(client, "enrich_contacts", new_callable=AsyncMock,
+                              return_value=enrich_result):
+                result = await client.search_and_enrich_contacts(domain="acme.com")
+                assert result["success"] is True
+                assert len(result["people"]) == 1
+                assert result["people"][0]["direct_phone"] == "+1-555-0200"
+
+
+class TestNormalizeContactExpanded:
+    """Test that _normalize_contact extracts all ZoomInfo contact fields."""
+
+    def test_extracts_phone_types(self):
+        """Normalizer extracts directPhone, mobilePhone, companyPhone."""
+        from zoominfo_client import ZoomInfoClient
+        raw = {
+            "firstName": "Test",
+            "lastName": "User",
+            "jobTitle": "CTO",
+            "email": "test@co.com",
+            "phone": "+1-111",
+            "directPhone": "+1-222",
+            "mobilePhone": "+1-333",
+            "companyPhone": "+1-444",
+            "linkedInUrl": "linkedin.com/in/test",
+            "contactAccuracyScore": 92,
+            "department": "Engineering",
+            "managementLevel": "C-Level",
+            "personId": "abc123"
+        }
+        result = ZoomInfoClient._normalize_contact(raw)
+        assert result["direct_phone"] == "+1-222"
+        assert result["mobile_phone"] == "+1-333"
+        assert result["company_phone"] == "+1-444"
+        assert result["contact_accuracy_score"] == 92
+        assert result["department"] == "Engineering"
+        assert result["management_level"] == "C-Level"
+        assert result["person_id"] == "abc123"
+
+    def test_handles_missing_fields_gracefully(self):
+        """Missing phone fields default to empty string, score to 0."""
+        from zoominfo_client import ZoomInfoClient
+        raw = {"firstName": "A", "lastName": "B", "jobTitle": "CEO"}
+        result = ZoomInfoClient._normalize_contact(raw)
+        assert result["direct_phone"] == ""
+        assert result["mobile_phone"] == ""
+        assert result["company_phone"] == ""
+        assert result["contact_accuracy_score"] == 0
+        assert result["department"] == ""
+        assert result["management_level"] == ""
+
+
+class TestNormalizeCompanyGrowthFields:
+    """Test that _normalize_company_data extracts growth fields."""
+
+    def test_extracts_growth_rates(self):
+        """Normalizer extracts employee growth rates and funding."""
+        from zoominfo_client import ZoomInfoClient
+        raw = {
+            "companyName": "GrowthCo",
+            "oneYearEmployeeGrowthRate": 15.5,
+            "twoYearEmployeeGrowthRate": 28.3,
+            "fundingAmount": 50000000,
+            "fortuneRank": 250,
+            "businessModel": "SaaS",
+            "numLocations": 12
+        }
+        result = ZoomInfoClient._normalize_company_data(raw)
+        assert result["one_year_employee_growth"] == 15.5
+        assert result["two_year_employee_growth"] == 28.3
+        assert result["funding_amount"] == 50000000
+        assert result["fortune_rank"] == 250
+        assert result["business_model"] == "SaaS"
+        assert result["num_locations"] == 12
+
+    def test_growth_fields_default_to_empty(self):
+        """Growth fields default to empty string when not in API response."""
+        from zoominfo_client import ZoomInfoClient
+        raw = {"companyName": "BasicCo"}
+        result = ZoomInfoClient._normalize_company_data(raw)
+        assert result["one_year_employee_growth"] == ""
+        assert result["two_year_employee_growth"] == ""
+        assert result["funding_amount"] == ""

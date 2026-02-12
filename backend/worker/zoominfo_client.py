@@ -26,6 +26,7 @@ ZOOMINFO_TOKEN_URL = "https://okta-login.zoominfo.com/oauth2/default/v1/token"
 ENDPOINTS = {
     "company_enrich": "/data/v1/companies/enrich",
     "contact_search": "/data/v1/contacts/search",
+    "contact_enrich": "/data/v1/contacts/enrich",
     "intent_enrich": "/data/v1/intent/enrich",
     "scoops_search": "/data/v1/scoops/search",
     "news_search": "/data/v1/news/search",
@@ -250,6 +251,87 @@ class ZoomInfoClient:
         except Exception as e:
             logger.error(f"ZoomInfo contact search failed: {e}")
             return {"success": False, "people": [], "error": str(e)}
+
+    async def enrich_contacts(
+        self,
+        person_ids: List[str]
+    ) -> Dict[str, Any]:
+        """
+        Enrich contacts by person IDs for full profile data including
+        directPhone, mobilePhone, companyPhone, contactAccuracyScore,
+        department, and managementLevel.
+
+        Returns:
+            Dict with success, people (enriched normalized list), error
+        """
+        if not person_ids:
+            return {"success": True, "people": [], "error": None}
+
+        payload: Dict[str, Any] = {
+            "data": {
+                "type": "ContactEnrich",
+                "attributes": {
+                    "personId": person_ids
+                }
+            }
+        }
+
+        try:
+            response = await self._make_request(
+                ENDPOINTS["contact_enrich"], payload
+            )
+            data_list = response.get("data", [])
+            people = [self._normalize_contact(c) for c in data_list]
+            return {"success": True, "people": people, "error": None}
+
+        except httpx.TimeoutException:
+            logger.warning("ZoomInfo contact enrich timed out")
+            return {"success": False, "people": [], "error": "Request timeout"}
+        except httpx.HTTPStatusError as e:
+            logger.warning(f"ZoomInfo contact enrich HTTP error: {e.response.status_code}")
+            return {"success": False, "people": [], "error": f"HTTP {e.response.status_code}"}
+        except Exception as e:
+            logger.error(f"ZoomInfo contact enrich failed: {e}")
+            return {"success": False, "people": [], "error": str(e)}
+
+    async def search_and_enrich_contacts(
+        self,
+        domain: str,
+        job_titles: Optional[List[str]] = None,
+        max_results: int = 10
+    ) -> Dict[str, Any]:
+        """
+        Two-step contact enrichment: Search → Enrich.
+        First searches for contacts, then enriches with full profile data
+        including phone numbers and accuracy scores.
+
+        Returns:
+            Dict with success, people (fully enriched), error
+        """
+        # Step 1: Search for contacts
+        search_result = await self.search_contacts(
+            domain=domain, job_titles=job_titles, max_results=max_results
+        )
+        if not search_result.get("success") or not search_result.get("people"):
+            return search_result
+
+        # Step 2: Extract person IDs and enrich
+        person_ids = [
+            p.get("person_id") for p in search_result["people"]
+            if p.get("person_id")
+        ]
+
+        if not person_ids:
+            # No person IDs available, return search results as-is
+            return search_result
+
+        enrich_result = await self.enrich_contacts(person_ids=person_ids)
+        if enrich_result.get("success") and enrich_result.get("people"):
+            return enrich_result
+
+        # Fall back to search results if enrich fails
+        logger.warning("Contact enrich failed, returning search results")
+        return search_result
 
     async def enrich_intent(self, domain: str) -> Dict[str, Any]:
         """
@@ -685,6 +767,14 @@ class ZoomInfoClient:
             "alexa_rank": raw.get("alexaRank", ""),
             "fortune_rank": raw.get("fortuneRank", ""),
 
+            # Growth metrics
+            "one_year_employee_growth": raw.get("oneYearEmployeeGrowthRate", ""),
+            "two_year_employee_growth": raw.get("twoYearEmployeeGrowthRate", ""),
+            "funding_amount": raw.get("fundingAmount", ""),
+            "fortune_rank": raw.get("fortuneRank", ""),
+            "business_model": raw.get("businessModel", ""),
+            "num_locations": raw.get("numLocations", ""),
+
             # Additional metadata
             "company_id": raw.get("companyId", raw.get("id", "")),
             "logo_url": raw.get("logoUrl", raw.get("logo", "")),
@@ -695,14 +785,10 @@ class ZoomInfoClient:
     @staticmethod
     def _normalize_contact(raw: Dict[str, Any]) -> Dict[str, Any]:
         """
-        Normalize ZoomInfo contact to match Apollo/PDL stakeholder format.
+        Normalize ZoomInfo contact with full profile data.
 
-        Mapping:
-          firstName+lastName -> name
-          jobTitle           -> title
-          email              -> email
-          phone              -> phone
-          linkedInUrl        -> linkedin
+        Includes phone numbers (direct, mobile, company), accuracy scores,
+        department, and management level from Contact Enrich endpoint.
         """
         first_name = raw.get("firstName", "")
         last_name = raw.get("lastName", "")
@@ -714,4 +800,11 @@ class ZoomInfoClient:
             "email": raw.get("email", ""),
             "phone": raw.get("phone", ""),
             "linkedin": raw.get("linkedInUrl", ""),
+            "direct_phone": raw.get("directPhone", ""),
+            "mobile_phone": raw.get("mobilePhone", ""),
+            "company_phone": raw.get("companyPhone", ""),
+            "contact_accuracy_score": raw.get("contactAccuracyScore", 0),
+            "department": raw.get("department", ""),
+            "management_level": raw.get("managementLevel", ""),
+            "person_id": raw.get("personId", raw.get("id", "")),
         }

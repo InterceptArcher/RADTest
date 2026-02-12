@@ -55,6 +55,15 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
             </div>
           </div>
           <div className="flex items-center space-x-2">
+            {stakeholder.factCheckScore != null && stakeholder.factCheckScore > 0 && (
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                stakeholder.factCheckScore >= 0.8 ? 'bg-emerald-100 text-emerald-700' :
+                stakeholder.factCheckScore >= 0.5 ? 'bg-amber-100 text-amber-700' :
+                'bg-red-100 text-red-700'
+              }`}>
+                {stakeholder.factCheckScore >= 0.8 ? 'Verified' : stakeholder.factCheckScore >= 0.5 ? 'Unverified' : 'Low Confidence'}
+              </span>
+            )}
             {stakeholder.isNewHire && (
               <div className="flex items-center space-x-1 bg-emerald-500 text-white px-2 py-1 rounded-full">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -104,7 +113,31 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
                   {contact.email}
                 </a>
               )}
-              {contact.phone && (
+              {contact.directPhone && (
+                <a href={`tel:${contact.directPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                  </svg>
+                  <span className="text-slate-400 mr-1">Direct:</span> {contact.directPhone}
+                </a>
+              )}
+              {contact.mobilePhone && (
+                <a href={`tel:${contact.mobilePhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                  </svg>
+                  <span className="text-slate-400 mr-1">Mobile:</span> {contact.mobilePhone}
+                </a>
+              )}
+              {contact.companyPhone && (
+                <a href={`tel:${contact.companyPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+                  <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                  </svg>
+                  <span className="text-slate-400 mr-1">Company:</span> {contact.companyPhone}
+                </a>
+              )}
+              {!contact.directPhone && !contact.mobilePhone && !contact.companyPhone && contact.phone && (
                 <a href={`tel:${contact.phone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
                   <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -120,7 +153,18 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
                   LinkedIn
                 </a>
               )}
-              {!contact.email && !contact.phone && !contact.linkedinUrl && (
+              {contact.contactAccuracyScore != null && contact.contactAccuracyScore > 0 && (
+                <div className="flex items-center text-xs mt-1">
+                  <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
+                    contact.contactAccuracyScore >= 80 ? 'bg-emerald-100 text-emerald-700' :
+                    contact.contactAccuracyScore >= 50 ? 'bg-amber-100 text-amber-700' :
+                    'bg-red-100 text-red-700'
+                  }`}>
+                    {contact.contactAccuracyScore}% accuracy
+                  </span>
+                </div>
+              )}
+              {!contact.email && !contact.phone && !contact.directPhone && !contact.mobilePhone && !contact.linkedinUrl && (
                 <p className="text-xs text-slate-400">Contact info not available</p>
               )}
             </div>

@@ -201,6 +201,54 @@ export default function ExecutiveSnapshotCard({
             </div>
           </div>
 
+          {/* Growth & Financials - only shown if at least one field has data */}
+          {(snapshot.oneYearEmployeeGrowth || snapshot.twoYearEmployeeGrowth || snapshot.fundingAmount || snapshot.fortuneRank || snapshot.numLocations) && (
+            <div className="mt-6">
+              <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center">
+                <svg className="w-4 h-4 mr-2 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
+                </svg>
+                Growth & Financials
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                {snapshot.oneYearEmployeeGrowth && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 mb-1">1-Year Employee Growth</p>
+                    <p className={`text-sm font-semibold ${Number(snapshot.oneYearEmployeeGrowth) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                      {Number(snapshot.oneYearEmployeeGrowth) >= 0 ? '+' : ''}{snapshot.oneYearEmployeeGrowth}%
+                    </p>
+                  </div>
+                )}
+                {snapshot.twoYearEmployeeGrowth && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 mb-1">2-Year Employee Growth</p>
+                    <p className={`text-sm font-semibold ${Number(snapshot.twoYearEmployeeGrowth) >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                      {Number(snapshot.twoYearEmployeeGrowth) >= 0 ? '+' : ''}{snapshot.twoYearEmployeeGrowth}%
+                    </p>
+                  </div>
+                )}
+                {snapshot.fundingAmount && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 mb-1">Funding</p>
+                    <p className="text-sm font-semibold text-slate-900">${typeof snapshot.fundingAmount === 'string' ? snapshot.fundingAmount : Number(snapshot.fundingAmount).toLocaleString()}</p>
+                  </div>
+                )}
+                {snapshot.fortuneRank && (
+                  <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
+                    <p className="text-xs text-amber-600 mb-1">Fortune Rank</p>
+                    <p className="text-sm font-semibold text-amber-700">#{snapshot.fortuneRank}</p>
+                  </div>
+                )}
+                {snapshot.numLocations && (
+                  <div className="bg-white border border-slate-200 rounded-xl p-4">
+                    <p className="text-xs text-slate-500 mb-1">Locations</p>
+                    <p className="text-sm font-semibold text-slate-900">{snapshot.numLocations} offices</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* Technology Install Base */}
           <div className="mt-6">
             <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center">

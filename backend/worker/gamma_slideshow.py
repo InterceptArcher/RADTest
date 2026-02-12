@@ -692,6 +692,28 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             markdown += "Contact information available through company website\n"
         markdown += "\n"
 
+        # Growth Metrics from ZoomInfo
+        growth_1yr = validated_data.get('one_year_employee_growth', '')
+        growth_2yr = validated_data.get('two_year_employee_growth', '')
+        funding = validated_data.get('funding_amount', '')
+        fortune = validated_data.get('fortune_rank', '')
+        num_locations = validated_data.get('num_locations', '')
+        if growth_1yr or growth_2yr or funding or fortune or num_locations:
+            markdown += "**Growth Metrics:**\n\n"
+            if growth_1yr:
+                sign = "+" if float(str(growth_1yr)) >= 0 else ""
+                markdown += f"- 1-Year Employee Growth: {sign}{growth_1yr}%\n"
+            if growth_2yr:
+                sign = "+" if float(str(growth_2yr)) >= 0 else ""
+                markdown += f"- 2-Year Employee Growth: {sign}{growth_2yr}%\n"
+            if funding:
+                markdown += f"- Recent Funding: ${funding}\n"
+            if fortune:
+                markdown += f"- Fortune Rank: #{fortune}\n"
+            if num_locations:
+                markdown += f"- Office Locations: {num_locations}\n"
+            markdown += "\n"
+
         # Installed Technologies - COMPREHENSIVE with ZoomInfo tech installs
         markdown += "**Installed Technologies:**\n\n"
         if data_unavailable:

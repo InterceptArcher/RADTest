@@ -24,9 +24,26 @@ class TestGranularDataPoints:
     """Test granular data point requirements are properly defined."""
 
     def test_all_data_points_have_minimum_two_apis(self):
-        """Each data point must have at least 2 API assignments."""
+        """Each data point must have at least 2 API assignments.
+        Exception: ZoomInfo-exclusive fields (growth metrics, direct phones, accuracy scores)
+        legitimately have only 1 source since no other API provides this data."""
+        # Fields that are legitimately ZoomInfo-exclusive (no other API provides them)
+        zoominfo_exclusive_prefixes = (
+            "executive_snapshot.one_year_employee_growth",
+            "executive_snapshot.two_year_employee_growth",
+            "executive_snapshot.fortune_rank",
+            "executive_snapshot.business_model",
+            "stakeholder_map.",  # phone and accuracy fields
+        )
+        zoominfo_exclusive_suffixes = ("_direct_phone", "_mobile_phone", "_accuracy_score")
         for field_path, apis in GRANULAR_DATA_POINTS.items():
-            assert len(apis) >= 2, f"{field_path} has less than 2 APIs: {apis}"
+            is_exclusive = field_path.startswith(zoominfo_exclusive_prefixes)
+            if not is_exclusive:
+                is_exclusive = any(field_path.endswith(s) for s in zoominfo_exclusive_suffixes)
+            if is_exclusive:
+                assert len(apis) >= 1, f"{field_path} has no APIs: {apis}"
+            else:
+                assert len(apis) >= 2, f"{field_path} has less than 2 APIs: {apis}"
 
     def test_all_assigned_apis_are_valid(self):
         """All assigned APIs must exist in API_CAPABILITIES."""

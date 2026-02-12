@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, List, Any
 import asyncio
+import json
 import logging
 import sys
 import os
@@ -84,6 +85,7 @@ class JobStatus(BaseModel):
     council_metadata: Optional[dict] = None
     slideshow_data: Optional[dict] = None
     news_data: Optional[dict] = None
+    zoominfo_data: Optional[dict] = None
     orchestrator_data: Optional[dict] = None
     created_at: Optional[str] = None
 
@@ -97,6 +99,9 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 GAMMA_API_KEY = os.getenv("GAMMA_API_KEY")
 GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
+ZOOMINFO_CLIENT_ID = os.getenv("ZOOMINFO_CLIENT_ID")
+ZOOMINFO_CLIENT_SECRET = os.getenv("ZOOMINFO_CLIENT_SECRET")
+ZOOMINFO_ACCESS_TOKEN = os.getenv("ZOOMINFO_ACCESS_TOKEN")
 
 # Debug: Log env var status at startup
 logger.info("=" * 50)
@@ -106,6 +111,9 @@ logger.info(f"  PEOPLEDATALABS_API_KEY: {'SET' if PEOPLEDATALABS_API_KEY else 'M
 logger.info(f"  HUNTER_API_KEY: {'SET' if HUNTER_API_KEY else 'MISSING'}")
 logger.info(f"  OPENAI_API_KEY: {'SET' if OPENAI_API_KEY else 'MISSING'}")
 logger.info(f"  GNEWS_API_KEY: {'SET' if GNEWS_API_KEY else 'MISSING'}")
+logger.info(f"  ZOOMINFO_CLIENT_ID: {'SET' if ZOOMINFO_CLIENT_ID else 'MISSING'}")
+logger.info(f"  ZOOMINFO_CLIENT_SECRET: {'SET' if ZOOMINFO_CLIENT_SECRET else 'MISSING'}")
+logger.info(f"  ZOOMINFO_ACCESS_TOKEN: {'SET' if ZOOMINFO_ACCESS_TOKEN else 'MISSING'}")
 logger.info(f"  SUPABASE_URL: {'SET' if SUPABASE_URL else 'MISSING'}")
 logger.info(f"  SUPABASE_KEY: {'SET' if SUPABASE_KEY else 'MISSING'}")
 logger.info(f"  GAMMA_API_KEY: {'SET' if GAMMA_API_KEY else 'MISSING'}")
@@ -123,6 +131,7 @@ async def health_check():
         "openai": "configured" if OPENAI_API_KEY else "missing",
         "supabase": "configured" if SUPABASE_URL and SUPABASE_KEY else "missing",
         "gamma": "configured" if GAMMA_API_KEY else "missing",
+        "zoominfo": "configured" if (ZOOMINFO_CLIENT_ID and ZOOMINFO_CLIENT_SECRET) or ZOOMINFO_ACCESS_TOKEN else "missing",
     }
 
     all_configured = all(v == "configured" for v in api_status.values())
@@ -319,7 +328,13 @@ def _build_executive_snapshot(validated_data: dict, company_data: dict) -> Optio
         "companyClassification": es.get("company_classification") or classification,
         "estimatedITSpend": estimated_it_spend or "Contact for estimate",
         "installedTechnologies": installed_techs if installed_techs else [],
-        "technologyStack": tech_stack if isinstance(tech_stack, dict) else (tech_categories if isinstance(tech_categories, dict) else {})
+        "technologyStack": tech_stack if isinstance(tech_stack, dict) else (tech_categories if isinstance(tech_categories, dict) else {}),
+        # Growth metrics from ZoomInfo
+        "oneYearEmployeeGrowth": str(validated_data.get("one_year_employee_growth", "")) if validated_data.get("one_year_employee_growth") else None,
+        "twoYearEmployeeGrowth": str(validated_data.get("two_year_employee_growth", "")) if validated_data.get("two_year_employee_growth") else None,
+        "fundingAmount": str(validated_data.get("funding_amount", "")) if validated_data.get("funding_amount") else None,
+        "fortuneRank": str(validated_data.get("fortune_rank", "")) if validated_data.get("fortune_rank") else None,
+        "numLocations": validated_data.get("num_locations") if validated_data.get("num_locations") else None,
     }
 
 
@@ -544,6 +559,282 @@ def build_buying_signals(validated_data: dict) -> Optional[dict]:
     }
 
 
+async def _call_openai_json(prompt: str, system_prompt: str = "Output only valid JSON.") -> dict:
+    """Call OpenAI and parse JSON response. Returns None on failure."""
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        import httpx
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers={
+                    "Authorization": f"Bearer {OPENAI_API_KEY}",
+                    "Content-Type": "application/json"
+                },
+                json={
+                    "model": "gpt-4o-mini",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "temperature": 0.1,
+                    "response_format": {"type": "json_object"}
+                }
+            )
+            if response.status_code == 200:
+                data = response.json()
+                content = data["choices"][0]["message"]["content"]
+                return json.loads(content)
+            else:
+                logger.warning(f"OpenAI API error: {response.status_code}")
+                return None
+    except Exception as e:
+        logger.error(f"OpenAI call failed: {e}")
+        return None
+
+
+async def fact_check_contacts(company_name: str, domain: str, contacts: list) -> list:
+    """
+    LLM-based contact fact checker. Validates C-suite contacts against
+    public knowledge. Filters out contacts with score < 0.3.
+
+    Returns contacts with added fact_check_score and fact_check_notes.
+    """
+    if not contacts:
+        return []
+
+    if not OPENAI_API_KEY:
+        logger.info("OpenAI not configured, skipping contact fact check")
+        return contacts
+
+    # Build contact list for verification
+    contact_list = []
+    for c in contacts:
+        contact_list.append({
+            "name": c.get("name", ""),
+            "title": c.get("title", ""),
+        })
+
+    prompt = f"""Verify these executive contacts for {company_name} ({domain}).
+For each contact, score how likely they are the actual person in that role (0.0 = definitely wrong, 1.0 = verified correct).
+
+Contacts to verify:
+{json.dumps(contact_list, indent=2)}
+
+Output JSON:
+{{
+    "contacts": [
+        {{"name": "...", "fact_check_score": 0.0-1.0, "fact_check_notes": "brief explanation"}}
+    ]
+}}"""
+
+    result = await _call_openai_json(
+        prompt,
+        "You are a corporate executive verification system. Verify executive names and titles against your knowledge. Be accurate."
+    )
+
+    if not result or "contacts" not in result:
+        logger.warning("Fact checker returned no results, keeping original contacts")
+        return contacts
+
+    # Map scores back to contacts
+    score_map = {}
+    for checked in result.get("contacts", []):
+        name = checked.get("name", "").lower().strip()
+        score_map[name] = {
+            "fact_check_score": checked.get("fact_check_score", 0.5),
+            "fact_check_notes": checked.get("fact_check_notes", "")
+        }
+
+    # Apply scores and filter
+    enriched = []
+    for contact in contacts:
+        name_key = (contact.get("name") or "").lower().strip()
+        if name_key in score_map:
+            contact["fact_check_score"] = score_map[name_key]["fact_check_score"]
+            contact["fact_check_notes"] = score_map[name_key]["fact_check_notes"]
+        else:
+            contact["fact_check_score"] = 0.5  # Unknown
+            contact["fact_check_notes"] = "Not verified"
+
+        # Filter out clearly wrong contacts (score < 0.3)
+        if contact["fact_check_score"] >= 0.3:
+            enriched.append(contact)
+        else:
+            logger.warning(
+                f"FACT CHECK FILTERED: {contact.get('name')} as {contact.get('title')} "
+                f"(score={contact['fact_check_score']}: {contact.get('fact_check_notes')})"
+            )
+
+    logger.info(f"Fact check complete: {len(enriched)}/{len(contacts)} contacts passed")
+    return enriched
+
+
+def _get_zoominfo_client():
+    """Create ZoomInfo client from environment variables, or return None."""
+    try:
+        from worker.zoominfo_client import ZoomInfoClient
+        if ZOOMINFO_CLIENT_ID and ZOOMINFO_CLIENT_SECRET:
+            return ZoomInfoClient(
+                client_id=ZOOMINFO_CLIENT_ID,
+                client_secret=ZOOMINFO_CLIENT_SECRET
+            )
+        elif ZOOMINFO_ACCESS_TOKEN:
+            return ZoomInfoClient(access_token=ZOOMINFO_ACCESS_TOKEN)
+        else:
+            logger.info("ZoomInfo credentials not configured, skipping")
+            return None
+    except Exception as e:
+        logger.warning(f"Failed to create ZoomInfo client: {e}")
+        return None
+
+
+async def _fetch_all_zoominfo(zi_client, company_data: dict):
+    """
+    Fetch all ZoomInfo data in parallel: company enrich, intent, scoops,
+    news, tech, and search-and-enrich contacts.
+
+    Returns:
+        (combined_data: dict, contacts: list)
+    """
+    domain = company_data.get("domain", "")
+    company_name = company_data.get("company_name", "")
+
+    try:
+        # Run all ZoomInfo endpoints in parallel
+        company_task = zi_client.enrich_company(domain=domain, company_name=company_name)
+        intent_task = zi_client.enrich_intent(domain=domain)
+        scoops_task = zi_client.search_scoops(domain=domain)
+        news_task = zi_client.search_news(company_name=company_name)
+        tech_task = zi_client.enrich_technologies(domain=domain)
+        contacts_task = zi_client.search_and_enrich_contacts(domain=domain)
+
+        results = await asyncio.gather(
+            company_task, intent_task, scoops_task, news_task, tech_task, contacts_task,
+            return_exceptions=True
+        )
+
+        company_result, intent_result, scoops_result, news_result, tech_result, contacts_result = results
+
+        combined_data = {}
+        contacts = []
+
+        # Company data
+        if isinstance(company_result, dict) and company_result.get("success"):
+            combined_data.update(company_result.get("normalized", {}))
+            combined_data["_raw_company"] = company_result.get("data", {})
+            logger.info(f"ZoomInfo company enrich: {len(company_result.get('normalized', {}))} fields")
+        elif isinstance(company_result, Exception):
+            logger.warning(f"ZoomInfo company enrich exception: {company_result}")
+
+        # Intent signals
+        if isinstance(intent_result, dict) and intent_result.get("success"):
+            combined_data["intent_signals"] = intent_result.get("intent_signals", [])
+            logger.info(f"ZoomInfo intent: {len(intent_result.get('intent_signals', []))} signals")
+        elif isinstance(intent_result, Exception):
+            logger.warning(f"ZoomInfo intent exception: {intent_result}")
+
+        # Scoops
+        if isinstance(scoops_result, dict) and scoops_result.get("success"):
+            combined_data["scoops"] = scoops_result.get("scoops", [])
+            logger.info(f"ZoomInfo scoops: {len(scoops_result.get('scoops', []))} events")
+        elif isinstance(scoops_result, Exception):
+            logger.warning(f"ZoomInfo scoops exception: {scoops_result}")
+
+        # News
+        if isinstance(news_result, dict) and news_result.get("success"):
+            combined_data["news_articles"] = news_result.get("articles", [])
+            logger.info(f"ZoomInfo news: {len(news_result.get('articles', []))} articles")
+        elif isinstance(news_result, Exception):
+            logger.warning(f"ZoomInfo news exception: {news_result}")
+
+        # Technologies
+        if isinstance(tech_result, dict) and tech_result.get("success"):
+            combined_data["technology_installs"] = tech_result.get("technologies", [])
+            logger.info(f"ZoomInfo tech: {len(tech_result.get('technologies', []))} installs")
+        elif isinstance(tech_result, Exception):
+            logger.warning(f"ZoomInfo tech exception: {tech_result}")
+
+        # Contacts (Search → Enrich)
+        if isinstance(contacts_result, dict) and contacts_result.get("success"):
+            contacts = contacts_result.get("people", [])
+            logger.info(f"ZoomInfo contacts: {len(contacts)} enriched contacts")
+        elif isinstance(contacts_result, Exception):
+            logger.warning(f"ZoomInfo contacts exception: {contacts_result}")
+
+        return combined_data, contacts
+
+    except Exception as e:
+        logger.error(f"ZoomInfo comprehensive fetch failed: {e}")
+        return {}, []
+
+
+def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -> list:
+    """
+    Merge ZoomInfo enriched contacts into existing stakeholders data.
+    Matches by name similarity or email, adds phone numbers and accuracy scores.
+    """
+    if not zoominfo_contacts:
+        return stakeholders_data
+
+    for stakeholder in stakeholders_data:
+        s_name = (stakeholder.get("name") or "").lower().strip()
+        s_email = (stakeholder.get("email") or "").lower().strip()
+
+        for zi_contact in zoominfo_contacts:
+            zi_name = (zi_contact.get("name") or "").lower().strip()
+            zi_email = (zi_contact.get("email") or "").lower().strip()
+
+            # Match by name or email
+            if (s_name and zi_name and s_name == zi_name) or \
+               (s_email and zi_email and s_email == zi_email):
+                # Enrich with ZoomInfo phone data
+                if zi_contact.get("direct_phone"):
+                    stakeholder["direct_phone"] = zi_contact["direct_phone"]
+                if zi_contact.get("mobile_phone"):
+                    stakeholder["mobile_phone"] = zi_contact["mobile_phone"]
+                if zi_contact.get("company_phone"):
+                    stakeholder["company_phone"] = zi_contact["company_phone"]
+                if zi_contact.get("contact_accuracy_score"):
+                    stakeholder["contact_accuracy_score"] = zi_contact["contact_accuracy_score"]
+                if zi_contact.get("department"):
+                    stakeholder["department"] = zi_contact["department"]
+                if zi_contact.get("management_level"):
+                    stakeholder["management_level"] = zi_contact["management_level"]
+                # Also fill in phone if empty
+                if not stakeholder.get("phone") and zi_contact.get("phone"):
+                    stakeholder["phone"] = zi_contact["phone"]
+                break
+
+    # Add any ZoomInfo contacts not already in stakeholders
+    existing_names = {(s.get("name") or "").lower().strip() for s in stakeholders_data}
+    existing_emails = {(s.get("email") or "").lower().strip() for s in stakeholders_data if s.get("email")}
+
+    for zi_contact in zoominfo_contacts:
+        zi_name = (zi_contact.get("name") or "").lower().strip()
+        zi_email = (zi_contact.get("email") or "").lower().strip()
+
+        if zi_name not in existing_names and (not zi_email or zi_email not in existing_emails):
+            # Add as new stakeholder
+            stakeholders_data.append({
+                "name": zi_contact.get("name", ""),
+                "title": zi_contact.get("title", ""),
+                "email": zi_contact.get("email", ""),
+                "phone": zi_contact.get("phone", ""),
+                "linkedin_url": zi_contact.get("linkedin", ""),
+                "direct_phone": zi_contact.get("direct_phone", ""),
+                "mobile_phone": zi_contact.get("mobile_phone", ""),
+                "company_phone": zi_contact.get("company_phone", ""),
+                "contact_accuracy_score": zi_contact.get("contact_accuracy_score", 0),
+                "department": zi_contact.get("department", ""),
+                "management_level": zi_contact.get("management_level", ""),
+                "source": "zoominfo",
+            })
+
+    return stakeholders_data
+
+
 async def process_company_profile(job_id: str, company_data: dict):
     """
     Background task to process company profile with real APIs.
@@ -553,6 +844,8 @@ async def process_company_profile(job_id: str, company_data: dict):
     apollo_data = {}
     pdl_data = {}
     hunter_data = {}
+    zoominfo_data = {}
+    zoominfo_contacts = []
     stakeholders_data = []
     orchestrator_plan = None
 
@@ -612,6 +905,24 @@ async def process_company_profile(job_id: str, company_data: dict):
         else:
             logger.warning("Hunter.io returned no data - check API key or domain validity")
 
+        # Step 2.6: ZoomInfo Data Collection (PRIMARY SOURCE)
+        jobs_store[job_id]["progress"] = 42
+        jobs_store[job_id]["current_step"] = "Querying ZoomInfo GTM API (PRIMARY SOURCE)..."
+        zoominfo_data = {}
+        zoominfo_contacts = []
+        zi_client = _get_zoominfo_client()
+        if zi_client:
+            try:
+                zoominfo_data, zoominfo_contacts = await _fetch_all_zoominfo(zi_client, company_data)
+                jobs_store[job_id]["zoominfo_data"] = zoominfo_data
+                logger.info(f"ZoomInfo returned {len(zoominfo_data)} data fields, {len(zoominfo_contacts)} contacts")
+            except Exception as e:
+                logger.warning(f"ZoomInfo data collection failed: {e}")
+                jobs_store[job_id]["zoominfo_data"] = {}
+        else:
+            logger.info("ZoomInfo not configured, skipping")
+            jobs_store[job_id]["zoominfo_data"] = {}
+
         # Step 2.75: Fetch stakeholders from Apollo
         jobs_store[job_id]["progress"] = 45
         jobs_store[job_id]["current_step"] = "Searching for executive stakeholders..."
@@ -622,6 +933,29 @@ async def process_company_profile(job_id: str, company_data: dict):
             jobs_store[job_id]["current_step"] = "Extracting contacts from Hunter.io..."
             stakeholders_data = extract_stakeholders_from_hunter(hunter_data)
 
+        # Step 2.82: Merge ZoomInfo enriched contacts into stakeholders
+        if zoominfo_contacts:
+            jobs_store[job_id]["current_step"] = "Merging ZoomInfo enriched contacts..."
+            stakeholders_data = _merge_zoominfo_contacts(stakeholders_data or [], zoominfo_contacts)
+            logger.info(f"After ZoomInfo merge: {len(stakeholders_data)} total stakeholders")
+
+        # Step 2.83: LLM Contact Fact Checker - Validate contacts against public knowledge
+        jobs_store[job_id]["progress"] = 46
+        jobs_store[job_id]["current_step"] = "Fact-checking contacts with LLM verification..."
+        if stakeholders_data:
+            original_count = len(stakeholders_data)
+            stakeholders_data = await fact_check_contacts(
+                company_data["company_name"], company_data.get("domain", ""), stakeholders_data
+            )
+            filtered = original_count - len(stakeholders_data)
+            if filtered > 0:
+                logger.warning(f"LLM fact checker filtered {filtered} invalid contacts")
+            jobs_store[job_id]["fact_check_results"] = {
+                "original_count": original_count,
+                "passed_count": len(stakeholders_data),
+                "filtered_count": filtered
+            }
+
         # Step 2.85: PRE-LLM DATA VALIDATION - Fact-check BEFORE sending to LLM Council
         # This catches egregiously wrong data like fake CEO names, unverified executives
         jobs_store[job_id]["progress"] = 47
@@ -631,11 +965,13 @@ async def process_company_profile(job_id: str, company_data: dict):
         domain = company_data.get("domain", "")
 
         # Validate company-level data (CEO, company name, etc.)
+        # Cross-reference CEO from Apollo, PDL, AND ZoomInfo
         company_validation_data = {
-            "ceo": apollo_data.get("ceo") or pdl_data.get("ceo"),
+            "ceo": apollo_data.get("ceo") or pdl_data.get("ceo") or zoominfo_data.get("ceo"),
+            "zoominfo_ceo": zoominfo_data.get("ceo", ""),
             "company_name": company_data.get("company_name"),
-            "headquarters": apollo_data.get("headquarters") or pdl_data.get("headquarters"),
-            "industry": apollo_data.get("industry") or pdl_data.get("industry"),
+            "headquarters": apollo_data.get("headquarters") or pdl_data.get("headquarters") or zoominfo_data.get("headquarters"),
+            "industry": apollo_data.get("industry") or pdl_data.get("industry") or zoominfo_data.get("industry"),
             "founded_year": apollo_data.get("founded_year") or pdl_data.get("founded_year"),
             "stakeholders": stakeholders_data or [],
         }
@@ -710,7 +1046,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Step 4: Validate with LLM Council (28 specialists + 1 aggregator)
         jobs_store[job_id]["progress"] = 60
         jobs_store[job_id]["current_step"] = "Running LLM Council (28 specialists)..."
-        validated_data = await validate_with_council(company_data, apollo_data, pdl_data, hunter_data, stakeholders_data, news_data)
+        validated_data = await validate_with_council(company_data, apollo_data, pdl_data, hunter_data, stakeholders_data, news_data, zoominfo_data)
 
         # Extract council metadata for debug mode
         council_metadata = validated_data.pop("_council_metadata", {})
@@ -761,8 +1097,14 @@ async def process_company_profile(job_id: str, company_data: dict):
                     "contact": {
                         "email": s.get("email"),
                         "phone": s.get("phone"),
-                        "linkedinUrl": s.get("linkedin_url")
+                        "directPhone": s.get("direct_phone"),
+                        "mobilePhone": s.get("mobile_phone"),
+                        "companyPhone": s.get("company_phone"),
+                        "linkedinUrl": s.get("linkedin_url"),
+                        "contactAccuracyScore": s.get("contact_accuracy_score"),
                     },
+                    "factCheckScore": s.get("fact_check_score"),
+                    "factCheckNotes": s.get("fact_check_notes"),
                     "strategicPriorities": ai_profile.get("strategic_priorities", []),
                     "communicationPreference": ai_profile.get("communication_preference", ""),
                     "recommendedPlay": ai_profile.get("recommended_play", "")
@@ -815,6 +1157,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["hunter_data"] = hunter_data
         jobs_store[job_id]["stakeholders_data"] = stakeholders_data
         jobs_store[job_id]["news_data"] = news_data
+        # zoominfo_data already stored during ZoomInfo step
         # orchestrator_data already stored during orchestration step
 
         logger.info(f"Completed processing for job {job_id}")
@@ -2172,7 +2515,16 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
         "scoops_count": len(zi_scoops),
         "contacts_count": len(zi_contacts),
         "technologies_count": len(zi_technologies),
+        # Growth metrics
+        "one_year_employee_growth": zoominfo_data.get("one_year_employee_growth", "N/A") if zoominfo_data else "N/A",
+        "two_year_employee_growth": zoominfo_data.get("two_year_employee_growth", "N/A") if zoominfo_data else "N/A",
+        "funding_amount": zoominfo_data.get("funding_amount", "N/A") if zoominfo_data else "N/A",
+        "fortune_rank": zoominfo_data.get("fortune_rank", "N/A") if zoominfo_data else "N/A",
+        "num_locations": zoominfo_data.get("num_locations", "N/A") if zoominfo_data else "N/A",
     }
+
+    # Extract fact check results
+    fact_check_results = job_data.get("fact_check_results", {})
 
     base_time = datetime.fromisoformat(created_at.replace("Z", ""))
 
@@ -2231,6 +2583,41 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                     ],
                     "technologies": zi_technologies[:10] if zi_technologies else [],
                     "contacts_found": len(zi_contacts) if zi_contacts else 0,
+                    "growth_metrics": {
+                        "one_year_employee_growth": zoominfo_extracted.get("one_year_employee_growth"),
+                        "two_year_employee_growth": zoominfo_extracted.get("two_year_employee_growth"),
+                        "funding_amount": zoominfo_extracted.get("funding_amount"),
+                    }
+                }
+            },
+            {
+                "id": "step-1d",
+                "name": "ZoomInfo Contact Enrich",
+                "description": "Enriching contacts with direct phone, mobile phone, company phone, accuracy scores via ZoomInfo Contact Enrich API (Search → Enrich 2-step)",
+                "status": "completed" if zi_contacts else "skipped",
+                "start_time": (base_time + timedelta(seconds=2, milliseconds=400)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=3, milliseconds=200)).isoformat() + "Z",
+                "duration": 800,
+                "metadata": {
+                    "source": "ZoomInfo Contact Enrich",
+                    "contacts_enriched": len(zi_contacts) if zi_contacts else 0,
+                    "fields_added": ["directPhone", "mobilePhone", "companyPhone", "contactAccuracyScore", "department", "managementLevel"],
+                }
+            },
+            {
+                "id": "step-1e",
+                "name": "LLM Contact Fact Checker",
+                "description": "Validating executive contacts against public knowledge using GPT-4o-mini. Filters out incorrect contacts (score < 0.3).",
+                "status": "completed",
+                "start_time": (base_time + timedelta(seconds=3, milliseconds=200)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
+                "duration": 800,
+                "metadata": {
+                    "model": "gpt-4o-mini",
+                    "original_contacts": fact_check_results.get("original_count", 0),
+                    "passed_contacts": fact_check_results.get("passed_count", 0),
+                    "filtered_contacts": fact_check_results.get("filtered_count", 0),
+                    "threshold": 0.3,
                 }
             },
             {
@@ -2443,6 +2830,37 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "duration": 800,
                 "is_sensitive": True,
                 "masked_fields": ["authorization", "email", "phone"]
+            },
+            {
+                "id": "api-0e",
+                "api_name": "ZoomInfo Contact Enrich",
+                "url": "https://api.zoominfo.com/gtm/data/v1/contacts/enrich",
+                "method": "POST",
+                "status_code": 200 if zi_contacts else 204,
+                "status_text": "OK" if zi_contacts else "No Content",
+                "headers": {"content-type": "application/vnd.api+json"},
+                "request_body": {"data": {"type": "ContactEnrich", "attributes": {"personId": ["<contact_ids>"]}}},
+                "response_body": {
+                    "data": [
+                        {
+                            "personId": c.get("person_id", "N/A"),
+                            "firstName": c.get("name", "").split()[0] if c.get("name") and " " in c.get("name", "") else "N/A",
+                            "lastName": c.get("name", "").split()[-1] if c.get("name") and " " in c.get("name", "") else "N/A",
+                            "jobTitle": c.get("title", "N/A"),
+                            "directPhone": c.get("direct_phone", "N/A"),
+                            "mobilePhone": c.get("mobile_phone", "N/A"),
+                            "companyPhone": c.get("company_phone", "N/A"),
+                            "contactAccuracyScore": c.get("contact_accuracy_score", 0),
+                            "department": c.get("department", "N/A"),
+                            "managementLevel": c.get("management_level", "N/A"),
+                        }
+                        for c in (zi_contacts[:5] if zi_contacts else [])
+                    ] if zi_contacts else [{"note": "No contacts enriched"}]
+                },
+                "timestamp": (base_time + timedelta(seconds=2, milliseconds=500)).isoformat() + "Z",
+                "duration": 650,
+                "is_sensitive": True,
+                "masked_fields": ["authorization", "directPhone", "mobilePhone"]
             },
             {
                 "id": "api-1",

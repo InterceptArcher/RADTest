@@ -97,6 +97,34 @@ GRANULAR_DATA_POINTS = {
     "stakeholder_map.conversation_starters": ["gnews", "apollo"],
     "stakeholder_map.recommended_next_steps": ["gnews", "apollo", "pdl"],
 
+    # === GROWTH METRICS (ZoomInfo exclusive/primary) ===
+    "executive_snapshot.one_year_employee_growth": ["zoominfo"],
+    "executive_snapshot.two_year_employee_growth": ["zoominfo"],
+    "executive_snapshot.funding_amount": ["zoominfo", "pdl", "apollo"],
+    "executive_snapshot.fortune_rank": ["zoominfo"],
+    "executive_snapshot.num_locations": ["zoominfo", "pdl"],
+    "executive_snapshot.business_model": ["zoominfo", "pdl"],
+
+    # === PHONE NUMBERS (ZoomInfo Contact Enrich) ===
+    "stakeholder_map.cio_direct_phone": ["zoominfo"],
+    "stakeholder_map.cio_mobile_phone": ["zoominfo"],
+    "stakeholder_map.cio_accuracy_score": ["zoominfo"],
+    "stakeholder_map.cto_direct_phone": ["zoominfo"],
+    "stakeholder_map.cto_mobile_phone": ["zoominfo"],
+    "stakeholder_map.cto_accuracy_score": ["zoominfo"],
+    "stakeholder_map.ciso_direct_phone": ["zoominfo"],
+    "stakeholder_map.ciso_mobile_phone": ["zoominfo"],
+    "stakeholder_map.ciso_accuracy_score": ["zoominfo"],
+    "stakeholder_map.cfo_direct_phone": ["zoominfo"],
+    "stakeholder_map.cfo_mobile_phone": ["zoominfo"],
+    "stakeholder_map.cfo_accuracy_score": ["zoominfo"],
+    "stakeholder_map.coo_direct_phone": ["zoominfo"],
+    "stakeholder_map.coo_mobile_phone": ["zoominfo"],
+    "stakeholder_map.coo_accuracy_score": ["zoominfo"],
+    "stakeholder_map.cpo_direct_phone": ["zoominfo"],
+    "stakeholder_map.cpo_mobile_phone": ["zoominfo"],
+    "stakeholder_map.cpo_accuracy_score": ["zoominfo"],
+
     # === SUPPORTING ASSETS ===
     "supporting_assets.email_templates": ["hunter", "apollo"],
     "supporting_assets.linkedin_outreach": ["apollo", "pdl"],
@@ -207,11 +235,15 @@ API_CAPABILITIES = {
         "best_for": [
             "company enrichment",
             "contact discovery",
+            "contact enrichment",
             "buyer intent signals",
             "business scoops",
             "technology stack",
             "executive data",
-            "firmographic data"
+            "firmographic data",
+            "phone numbers",
+            "growth metrics",
+            "corporate hierarchy"
         ],
         "provides": [
             "company_name",
@@ -223,12 +255,21 @@ API_CAPABILITIES = {
             "executives",
             "email",
             "phone",
+            "direct_phone",
+            "mobile_phone",
+            "company_phone",
+            "contact_accuracy_score",
             "linkedin",
             "intent_signals",
             "scoops",
-            "technologies"
+            "technologies",
+            "employee_growth",
+            "funding_amount",
+            "fortune_rank",
+            "num_locations",
+            "business_model"
         ],
-        "description": "ZoomInfo GTM API provides premium company enrichment, executive contacts, buyer intent signals, business scoops (hires, funding, expansion), and installed technology data. Acts as tiebreaker in LLM council when other sources disagree.",
+        "description": "ZoomInfo GTM API provides premium company enrichment, executive contacts with direct/mobile phones, buyer intent signals, business scoops (hires, funding, expansion), installed technology data, and growth metrics. Acts as PRIMARY source and tiebreaker in LLM council when other sources disagree.",
         "required_for": ["executive_snapshot", "buying_signals", "stakeholder_map"]
     }
 }
