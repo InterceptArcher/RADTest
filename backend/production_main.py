@@ -1236,6 +1236,23 @@ async def process_company_profile(job_id: str, company_data: dict):
                 else:
                     stakeholder_map_data["otherContacts"].append(contact_entry)
 
+        # Backfill validated_data with raw API sources for any fields the LLM Council missed.
+        # This ensures _build_executive_snapshot, build_buying_signals, and other downstream
+        # functions have access to the most complete data possible.
+        _backfill_fields = [
+            "industry", "sub_industry", "employee_count", "annual_revenue", "revenue",
+            "headquarters", "founded_year", "ceo", "company_type", "target_market",
+            "linkedin_url", "geographic_reach", "founders", "customer_segments",
+            "products", "technologies", "technology", "competitors",
+        ]
+        _raw_sources = [apollo_data, pdl_data, zoominfo_data]
+        for _field in _backfill_fields:
+            if not validated_data.get(_field):
+                for _src in _raw_sources:
+                    if _src.get(_field):
+                        validated_data[_field] = _src[_field]
+                        break
+
         jobs_store[job_id]["result"] = {
             "success": True,
             "company_name": validated_data.get("company_name", company_data["company_name"]),
@@ -1244,22 +1261,23 @@ async def process_company_profile(job_id: str, company_data: dict):
             "slideshow_id": slideshow_result.get("slideshow_id"),
             "confidence_score": validated_data.get("confidence_score", 0.85),
             # Core company data fields for the overview
-            "industry": validated_data.get("industry"),
-            "sub_industry": validated_data.get("sub_industry"),
-            "employee_count": validated_data.get("employee_count"),
-            "annual_revenue": validated_data.get("annual_revenue"),
-            "headquarters": validated_data.get("headquarters"),
-            "geographic_reach": validated_data.get("geographic_reach", []),
-            "founded_year": validated_data.get("founded_year"),
-            "founders": validated_data.get("founders", []),
-            "ceo": validated_data.get("ceo"),
-            "target_market": validated_data.get("target_market"),
-            "customer_segments": validated_data.get("customer_segments", []),
-            "products": validated_data.get("products", []),
-            "technologies": validated_data.get("technologies", []),
-            "competitors": validated_data.get("competitors", []),
-            "company_type": validated_data.get("company_type"),
-            "linkedin_url": validated_data.get("linkedin_url"),
+            # Fallback chain: validated_data (LLM Council) → apollo → pdl → zoominfo → company_data
+            "industry": validated_data.get("industry") or apollo_data.get("industry") or pdl_data.get("industry") or zoominfo_data.get("industry"),
+            "sub_industry": validated_data.get("sub_industry") or apollo_data.get("sub_industry") or pdl_data.get("sub_industry") or zoominfo_data.get("sub_industry"),
+            "employee_count": validated_data.get("employee_count") or apollo_data.get("employee_count") or pdl_data.get("employee_count") or zoominfo_data.get("employee_count"),
+            "annual_revenue": validated_data.get("annual_revenue") or validated_data.get("revenue") or apollo_data.get("annual_revenue") or apollo_data.get("revenue") or pdl_data.get("annual_revenue") or zoominfo_data.get("annual_revenue") or zoominfo_data.get("revenue"),
+            "headquarters": validated_data.get("headquarters") or apollo_data.get("headquarters") or pdl_data.get("headquarters") or zoominfo_data.get("headquarters"),
+            "geographic_reach": validated_data.get("geographic_reach") or apollo_data.get("geographic_reach") or pdl_data.get("geographic_reach") or [],
+            "founded_year": validated_data.get("founded_year") or apollo_data.get("founded_year") or pdl_data.get("founded_year") or zoominfo_data.get("founded_year"),
+            "founders": validated_data.get("founders") or apollo_data.get("founders") or pdl_data.get("founders") or [],
+            "ceo": validated_data.get("ceo") or apollo_data.get("ceo") or pdl_data.get("ceo") or zoominfo_data.get("ceo"),
+            "target_market": validated_data.get("target_market") or apollo_data.get("target_market") or pdl_data.get("target_market"),
+            "customer_segments": validated_data.get("customer_segments") or apollo_data.get("customer_segments") or pdl_data.get("customer_segments") or [],
+            "products": validated_data.get("products") or apollo_data.get("products") or pdl_data.get("products") or [],
+            "technologies": validated_data.get("technologies") or validated_data.get("technology") or apollo_data.get("technologies") or apollo_data.get("technology") or pdl_data.get("technologies") or pdl_data.get("technology") or [],
+            "competitors": validated_data.get("competitors") or apollo_data.get("competitors") or pdl_data.get("competitors") or [],
+            "company_type": validated_data.get("company_type") or apollo_data.get("company_type") or pdl_data.get("company_type") or zoominfo_data.get("company_type"),
+            "linkedin_url": validated_data.get("linkedin_url") or apollo_data.get("linkedin_url") or pdl_data.get("linkedin_url") or zoominfo_data.get("linkedin_url"),
             "validated_data": validated_data,
             # New intelligence sections at top level for frontend
             # Build executive_snapshot from nested or flat data
