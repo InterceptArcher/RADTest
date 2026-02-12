@@ -658,8 +658,9 @@ Output JSON:
             contact["fact_check_score"] = 0.5  # Unknown
             contact["fact_check_notes"] = "Not verified"
 
-        # Filter out clearly wrong contacts (score < 0.3)
-        if contact["fact_check_score"] >= 0.3:
+        # Only filter contacts that are clearly wrong (score < 0.15)
+        # Keep most contacts and let the frontend show confidence badges
+        if contact["fact_check_score"] >= 0.15:
             enriched.append(contact)
         else:
             logger.warning(
@@ -727,6 +728,8 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
             logger.info(f"ZoomInfo company enrich: {len(company_result.get('normalized', {}))} fields")
         elif isinstance(company_result, Exception):
             logger.warning(f"ZoomInfo company enrich exception: {company_result}")
+        elif isinstance(company_result, dict):
+            logger.warning(f"ZoomInfo company enrich failed: success=False, error={company_result.get('error', 'unknown')}")
 
         # Intent signals
         if isinstance(intent_result, dict) and intent_result.get("success"):
@@ -734,6 +737,8 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
             logger.info(f"ZoomInfo intent: {len(intent_result.get('intent_signals', []))} signals")
         elif isinstance(intent_result, Exception):
             logger.warning(f"ZoomInfo intent exception: {intent_result}")
+        elif isinstance(intent_result, dict):
+            logger.warning(f"ZoomInfo intent failed: success=False, error={intent_result.get('error', 'unknown')}")
 
         # Scoops
         if isinstance(scoops_result, dict) and scoops_result.get("success"):
@@ -741,6 +746,8 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
             logger.info(f"ZoomInfo scoops: {len(scoops_result.get('scoops', []))} events")
         elif isinstance(scoops_result, Exception):
             logger.warning(f"ZoomInfo scoops exception: {scoops_result}")
+        elif isinstance(scoops_result, dict):
+            logger.warning(f"ZoomInfo scoops failed: success=False, error={scoops_result.get('error', 'unknown')}")
 
         # News
         if isinstance(news_result, dict) and news_result.get("success"):
@@ -748,6 +755,8 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
             logger.info(f"ZoomInfo news: {len(news_result.get('articles', []))} articles")
         elif isinstance(news_result, Exception):
             logger.warning(f"ZoomInfo news exception: {news_result}")
+        elif isinstance(news_result, dict):
+            logger.warning(f"ZoomInfo news failed: success=False, error={news_result.get('error', 'unknown')}")
 
         # Technologies
         if isinstance(tech_result, dict) and tech_result.get("success"):
@@ -755,6 +764,8 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
             logger.info(f"ZoomInfo tech: {len(tech_result.get('technologies', []))} installs")
         elif isinstance(tech_result, Exception):
             logger.warning(f"ZoomInfo tech exception: {tech_result}")
+        elif isinstance(tech_result, dict):
+            logger.warning(f"ZoomInfo tech failed: success=False, error={tech_result.get('error', 'unknown')}")
 
         # Contacts (Search → Enrich)
         if isinstance(contacts_result, dict) and contacts_result.get("success"):
@@ -762,6 +773,8 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
             logger.info(f"ZoomInfo contacts: {len(contacts)} enriched contacts")
         elif isinstance(contacts_result, Exception):
             logger.warning(f"ZoomInfo contacts exception: {contacts_result}")
+        elif isinstance(contacts_result, dict):
+            logger.warning(f"ZoomInfo contacts failed: success=False, error={contacts_result.get('error', 'unknown')}")
 
         return combined_data, contacts
 

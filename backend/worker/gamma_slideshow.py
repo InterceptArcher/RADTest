@@ -701,11 +701,17 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         if growth_1yr or growth_2yr or funding or fortune or num_locations:
             markdown += "**Growth Metrics:**\n\n"
             if growth_1yr:
-                sign = "+" if float(str(growth_1yr)) >= 0 else ""
-                markdown += f"- 1-Year Employee Growth: {sign}{growth_1yr}%\n"
+                try:
+                    sign = "+" if float(str(growth_1yr).strip('%').strip()) >= 0 else ""
+                    markdown += f"- 1-Year Employee Growth: {sign}{growth_1yr}%\n"
+                except (ValueError, TypeError):
+                    markdown += f"- 1-Year Employee Growth: {growth_1yr}\n"
             if growth_2yr:
-                sign = "+" if float(str(growth_2yr)) >= 0 else ""
-                markdown += f"- 2-Year Employee Growth: {sign}{growth_2yr}%\n"
+                try:
+                    sign = "+" if float(str(growth_2yr).strip('%').strip()) >= 0 else ""
+                    markdown += f"- 2-Year Employee Growth: {sign}{growth_2yr}%\n"
+                except (ValueError, TypeError):
+                    markdown += f"- 2-Year Employee Growth: {growth_2yr}\n"
             if funding:
                 markdown += f"- Recent Funding: ${funding}\n"
             if fortune:
