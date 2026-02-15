@@ -21,6 +21,53 @@
 
 ---
 
+## Latest Features (2026-02-15)
+
+### 🔧 Gamma API URL Extraction Enhancement
+
+**Problem Solved:** Gamma slideshow generation was failing when the API response didn't include a URL field in the expected location, particularly when using template-based generation (`/v1.0/generations/from-template` endpoint).
+
+**Solution Implemented:** Comprehensive URL extraction logic with multiple fallback mechanisms:
+
+**1. Multiple URL Field Checks**
+- **Previous**: Only checked 4 standard fields (`gammaUrl`, `url`, `webUrl`, `gamma_url`)
+- **Now**: Checks 7+ possible locations:
+  - Standard top-level fields: `gammaUrl`, `url`, `webUrl`, `gamma_url`
+  - Link fields: `link`, `viewLink`, `shareLink`
+  - Nested objects: `gamma.url`, `gamma.webUrl`
+  - Data wrappers: `data.url`, `data.gammaUrl`
+  - Wildcard search: Any field containing "gamma.app" or "http"
+
+**2. URL Construction Fallback**
+- **Previous**: Raised exception if URL not found in response
+- **Now**: Constructs valid URL from generation ID if no URL field present
+  - Format: `https://gamma.app/docs/{generation_id}`
+  - Logged as warning for diagnostic purposes
+  - Ensures slideshow is always accessible even if API response format changes
+
+**3. Enhanced Error Handling & Logging**
+- Added status code logging for API requests
+- Added template ID logging to distinguish template vs standard generation
+- Enhanced generation ID error messages with full response context
+- Added final validation to ensure URL is present before returning
+
+**4. Comprehensive Test Coverage**
+- Created `test_gamma_url_extraction.py` - Unit tests for URL extraction logic
+- Created `test_gamma_url_fix.py` - Validation test suite with 6 scenarios
+- Tests cover: standard fields, nested objects, construction fallback, different domains
+- All tests passing (6/6)
+
+**Methodology & Rationale:**
+- **Resilient API Integration**: Gamma API response format may vary or change over time - multiple fallback mechanisms ensure robustness
+- **Template Endpoint Compatibility**: Template-based generation may have different response structure than standard generation
+- **Graceful Degradation**: URL construction fallback ensures slideshow is always accessible even if API doesn't return URL
+- **Diagnostic Visibility**: Enhanced logging helps identify when fallbacks are triggered and why
+- **Fail-Safe Design**: Final validation ensures either a valid URL exists or a clear error is raised (no silent failures)
+
+**Test Coverage:** 2 test suites with 6 validation scenarios covering all URL extraction paths
+
+---
+
 ## Latest Features (2026-02-11)
 
 ### 🎯 Maximum Data Density & Comprehensive ZoomInfo Field Extraction
