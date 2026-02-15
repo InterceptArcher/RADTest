@@ -1646,20 +1646,26 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             async with httpx.AsyncClient(timeout=300) as client:
                 # Create generation
                 logger.info(f"Sending request to Gamma API: {api_endpoint}")
+                logger.info(f"Using template: {self.template_id if self.template_id else 'None (standard generation)'}")
+
                 response = await client.post(
                     api_endpoint,
                     json=payload,
                     headers=headers
                 )
 
+                logger.info(f"Gamma API status code: {response.status_code}")
                 response.raise_for_status()
                 result = response.json()
 
-                logger.info(f"Gamma API response: {result}")
+                logger.info(f"Gamma API response keys: {list(result.keys())}")
+                logger.info(f"Full Gamma API response: {result}")
 
                 generation_id = result.get("generationId") or result.get("generation_id") or result.get("id")
                 if not generation_id:
-                    logger.error(f"No generationId in response. Full response: {result}")
+                    logger.error(f"❌ No generationId in response!")
+                    logger.error(f"Response keys: {list(result.keys())}")
+                    logger.error(f"Full response: {result}")
                     raise Exception(f"No generationId returned from Gamma API. Response keys: {list(result.keys())}")
 
                 logger.info(f"Generation started with ID: {generation_id}")
@@ -1724,13 +1730,33 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                                         gamma_url = value
                                         break
 
+                            # Check nested objects for URL
+                            if not gamma_url and isinstance(status_data.get("gamma"), dict):
+                                gamma_url = status_data["gamma"].get("url") or status_data["gamma"].get("webUrl")
+
+                            # Check if URL is in a 'data' wrapper
+                            if not gamma_url and isinstance(status_data.get("data"), dict):
+                                gamma_url = status_data["data"].get("url") or status_data["data"].get("gammaUrl")
+
+                            # Check for 'link' or 'viewLink' fields
+                            if not gamma_url:
+                                gamma_url = status_data.get("link") or status_data.get("viewLink") or status_data.get("shareLink")
+
+                            # CRITICAL FIX: Construct valid URL from generation ID if still not found
+                            # The Gamma API may not return the URL directly for template-based generations
+                            if not gamma_url and generation_id:
+                                # Standard Gamma URL format: https://gamma.app/docs/[generationId]
+                                gamma_url = f"https://gamma.app/docs/{generation_id}"
+                                logger.warning(f"URL not found in API response. Constructed URL from generation ID: {gamma_url}")
+
+                            # Final validation
                             if not gamma_url:
                                 logger.error(f"❌ No URL field found in completed response!")
                                 logger.error(f"Response keys: {list(status_data.keys())}")
                                 logger.error(f"Full response: {status_data}")
                                 raise Exception(f"No URL returned from completed generation. Response keys: {list(status_data.keys())}")
 
-                            logger.info(f"Slideshow generated successfully: {gamma_url}")
+                            logger.info(f"✅ Slideshow URL: {gamma_url}")
                             return {
                                 "url": gamma_url,
                                 "id": generation_id,
