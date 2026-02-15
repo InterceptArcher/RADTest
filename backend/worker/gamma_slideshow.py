@@ -1148,215 +1148,215 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 name = stakeholder.get('name', 'Contact Name')
                 title = stakeholder.get('title', stakeholder.get('role_type', stakeholder.get('position', 'Executive')))
 
-            # Determine persona type from title
-            persona = "Executive"
-            title_upper = title.upper()
-            for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO', 'CEO']:
-                if p in title_upper:
-                    persona = p
-                    break
+                # Determine persona type from title
+                persona = "Executive"
+                title_upper = title.upper()
+                for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO', 'CEO']:
+                    if p in title_upper:
+                        persona = p
+                        break
 
-            markdown += f"# Stakeholder Map: Role Profiles\n\n"
-            markdown += f"## Persona: {persona}\n\n"
+                markdown += f"# Stakeholder Map: Role Profiles\n\n"
+                markdown += f"## Persona: {persona}\n\n"
 
-            # Contact Information (at top)
-            markdown += f"**Contact:** {name}\n\n"
-            markdown += f"**Title:** {title}\n\n"
+                # Contact Information (at top)
+                markdown += f"**Contact:** {name}\n\n"
+                markdown += f"**Title:** {title}\n\n"
 
-            # Department
-            department = stakeholder.get('department', '')
-            if not department:
-                # Infer from persona
-                dept_map = {
-                    'CFO': 'Finance',
-                    'CTO': 'Technology',
-                    'CIO': 'Information Technology',
-                    'CISO': 'Security',
-                    'COO': 'Operations',
-                    'CPO': 'Product',
-                    'CEO': 'C-Suite'
-                }
-                department = dept_map.get(persona, 'C-Suite')
-            markdown += f"**Department:** {department}\n\n"
+                # Department
+                department = stakeholder.get('department', '')
+                if not department:
+                    # Infer from persona
+                    dept_map = {
+                        'CFO': 'Finance',
+                        'CTO': 'Technology',
+                        'CIO': 'Information Technology',
+                        'CISO': 'Security',
+                        'COO': 'Operations',
+                        'CPO': 'Product',
+                        'CEO': 'C-Suite'
+                    }
+                    department = dept_map.get(persona, 'C-Suite')
+                markdown += f"**Department:** {department}\n\n"
 
-            # Start date
-            start_date = stakeholder.get('start_date', stakeholder.get('hire_date', ''))
-            if start_date:
-                markdown += f"**Start date:** {start_date}\n\n"
-            else:
-                markdown += "**Start date:** Currently unavailable\n\n"
-
-            # Phone numbers - check ALL possible field variations from all sources
-            # ZoomInfo: phone, mobile_phone, direct_phone
-            # Apollo: phone, phone_number
-            # PDL: phone, mobile_phone
-            phone = stakeholder.get('phone', stakeholder.get('phone_number', stakeholder.get('phoneNumber', '')))
-            mobile = stakeholder.get('mobile', stakeholder.get('mobile_phone', stakeholder.get('mobilePhone', '')))
-            direct_phone = stakeholder.get('direct_phone', stakeholder.get('directPhone', ''))
-
-            if direct_phone:
-                markdown += f"**Direct Phone:** {direct_phone}\n\n"
-            else:
-                markdown += "**Direct Phone:** Currently unavailable\n\n"
-
-            if mobile:
-                markdown += f"**Mobile Phone:** {mobile}\n\n"
-            elif phone and not direct_phone:
-                markdown += f"**Mobile Phone:** {phone}\n\n"
-            else:
-                markdown += "**Mobile Phone:** Currently unavailable\n\n"
-
-            # Email
-            email = stakeholder.get('email', stakeholder.get('value', ''))
-            if email:
-                markdown += f"**Email:** {email}\n\n"
-            else:
-                markdown += "**Email:** Currently unavailable\n\n"
-
-            # LinkedIn
-            linkedin = stakeholder.get('linkedin', '')
-            if linkedin:
-                markdown += f"**LinkedIn:** {linkedin}\n\n"
-            else:
-                markdown += "**LinkedIn:** Currently unavailable\n\n"
-
-            # About - 1 paragraph bio (call out new hire if applicable)
-            markdown += "## About\n\n"
-            bio = stakeholder.get('bio', stakeholder.get('about', stakeholder.get('description', '')))
-            is_new_hire = stakeholder.get('is_new_hire', False)
-            hire_date = stakeholder.get('hire_date', stakeholder.get('start_date', ''))
-
-            if bio:
-                markdown += f"{bio}"
-                if is_new_hire and hire_date:
-                    markdown += f" **[If they are a new hire – call out & include the date: NEW HIRE - joined {hire_date}]**"
-                markdown += "\n\n"
-            else:
-                markdown += f"{name} serves as {title} at {company_name}, responsible for strategic initiatives and organizational leadership in their domain."
-                if is_new_hire and hire_date:
-                    markdown += f" **[NEW HIRE - joined {hire_date}]**"
-                markdown += "\n\n"
-
-            # Strategic Priorities - 3 bullet points with titles and descriptions
-            markdown += "## Strategic priorities\n\n"
-            priorities = stakeholder.get('strategic_priorities', stakeholder.get('priorities', []))
-            if priorities:
-                if isinstance(priorities, list):
-                    for i, priority in enumerate(priorities[:3], 1):
-                        if isinstance(priority, dict):
-                            p_name = priority.get('name', priority.get('priority', priority.get('title', '')))
-                            p_desc = priority.get('description', '')
-                            markdown += f"**[{i}] {p_name}**\n\n"
-                            if p_desc:
-                                markdown += f"{p_desc}\n\n"
-                        else:
-                            markdown += f"**[{i}]** {priority}\n\n"
+                # Start date
+                start_date = stakeholder.get('start_date', stakeholder.get('hire_date', ''))
+                if start_date:
+                    markdown += f"**Start date:** {start_date}\n\n"
                 else:
-                    markdown += f"**[1]** {priorities}\n\n"
-            else:
-                # NOTE: Strategic priorities should be generated by enrichment pipeline based on persona, news, and company context
-                # Generate persona-specific priorities dynamically
-                if persona == 'CFO':
-                    markdown += f"**[1] Optimize operational efficiency and cost management**\n\n"
-                    markdown += f"Drive cost transparency and efficiency across technology investments, focusing on standardization and vendor consolidation to reduce complexity.\n\n"
-                    markdown += f"**[2] Strengthen financial controls and risk management**\n\n"
-                    markdown += f"Ensure technology investments support compliance requirements and reduce operational risk exposure.\n\n"
-                    markdown += f"**[3] Enable data-driven decision making**\n\n"
-                    markdown += f"Improve visibility into technology spend and outcomes to support faster, more defensible investment decisions.\n\n"
-                elif persona == 'CTO' or persona == 'CIO':
-                    markdown += f"**[1] Accelerate digital transformation initiatives**\n\n"
-                    markdown += f"Modernize infrastructure to support {company_name}'s business agility and innovation objectives in {industry}.\n\n"
-                    markdown += f"**[2] Enhance security and operational resilience**\n\n"
-                    markdown += f"Strengthen cybersecurity posture and ensure business continuity through modern, secure infrastructure.\n\n"
-                    markdown += f"**[3] Optimize IT operations and support efficiency**\n\n"
-                    markdown += f"Reduce operational overhead through automation, standardization, and strategic vendor partnerships.\n\n"
-                elif persona == 'CISO':
-                    markdown += f"**[1] Strengthen cybersecurity posture across the enterprise**\n\n"
-                    markdown += f"Reduce attack surface and improve threat detection/response capabilities for {company_name}.\n\n"
-                    markdown += f"**[2] Ensure regulatory compliance and risk management**\n\n"
-                    markdown += f"Maintain compliance with {industry} regulations while managing security risk across technology infrastructure.\n\n"
-                    markdown += f"**[3] Enable secure digital transformation**\n\n"
-                    markdown += f"Balance security requirements with business innovation needs to support strategic initiatives.\n\n"
-                elif persona == 'COO':
-                    markdown += f"**[1] Drive operational excellence and efficiency**\n\n"
-                    markdown += f"Optimize business operations through improved technology, processes, and support models.\n\n"
-                    markdown += f"**[2] Enable scalability and business growth**\n\n"
-                    markdown += f"Ensure technology infrastructure can support {company_name}'s expansion and scaling objectives.\n\n"
-                    markdown += f"**[3] Improve cross-functional collaboration and visibility**\n\n"
-                    markdown += f"Enhance coordination between departments through better tools and standardized processes.\n\n"
-                else:  # CPO, CEO, other executives
-                    markdown += f"**[1] Enable strategic business objectives**\n\n"
-                    markdown += f"Align technology investments with {company_name}'s strategic goals in {industry}.\n\n"
-                    markdown += f"**[2] Drive innovation and competitive advantage**\n\n"
-                    markdown += f"Leverage technology to create differentiation and support new business capabilities.\n\n"
-                    markdown += f"**[3] Optimize organizational effectiveness**\n\n"
-                    markdown += f"Improve operational efficiency and decision-making through better technology and data insights.\n\n"
+                    markdown += "**Start date:** Currently unavailable\n\n"
 
-            # Communication Preferences
-            markdown += "## Communication preference\n\n"
-            comm_pref = stakeholder.get('communication_preference', stakeholder.get('communication_preferences', ''))
-            if comm_pref:
-                markdown += f"{comm_pref}\n\n"
-            else:
-                markdown += "Email / LinkedIn / Phone / Events\n\n"
+                # Phone numbers - check ALL possible field variations from all sources
+                # ZoomInfo: phone, mobile_phone, direct_phone
+                # Apollo: phone, phone_number
+                # PDL: phone, mobile_phone
+                phone = stakeholder.get('phone', stakeholder.get('phone_number', stakeholder.get('phoneNumber', '')))
+                mobile = stakeholder.get('mobile', stakeholder.get('mobile_phone', stakeholder.get('mobilePhone', '')))
+                direct_phone = stakeholder.get('direct_phone', stakeholder.get('directPhone', ''))
 
-            # Conversation Starters - persona-tailored with context
-            markdown += "## Conversation starters\n\n"
-            markdown += "*[1-2 sentences of persona-tailored language] [Include Recommended Play – subject to availability]*\n\n"
-
-            conv_starters = stakeholder.get('conversation_starters', stakeholder.get('talking_points', []))
-            if conv_starters:
-                if isinstance(conv_starters, list):
-                    for i, starter in enumerate(conv_starters[:3], 1):
-                        if isinstance(starter, dict):
-                            starter_title = starter.get('title', starter.get('topic', f'Topic {i}'))
-                            starter_text = starter.get('text', starter.get('question', ''))
-                            markdown += f"**[{i}] {starter_title}**\n\n"
-                            markdown += f"\"{starter_text}\"\n\n"
-                        else:
-                            markdown += f"**[{i}]** \"{starter}\"\n\n"
+                if direct_phone:
+                    markdown += f"**Direct Phone:** {direct_phone}\n\n"
                 else:
-                    markdown += f"**[1]** \"{conv_starters}\"\n\n"
-            else:
-                # NOTE: Conversation starters should be generated by LLM Council based on persona, company news, and intent signals
-                # Generate persona-specific conversation starters dynamically
-                if persona == 'CFO':
-                    markdown += f"**[1] Technology investment optimization**\n\n"
-                    markdown += f"\"As you evaluate technology investments for {company_name}, what's your priority: reducing operational costs, improving vendor efficiency, or increasing visibility into technology ROI?\"\n\n"
-                    markdown += f"**[2] Risk and compliance management**\n\n"
-                    markdown += f"\"How are you balancing technology risk management with {industry} compliance requirements, and what metrics do you use to quantify security and operational resilience?\"\n\n"
-                    markdown += f"**[3] Financial planning and forecasting**\n\n"
-                    markdown += f"\"What would help most with technology budget planning: better cost predictability, standardized procurement, or clearer alignment between IT spend and business outcomes?\"\n\n"
-                elif persona == 'CTO' or persona == 'CIO':
-                    markdown += f"**[1] Digital transformation priorities**\n\n"
-                    markdown += f"\"What's driving your technology strategy at {company_name}: modernizing legacy infrastructure, enabling new capabilities, or improving operational efficiency?\"\n\n"
-                    markdown += f"**[2] Infrastructure and security**\n\n"
-                    markdown += f"\"As you balance innovation with security in {industry}, what's the biggest challenge: managing hybrid environments, reducing complexity, or strengthening resilience?\"\n\n"
-                    markdown += f"**[3] Operational excellence**\n\n"
-                    markdown += f"\"Where do you see the most opportunity to improve IT operations: standardizing device management, optimizing support models, or reducing vendor fragmentation?\"\n\n"
-                elif persona == 'CISO':
-                    markdown += f"**[1] Security posture and threat landscape**\n\n"
-                    markdown += f"\"What's your top security priority for {company_name}: reducing attack surface, improving threat detection, or strengthening incident response capabilities?\"\n\n"
-                    markdown += f"**[2] Compliance and risk management**\n\n"
-                    markdown += f"\"How are you addressing {industry} compliance requirements while enabling business innovation, and where do you see the biggest risk exposure?\"\n\n"
-                    markdown += f"**[3] Security infrastructure**\n\n"
-                    markdown += f"\"As you evaluate security infrastructure, what matters most: visibility and control, vendor consolidation, or integration with existing security tools?\"\n\n"
-                elif persona == 'COO':
-                    markdown += f"**[1] Operational efficiency**\n\n"
-                    markdown += f"\"What's the biggest operational bottleneck at {company_name}: process inefficiencies, technology limitations, or coordination across locations?\"\n\n"
-                    markdown += f"**[2] Scalability and growth**\n\n"
-                    markdown += f"\"As you plan for growth in {industry}, what's most critical: infrastructure scalability, standardized operations, or operational visibility?\"\n\n"
-                    markdown += f"**[3] Cross-functional effectiveness**\n\n"
-                    markdown += f"\"Where do you see the most opportunity to improve collaboration: better tools and systems, standardized processes, or improved visibility across functions?\"\n\n"
-                else:  # CPO, CEO, other
-                    markdown += f"**[1] Strategic priorities**\n\n"
-                    markdown += f"\"What are {company_name}'s top strategic priorities in {industry}, and how is technology enabling or constraining those objectives?\"\n\n"
-                    markdown += f"**[2] Competitive positioning**\n\n"
-                    markdown += f"\"How are you thinking about technology as a competitive differentiator versus operational necessity, and where do you see the biggest opportunity?\"\n\n"
-                    markdown += f"**[3] Investment and resource allocation**\n\n"
-                    markdown += f"\"As you allocate resources across priorities, how do you evaluate technology investments: strategic impact, operational efficiency, or risk mitigation?\"\n\n"
+                    markdown += "**Direct Phone:** Currently unavailable\n\n"
 
-            markdown += "---\n\n"
+                if mobile:
+                    markdown += f"**Mobile Phone:** {mobile}\n\n"
+                elif phone and not direct_phone:
+                    markdown += f"**Mobile Phone:** {phone}\n\n"
+                else:
+                    markdown += "**Mobile Phone:** Currently unavailable\n\n"
+
+                # Email
+                email = stakeholder.get('email', stakeholder.get('value', ''))
+                if email:
+                    markdown += f"**Email:** {email}\n\n"
+                else:
+                    markdown += "**Email:** Currently unavailable\n\n"
+
+                # LinkedIn
+                linkedin = stakeholder.get('linkedin', '')
+                if linkedin:
+                    markdown += f"**LinkedIn:** {linkedin}\n\n"
+                else:
+                    markdown += "**LinkedIn:** Currently unavailable\n\n"
+
+                # About - 1 paragraph bio (call out new hire if applicable)
+                markdown += "## About\n\n"
+                bio = stakeholder.get('bio', stakeholder.get('about', stakeholder.get('description', '')))
+                is_new_hire = stakeholder.get('is_new_hire', False)
+                hire_date = stakeholder.get('hire_date', stakeholder.get('start_date', ''))
+
+                if bio:
+                    markdown += f"{bio}"
+                    if is_new_hire and hire_date:
+                        markdown += f" **[If they are a new hire – call out & include the date: NEW HIRE - joined {hire_date}]**"
+                    markdown += "\n\n"
+                else:
+                    markdown += f"{name} serves as {title} at {company_name}, responsible for strategic initiatives and organizational leadership in their domain."
+                    if is_new_hire and hire_date:
+                        markdown += f" **[NEW HIRE - joined {hire_date}]**"
+                    markdown += "\n\n"
+
+                # Strategic Priorities - 3 bullet points with titles and descriptions
+                markdown += "## Strategic priorities\n\n"
+                priorities = stakeholder.get('strategic_priorities', stakeholder.get('priorities', []))
+                if priorities:
+                    if isinstance(priorities, list):
+                        for i, priority in enumerate(priorities[:3], 1):
+                            if isinstance(priority, dict):
+                                p_name = priority.get('name', priority.get('priority', priority.get('title', '')))
+                                p_desc = priority.get('description', '')
+                                markdown += f"**[{i}] {p_name}**\n\n"
+                                if p_desc:
+                                    markdown += f"{p_desc}\n\n"
+                            else:
+                                markdown += f"**[{i}]** {priority}\n\n"
+                    else:
+                        markdown += f"**[1]** {priorities}\n\n"
+                else:
+                    # NOTE: Strategic priorities should be generated by enrichment pipeline based on persona, news, and company context
+                    # Generate persona-specific priorities dynamically
+                    if persona == 'CFO':
+                        markdown += f"**[1] Optimize operational efficiency and cost management**\n\n"
+                        markdown += f"Drive cost transparency and efficiency across technology investments, focusing on standardization and vendor consolidation to reduce complexity.\n\n"
+                        markdown += f"**[2] Strengthen financial controls and risk management**\n\n"
+                        markdown += f"Ensure technology investments support compliance requirements and reduce operational risk exposure.\n\n"
+                        markdown += f"**[3] Enable data-driven decision making**\n\n"
+                        markdown += f"Improve visibility into technology spend and outcomes to support faster, more defensible investment decisions.\n\n"
+                    elif persona == 'CTO' or persona == 'CIO':
+                        markdown += f"**[1] Accelerate digital transformation initiatives**\n\n"
+                        markdown += f"Modernize infrastructure to support {company_name}'s business agility and innovation objectives in {industry}.\n\n"
+                        markdown += f"**[2] Enhance security and operational resilience**\n\n"
+                        markdown += f"Strengthen cybersecurity posture and ensure business continuity through modern, secure infrastructure.\n\n"
+                        markdown += f"**[3] Optimize IT operations and support efficiency**\n\n"
+                        markdown += f"Reduce operational overhead through automation, standardization, and strategic vendor partnerships.\n\n"
+                    elif persona == 'CISO':
+                        markdown += f"**[1] Strengthen cybersecurity posture across the enterprise**\n\n"
+                        markdown += f"Reduce attack surface and improve threat detection/response capabilities for {company_name}.\n\n"
+                        markdown += f"**[2] Ensure regulatory compliance and risk management**\n\n"
+                        markdown += f"Maintain compliance with {industry} regulations while managing security risk across technology infrastructure.\n\n"
+                        markdown += f"**[3] Enable secure digital transformation**\n\n"
+                        markdown += f"Balance security requirements with business innovation needs to support strategic initiatives.\n\n"
+                    elif persona == 'COO':
+                        markdown += f"**[1] Drive operational excellence and efficiency**\n\n"
+                        markdown += f"Optimize business operations through improved technology, processes, and support models.\n\n"
+                        markdown += f"**[2] Enable scalability and business growth**\n\n"
+                        markdown += f"Ensure technology infrastructure can support {company_name}'s expansion and scaling objectives.\n\n"
+                        markdown += f"**[3] Improve cross-functional collaboration and visibility**\n\n"
+                        markdown += f"Enhance coordination between departments through better tools and standardized processes.\n\n"
+                    else:  # CPO, CEO, other executives
+                        markdown += f"**[1] Enable strategic business objectives**\n\n"
+                        markdown += f"Align technology investments with {company_name}'s strategic goals in {industry}.\n\n"
+                        markdown += f"**[2] Drive innovation and competitive advantage**\n\n"
+                        markdown += f"Leverage technology to create differentiation and support new business capabilities.\n\n"
+                        markdown += f"**[3] Optimize organizational effectiveness**\n\n"
+                        markdown += f"Improve operational efficiency and decision-making through better technology and data insights.\n\n"
+
+                # Communication Preferences
+                markdown += "## Communication preference\n\n"
+                comm_pref = stakeholder.get('communication_preference', stakeholder.get('communication_preferences', ''))
+                if comm_pref:
+                    markdown += f"{comm_pref}\n\n"
+                else:
+                    markdown += "Email / LinkedIn / Phone / Events\n\n"
+
+                # Conversation Starters - persona-tailored with context
+                markdown += "## Conversation starters\n\n"
+                markdown += "*[1-2 sentences of persona-tailored language] [Include Recommended Play – subject to availability]*\n\n"
+
+                conv_starters = stakeholder.get('conversation_starters', stakeholder.get('talking_points', []))
+                if conv_starters:
+                    if isinstance(conv_starters, list):
+                        for i, starter in enumerate(conv_starters[:3], 1):
+                            if isinstance(starter, dict):
+                                starter_title = starter.get('title', starter.get('topic', f'Topic {i}'))
+                                starter_text = starter.get('text', starter.get('question', ''))
+                                markdown += f"**[{i}] {starter_title}**\n\n"
+                                markdown += f"\"{starter_text}\"\n\n"
+                            else:
+                                markdown += f"**[{i}]** \"{starter}\"\n\n"
+                    else:
+                        markdown += f"**[1]** \"{conv_starters}\"\n\n"
+                else:
+                    # NOTE: Conversation starters should be generated by LLM Council based on persona, company news, and intent signals
+                    # Generate persona-specific conversation starters dynamically
+                    if persona == 'CFO':
+                        markdown += f"**[1] Technology investment optimization**\n\n"
+                        markdown += f"\"As you evaluate technology investments for {company_name}, what's your priority: reducing operational costs, improving vendor efficiency, or increasing visibility into technology ROI?\"\n\n"
+                        markdown += f"**[2] Risk and compliance management**\n\n"
+                        markdown += f"\"How are you balancing technology risk management with {industry} compliance requirements, and what metrics do you use to quantify security and operational resilience?\"\n\n"
+                        markdown += f"**[3] Financial planning and forecasting**\n\n"
+                        markdown += f"\"What would help most with technology budget planning: better cost predictability, standardized procurement, or clearer alignment between IT spend and business outcomes?\"\n\n"
+                    elif persona == 'CTO' or persona == 'CIO':
+                        markdown += f"**[1] Digital transformation priorities**\n\n"
+                        markdown += f"\"What's driving your technology strategy at {company_name}: modernizing legacy infrastructure, enabling new capabilities, or improving operational efficiency?\"\n\n"
+                        markdown += f"**[2] Infrastructure and security**\n\n"
+                        markdown += f"\"As you balance innovation with security in {industry}, what's the biggest challenge: managing hybrid environments, reducing complexity, or strengthening resilience?\"\n\n"
+                        markdown += f"**[3] Operational excellence**\n\n"
+                        markdown += f"\"Where do you see the most opportunity to improve IT operations: standardizing device management, optimizing support models, or reducing vendor fragmentation?\"\n\n"
+                    elif persona == 'CISO':
+                        markdown += f"**[1] Security posture and threat landscape**\n\n"
+                        markdown += f"\"What's your top security priority for {company_name}: reducing attack surface, improving threat detection, or strengthening incident response capabilities?\"\n\n"
+                        markdown += f"**[2] Compliance and risk management**\n\n"
+                        markdown += f"\"How are you addressing {industry} compliance requirements while enabling business innovation, and where do you see the biggest risk exposure?\"\n\n"
+                        markdown += f"**[3] Security infrastructure**\n\n"
+                        markdown += f"\"As you evaluate security infrastructure, what matters most: visibility and control, vendor consolidation, or integration with existing security tools?\"\n\n"
+                    elif persona == 'COO':
+                        markdown += f"**[1] Operational efficiency**\n\n"
+                        markdown += f"\"What's the biggest operational bottleneck at {company_name}: process inefficiencies, technology limitations, or coordination across locations?\"\n\n"
+                        markdown += f"**[2] Scalability and growth**\n\n"
+                        markdown += f"\"As you plan for growth in {industry}, what's most critical: infrastructure scalability, standardized operations, or operational visibility?\"\n\n"
+                        markdown += f"**[3] Cross-functional effectiveness**\n\n"
+                        markdown += f"\"Where do you see the most opportunity to improve collaboration: better tools and systems, standardized processes, or improved visibility across functions?\"\n\n"
+                    else:  # CPO, CEO, other
+                        markdown += f"**[1] Strategic priorities**\n\n"
+                        markdown += f"\"What are {company_name}'s top strategic priorities in {industry}, and how is technology enabling or constraining those objectives?\"\n\n"
+                        markdown += f"**[2] Competitive positioning**\n\n"
+                        markdown += f"\"How are you thinking about technology as a competitive differentiator versus operational necessity, and where do you see the biggest opportunity?\"\n\n"
+                        markdown += f"**[3] Investment and resource allocation**\n\n"
+                        markdown += f"\"As you allocate resources across priorities, how do you evaluate technology investments: strategic impact, operational efficiency, or risk mitigation?\"\n\n"
+
+                markdown += "---\n\n"
 
         # ============================================================
         # SLIDE: Recommended sales program
