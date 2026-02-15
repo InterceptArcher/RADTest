@@ -291,7 +291,7 @@ class LLMValidator:
                         "content": prompt
                     }
                 ],
-                temperature=0.3,
+                temperature=0,
                 max_tokens=500
             )
 

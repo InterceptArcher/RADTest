@@ -542,7 +542,22 @@ class WorkerOrchestrator:
                 people_list = result.data.get("people", [])
 
                 for person in people_list:
-                    # Extract name
+                    # Initialize variables
+                    name = ""
+                    email = None
+                    phone = None
+                    linkedin = None
+                    title = ""
+                    direct_phone = None
+                    mobile_phone = None
+                    company_phone = None
+                    first_name = ""
+                    last_name = ""
+                    department = ""
+                    management_level = ""
+                    person_id = ""
+
+                    # Extract name and contact info based on source
                     if result.source.value == "apollo":
                         first_name = person.get("first_name", "")
                         last_name = person.get("last_name", "")
@@ -558,12 +573,22 @@ class WorkerOrchestrator:
                         linkedin = person.get("linkedin_url")
                         title = person.get("job_title", "")
                     elif result.source.value == "zoominfo":
-                        # ZoomInfo contacts already normalized by ZoomInfoClient
+                        # ZoomInfo contacts already normalized by ZoomInfoClient with full enrichment
                         name = person.get("name", "")
                         email = person.get("email")
-                        phone = person.get("phone")
+                        # ZoomInfo provides multiple phone types - prioritize direct > mobile > general
+                        phone = person.get("direct_phone") or person.get("mobile_phone") or person.get("phone")
                         linkedin = person.get("linkedin")
                         title = person.get("title", "")
+                        # Store all ZoomInfo enriched fields
+                        direct_phone = person.get("direct_phone")
+                        mobile_phone = person.get("mobile_phone")
+                        company_phone = person.get("company_phone")
+                        first_name = person.get("first_name", "")
+                        last_name = person.get("last_name", "")
+                        department = person.get("department", "")
+                        management_level = person.get("management_level", "")
+                        person_id = person.get("person_id", "")
                     else:
                         continue
 
@@ -578,16 +603,46 @@ class WorkerOrchestrator:
 
                     seen_names.add(name_lower)
 
-                    stakeholders.append({
+                    # Build stakeholder profile with all available data
+                    profile = {
                         "name": name,
                         "title": title,
                         "email": email or "Not available",
                         "phone": phone or "Not available",
                         "linkedin": linkedin or "Not available",
                         "source": result.source.value
-                    })
+                    }
 
-        logger.info(f"Processed {len(stakeholders)} stakeholder profiles")
+                    # Add ZoomInfo-specific enriched fields if available
+                    if result.source.value == "zoominfo":
+                        if direct_phone:
+                            profile["direct_phone"] = direct_phone
+                        if mobile_phone:
+                            profile["mobile_phone"] = mobile_phone
+                        if company_phone:
+                            profile["company_phone"] = company_phone
+                        if first_name:
+                            profile["first_name"] = first_name
+                        if last_name:
+                            profile["last_name"] = last_name
+                        if department:
+                            profile["department"] = department
+                        if management_level:
+                            profile["management_level"] = management_level
+                        if person_id:
+                            profile["person_id"] = person_id
+
+                    stakeholders.append(profile)
+
+        # Count stakeholders with phone numbers
+        with_phones = sum(1 for s in stakeholders if s.get("phone") and s["phone"] != "Not available")
+        with_direct = sum(1 for s in stakeholders if s.get("direct_phone"))
+        with_mobile = sum(1 for s in stakeholders if s.get("mobile_phone"))
+
+        logger.info(f"✅ Processed {len(stakeholders)} stakeholder profiles")
+        logger.info(f"   - {with_phones} with phone numbers")
+        logger.info(f"   - {with_direct} with direct phone")
+        logger.info(f"   - {with_mobile} with mobile phone")
         return stakeholders
 
     async def _validate_and_normalize(
@@ -694,12 +749,16 @@ class WorkerOrchestrator:
             # ZoomInfo-specific enrichment data (always include these)
             if "intent_signals" in zi_data:
                 data_dict["intent_signals"] = zi_data["intent_signals"]
+                logger.info(f"   ✓ Intent signals: {len(zi_data['intent_signals'])} signals")
             if "scoops" in zi_data:
                 data_dict["scoops"] = zi_data["scoops"]
+                logger.info(f"   ✓ Business scoops: {len(zi_data['scoops'])} events")
             if "news_articles" in zi_data:
                 data_dict["news_articles"] = zi_data["news_articles"]
+                logger.info(f"   ✓ News articles: {len(zi_data['news_articles'])} articles")
             if "technology_installs" in zi_data:
                 data_dict["technology_installs"] = zi_data["technology_installs"]
+                logger.info(f"   ✓ Technology installs: {len(zi_data['technology_installs'])} technologies")
 
             logger.info(f"Merged {len(zi_data)} ZoomInfo fields (PRIMARY source)")
 

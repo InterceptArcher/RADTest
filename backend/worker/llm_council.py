@@ -223,7 +223,7 @@ class LLMCouncil:
                         "content": prompt
                     }
                 ],
-                temperature=0.2,
+                temperature=0,
                 max_tokens=300
             )
 
@@ -491,7 +491,7 @@ Format as JSON array:
                     {"role": "system", "content": "You are an expert B2B sales analyst specializing in enterprise technology needs."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=0,
                 max_tokens=800
             )
 
@@ -545,7 +545,7 @@ Format as JSON array:
                     {"role": "system", "content": "You are an HP enterprise sales strategist."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=0,
                 max_tokens=800
             )
 
@@ -595,7 +595,7 @@ Format as JSON array:
                     {"role": "system", "content": "You are a sales intelligence analyst."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.3,
+                temperature=0,
                 max_tokens=600
             )
 
@@ -710,7 +710,7 @@ Examples:
                     {"role": "system", "content": "You are an HP enterprise sales strategist specializing in identifying key decision-makers."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.2,  # Low temperature for consistent strategic decisions
+                temperature=0,  # Low temperature for consistent strategic decisions
                 max_tokens=100
             )
 
@@ -804,7 +804,7 @@ Format as JSON:
                     {"role": "system", "content": "You are an HP enterprise sales intelligence analyst creating strategic buyer profiles."},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.4,
+                temperature=0,
                 max_tokens=800
             )
 
@@ -892,7 +892,7 @@ Format as JSON:
                         {"role": "system", "content": "You are an executive profiler for B2B sales."},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.3,
+                    temperature=0,
                     max_tokens=700
                 )
 
