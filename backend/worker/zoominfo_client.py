@@ -541,46 +541,49 @@ class ZoomInfoClient:
 
         Scoops include: funding, acquisitions, new hires, expansions, partnerships,
         product launches, awards, and other significant business events.
+
+        ZoomInfo uses JSON:API format, so data may be in 'attributes' field.
         """
+        attrs = raw.get("attributes", raw)
         return {
             # Identification
-            "scoop_id": raw.get("scoopId", raw.get("id", "")),
-            "scoop_type": raw.get("scoopType", raw.get("type", "")),
-            "title": raw.get("title", raw.get("headline", "")),
+            "scoop_id": attrs.get("scoopId", attrs.get("id", "")),
+            "scoop_type": attrs.get("scoopType", attrs.get("type", "")),
+            "title": attrs.get("title", attrs.get("headline", "")),
 
             # Content
-            "description": raw.get("description", raw.get("summary", "")),
-            "full_text": raw.get("fullText", raw.get("body", "")),
-            "snippet": raw.get("snippet", ""),
+            "description": attrs.get("description", attrs.get("summary", "")),
+            "full_text": attrs.get("fullText", attrs.get("body", "")),
+            "snippet": attrs.get("snippet", ""),
 
             # Temporal
-            "date": raw.get("date", raw.get("publishedDate", "")),
-            "published_date": raw.get("publishedDate", raw.get("date", "")),
-            "discovered_date": raw.get("discoveredDate", ""),
-            "last_updated": raw.get("lastUpdated", ""),
+            "date": attrs.get("date", attrs.get("publishedDate", "")),
+            "published_date": attrs.get("publishedDate", attrs.get("date", "")),
+            "discovered_date": attrs.get("discoveredDate", ""),
+            "last_updated": attrs.get("lastUpdated", ""),
 
             # Source
-            "source": raw.get("source", ""),
-            "source_url": raw.get("sourceUrl", raw.get("url", "")),
-            "author": raw.get("author", ""),
+            "source": attrs.get("source", ""),
+            "source_url": attrs.get("sourceUrl", attrs.get("url", "")),
+            "author": attrs.get("author", ""),
 
             # Classification
-            "category": raw.get("category", ""),
-            "tags": raw.get("tags", []),
-            "keywords": raw.get("keywords", []),
+            "category": attrs.get("category", ""),
+            "tags": attrs.get("tags", []),
+            "keywords": attrs.get("keywords", []),
 
             # Impact & relevance
-            "relevance_score": raw.get("relevanceScore", 0),
-            "importance": raw.get("importance", ""),
-            "sentiment": raw.get("sentiment", ""),
+            "relevance_score": attrs.get("relevanceScore", 0),
+            "importance": attrs.get("importance", ""),
+            "sentiment": attrs.get("sentiment", ""),
 
             # Additional details (type-specific)
-            "amount": raw.get("amount", ""),  # for funding
-            "investors": raw.get("investors", []),  # for funding
-            "person_name": raw.get("personName", ""),  # for new hires
-            "person_title": raw.get("personTitle", ""),  # for new hires
-            "location": raw.get("location", ""),  # for expansions
-            "partner_name": raw.get("partnerName", ""),  # for partnerships
+            "amount": attrs.get("amount", ""),  # for funding
+            "investors": attrs.get("investors", []),  # for funding
+            "person_name": attrs.get("personName", ""),  # for new hires
+            "person_title": attrs.get("personTitle", ""),  # for new hires
+            "location": attrs.get("location", ""),  # for expansions
+            "partner_name": attrs.get("partnerName", ""),  # for partnerships
         }
 
     @staticmethod
@@ -590,42 +593,42 @@ class ZoomInfoClient:
         """
         return {
             # Identification
-            "article_id": raw.get("articleId", raw.get("id", "")),
-            "title": raw.get("title", raw.get("headline", "")),
+            "article_id": attrs.get("articleId", attrs.get("id", "")),
+            "title": attrs.get("title", attrs.get("headline", "")),
 
             # Content
-            "description": raw.get("description", raw.get("summary", "")),
-            "full_text": raw.get("fullText", raw.get("body", raw.get("content", ""))),
-            "snippet": raw.get("snippet", ""),
-            "excerpt": raw.get("excerpt", ""),
+            "description": attrs.get("description", attrs.get("summary", "")),
+            "full_text": attrs.get("fullText", attrs.get("body", attrs.get("content", ""))),
+            "snippet": attrs.get("snippet", ""),
+            "excerpt": attrs.get("excerpt", ""),
 
             # Source
-            "source": raw.get("source", raw.get("publisher", "")),
-            "url": raw.get("url", raw.get("sourceUrl", "")),
-            "author": raw.get("author", ""),
-            "source_domain": raw.get("sourceDomain", ""),
+            "source": attrs.get("source", attrs.get("publisher", "")),
+            "url": attrs.get("url", attrs.get("sourceUrl", "")),
+            "author": attrs.get("author", ""),
+            "source_domain": attrs.get("sourceDomain", ""),
 
             # Temporal
-            "published_date": raw.get("publishedDate", raw.get("date", "")),
-            "discovered_date": raw.get("discoveredDate", ""),
-            "last_updated": raw.get("lastUpdated", ""),
+            "published_date": attrs.get("publishedDate", attrs.get("date", "")),
+            "discovered_date": attrs.get("discoveredDate", ""),
+            "last_updated": attrs.get("lastUpdated", ""),
 
             # Classification
-            "category": raw.get("category", ""),
-            "subcategory": raw.get("subcategory", ""),
-            "tags": raw.get("tags", []),
-            "keywords": raw.get("keywords", []),
-            "topics": raw.get("topics", []),
+            "category": attrs.get("category", ""),
+            "subcategory": attrs.get("subcategory", ""),
+            "tags": attrs.get("tags", []),
+            "keywords": attrs.get("keywords", []),
+            "topics": attrs.get("topics", []),
 
             # Engagement & impact
-            "relevance_score": raw.get("relevanceScore", 0),
-            "sentiment": raw.get("sentiment", ""),
-            "sentiment_score": raw.get("sentimentScore", 0),
-            "language": raw.get("language", "en"),
+            "relevance_score": attrs.get("relevanceScore", 0),
+            "sentiment": attrs.get("sentiment", ""),
+            "sentiment_score": attrs.get("sentimentScore", 0),
+            "language": attrs.get("language", "en"),
 
             # Media
-            "image_url": raw.get("imageUrl", raw.get("thumbnailUrl", "")),
-            "video_url": raw.get("videoUrl", ""),
+            "image_url": attrs.get("imageUrl", attrs.get("thumbnailUrl", "")),
+            "video_url": attrs.get("videoUrl", ""),
         }
 
     @staticmethod
@@ -635,38 +638,38 @@ class ZoomInfoClient:
         """
         return {
             # Technology identification
-            "tech_id": raw.get("technologyId", raw.get("id", "")),
-            "tech_name": raw.get("technologyName", raw.get("name", raw.get("technology", ""))),
-            "product_name": raw.get("productName", ""),
-            "vendor": raw.get("vendor", raw.get("vendorName", "")),
+            "tech_id": attrs.get("technologyId", attrs.get("id", "")),
+            "tech_name": attrs.get("technologyName", attrs.get("name", attrs.get("technology", ""))),
+            "product_name": attrs.get("productName", ""),
+            "vendor": attrs.get("vendor", attrs.get("vendorName", "")),
 
             # Classification
-            "category": raw.get("category", ""),
-            "subcategory": raw.get("subcategory", ""),
-            "tech_type": raw.get("technologyType", raw.get("type", "")),
-            "tags": raw.get("tags", []),
+            "category": attrs.get("category", ""),
+            "subcategory": attrs.get("subcategory", ""),
+            "tech_type": attrs.get("technologyType", attrs.get("type", "")),
+            "tags": attrs.get("tags", []),
 
             # Installation details
-            "install_date": raw.get("installDate", raw.get("installedDate", "")),
-            "first_seen": raw.get("firstSeen", ""),
-            "last_seen": raw.get("lastSeen", ""),
-            "status": raw.get("status", "active"),  # active, inactive, unknown
+            "install_date": attrs.get("installDate", attrs.get("installedDate", "")),
+            "first_seen": attrs.get("firstSeen", ""),
+            "last_seen": attrs.get("lastSeen", ""),
+            "status": attrs.get("status", "active"),  # active, inactive, unknown
 
             # Usage & adoption
-            "adoption_level": raw.get("adoptionLevel", ""),  # enterprise-wide, departmental, etc.
-            "usage_frequency": raw.get("usageFrequency", ""),
-            "user_count": raw.get("userCount", 0),
-            "license_count": raw.get("licenseCount", 0),
+            "adoption_level": attrs.get("adoptionLevel", ""),  # enterprise-wide, departmental, etc.
+            "usage_frequency": attrs.get("usageFrequency", ""),
+            "user_count": attrs.get("userCount", 0),
+            "license_count": attrs.get("licenseCount", 0),
 
             # Technical details
-            "version": raw.get("version", ""),
-            "deployment_type": raw.get("deploymentType", ""),  # cloud, on-premise, hybrid
-            "integration_points": raw.get("integrationPoints", []),
+            "version": attrs.get("version", ""),
+            "deployment_type": attrs.get("deploymentType", ""),  # cloud, on-premise, hybrid
+            "integration_points": attrs.get("integrationPoints", []),
 
             # Confidence & quality
-            "confidence_score": raw.get("confidenceScore", 0),
-            "data_source": raw.get("dataSource", ""),
-            "last_verified": raw.get("lastVerified", ""),
+            "confidence_score": attrs.get("confidenceScore", 0),
+            "data_source": attrs.get("dataSource", ""),
+            "last_verified": attrs.get("lastVerified", ""),
         }
 
     @staticmethod
@@ -683,39 +686,39 @@ class ZoomInfoClient:
         """
         return {
             # Topic identification
-            "topic_id": raw.get("topicId", raw.get("id", "")),
-            "topic": raw.get("topicName", raw.get("topic", raw.get("name", ""))),
-            "topic_name": raw.get("topicName", raw.get("topic", "")),
+            "topic_id": attrs.get("topicId", attrs.get("id", "")),
+            "topic": attrs.get("topicName", attrs.get("topic", attrs.get("name", ""))),
+            "topic_name": attrs.get("topicName", attrs.get("topic", "")),
 
             # Scoring metrics
-            "intent_score": raw.get("intentScore", raw.get("score", 0)),
-            "score": raw.get("intentScore", raw.get("score", 0)),
-            "audience_strength": raw.get("audienceStrength", raw.get("strength", "")),
-            "engagement_score": raw.get("engagementScore", 0),
-            "activity_level": raw.get("activityLevel", ""),
+            "intent_score": attrs.get("intentScore", attrs.get("score", 0)),
+            "score": attrs.get("intentScore", attrs.get("score", 0)),
+            "audience_strength": attrs.get("audienceStrength", attrs.get("strength", "")),
+            "engagement_score": attrs.get("engagementScore", 0),
+            "activity_level": attrs.get("activityLevel", ""),
 
             # Context and classification
-            "description": raw.get("description", ""),
-            "category": raw.get("category", ""),
-            "subcategory": raw.get("subcategory", ""),
-            "keywords": raw.get("keywords", []),
-            "topic_type": raw.get("topicType", raw.get("type", "")),
+            "description": attrs.get("description", ""),
+            "category": attrs.get("category", ""),
+            "subcategory": attrs.get("subcategory", ""),
+            "keywords": attrs.get("keywords", []),
+            "topic_type": attrs.get("topicType", attrs.get("type", "")),
 
             # Temporal information
-            "last_seen": raw.get("lastSeen", raw.get("lastSeenDate", "")),
-            "first_seen": raw.get("firstSeen", raw.get("firstSeenDate", "")),
-            "timestamp": raw.get("timestamp", ""),
-            "duration_days": raw.get("durationDays", 0),
+            "last_seen": attrs.get("lastSeen", attrs.get("lastSeenDate", "")),
+            "first_seen": attrs.get("firstSeen", attrs.get("firstSeenDate", "")),
+            "timestamp": attrs.get("timestamp", ""),
+            "duration_days": attrs.get("durationDays", 0),
 
             # Additional metrics
-            "research_count": raw.get("researchCount", 0),
-            "page_views": raw.get("pageViews", 0),
-            "unique_visitors": raw.get("uniqueVisitors", 0),
-            "trend": raw.get("trend", ""),  # increasing, stable, decreasing
+            "research_count": attrs.get("researchCount", 0),
+            "page_views": attrs.get("pageViews", 0),
+            "unique_visitors": attrs.get("uniqueVisitors", 0),
+            "trend": attrs.get("trend", ""),  # increasing, stable, decreasing
 
             # Confidence and quality
-            "confidence": raw.get("confidence", raw.get("confidenceScore", 0)),
-            "data_quality": raw.get("dataQuality", ""),
+            "confidence": attrs.get("confidence", attrs.get("confidenceScore", 0)),
+            "data_quality": attrs.get("dataQuality", ""),
         }
 
     @staticmethod
@@ -732,38 +735,43 @@ class ZoomInfoClient:
         - Location: address, city, state, zip, country
         - Leadership: CEO, executives
         - Other: founded year, ticker symbol, company type
+
+        ZoomInfo uses JSON:API format, so data may be in 'attributes' field.
         """
+        # Handle JSON:API format where data is nested in 'attributes'
+        attrs = raw.get("attributes", raw)
+
         # Location data
-        city = raw.get("city", "")
-        state = raw.get("state", "")
-        country = raw.get("country", "")
+        city = attrs.get("city", "")
+        state = attrs.get("state", "")
+        country = attrs.get("country", "")
         headquarters = ", ".join(filter(None, [city, state, country]))
 
         # Full address if available
-        street = raw.get("street", raw.get("address", ""))
-        zip_code = raw.get("zipCode", raw.get("zip", ""))
+        street = attrs.get("street", attrs.get("address", ""))
+        zip_code = attrs.get("zipCode", attrs.get("zip", ""))
         full_address = ", ".join(filter(None, [street, city, state, zip_code, country]))
 
         return {
             # Basic identification
-            "company_name": raw.get("companyName", ""),
-            "domain": raw.get("domain", raw.get("website", "")),
-            "company_type": raw.get("companyType", raw.get("type", "")),
-            "description": raw.get("description", raw.get("companyDescription", "")),
+            "company_name": attrs.get("companyName", ""),
+            "domain": attrs.get("domain", attrs.get("website", "")),
+            "company_type": attrs.get("companyType", attrs.get("type", "")),
+            "description": attrs.get("description", attrs.get("companyDescription", "")),
 
             # Financial data
-            "employee_count": raw.get("employeeCount", raw.get("employees", "")),
-            "employees_range": raw.get("employeesRange", raw.get("employeeRange", "")),
-            "revenue": raw.get("revenue", raw.get("revenueUSD", "")),
-            "revenue_range": raw.get("revenueRange", ""),
-            "estimated_revenue": raw.get("estimatedRevenue", ""),
+            "employee_count": attrs.get("employeeCount", attrs.get("employees", "")),
+            "employees_range": attrs.get("employeesRange", attrs.get("employeeRange", "")),
+            "revenue": attrs.get("revenue", attrs.get("revenueUSD", "")),
+            "revenue_range": attrs.get("revenueRange", ""),
+            "estimated_revenue": attrs.get("estimatedRevenue", ""),
 
             # Industry classification
-            "industry": raw.get("industry", raw.get("primaryIndustry", "")),
-            "sub_industry": raw.get("subIndustry", raw.get("secondaryIndustry", "")),
-            "industry_category": raw.get("industryCategory", ""),
-            "sic_codes": raw.get("sicCodes", raw.get("sic", [])),
-            "naics_codes": raw.get("naicsCodes", raw.get("naics", [])),
+            "industry": attrs.get("industry", attrs.get("primaryIndustry", "")),
+            "sub_industry": attrs.get("subIndustry", attrs.get("secondaryIndustry", "")),
+            "industry_category": attrs.get("industryCategory", ""),
+            "sic_codes": attrs.get("sicCodes", attrs.get("sic", [])),
+            "naics_codes": attrs.get("naicsCodes", attrs.get("naics", [])),
 
             # Location
             "headquarters": headquarters,
@@ -773,58 +781,58 @@ class ZoomInfoClient:
             "state": state,
             "zip_code": zip_code,
             "country": country,
-            "metro_area": raw.get("metroArea", ""),
+            "metro_area": attrs.get("metroArea", ""),
 
             # Contact information
-            "phone": raw.get("phone", raw.get("phoneNumber", "")),
-            "fax": raw.get("fax", raw.get("faxNumber", "")),
-            "corporate_email": raw.get("email", raw.get("corporateEmail", "")),
+            "phone": attrs.get("phone", attrs.get("phoneNumber", "")),
+            "fax": attrs.get("fax", attrs.get("faxNumber", "")),
+            "corporate_email": attrs.get("email", attrs.get("corporateEmail", "")),
 
             # Social media & web presence
-            "linkedin_url": raw.get("linkedInUrl", raw.get("linkedinUrl", raw.get("linkedin", ""))),
-            "facebook_url": raw.get("facebookUrl", raw.get("facebook", "")),
-            "twitter_url": raw.get("twitterUrl", raw.get("twitter", "")),
-            "website": raw.get("website", raw.get("websiteUrl", "")),
+            "linkedin_url": attrs.get("linkedInUrl", attrs.get("linkedinUrl", attrs.get("linkedin", ""))),
+            "facebook_url": attrs.get("facebookUrl", attrs.get("facebook", "")),
+            "twitter_url": attrs.get("twitterUrl", attrs.get("twitter", "")),
+            "website": attrs.get("website", attrs.get("websiteUrl", "")),
 
             # Leadership
-            "ceo": raw.get("ceoName", raw.get("ceo", "")),
-            "cfo": raw.get("cfoName", raw.get("cfo", "")),
-            "cto": raw.get("ctoName", raw.get("cto", "")),
-            "executives": raw.get("executives", []),
+            "ceo": attrs.get("ceoName", attrs.get("ceo", "")),
+            "cfo": attrs.get("cfoName", attrs.get("cfo", "")),
+            "cto": attrs.get("ctoName", attrs.get("cto", "")),
+            "executives": attrs.get("executives", []),
 
             # Organizational details
-            "founded_year": raw.get("yearFounded", raw.get("foundedYear", "")),
-            "ticker": raw.get("ticker", raw.get("tickerSymbol", "")),
-            "stock_exchange": raw.get("stockExchange", ""),
-            "parent_company": raw.get("parentCompany", ""),
-            "ownership_type": raw.get("ownershipType", raw.get("ownership", "")),
+            "founded_year": attrs.get("yearFounded", attrs.get("foundedYear", "")),
+            "ticker": attrs.get("ticker", attrs.get("tickerSymbol", "")),
+            "stock_exchange": attrs.get("stockExchange", ""),
+            "parent_company": attrs.get("parentCompany", ""),
+            "ownership_type": attrs.get("ownershipType", attrs.get("ownership", "")),
 
             # Additional firmographic data
-            "company_size": raw.get("companySize", ""),
-            "fiscal_year_end": raw.get("fiscalYearEnd", ""),
-            "legal_name": raw.get("legalName", ""),
-            "dba_name": raw.get("dbaName", raw.get("doingBusinessAs", "")),
-            "former_names": raw.get("formerNames", []),
+            "company_size": attrs.get("companySize", ""),
+            "fiscal_year_end": attrs.get("fiscalYearEnd", ""),
+            "legal_name": attrs.get("legalName", ""),
+            "dba_name": attrs.get("dbaName", attrs.get("doingBusinessAs", "")),
+            "former_names": attrs.get("formerNames", []),
 
             # Technology & operations
-            "technologies": raw.get("technologies", []),
-            "tech_install_count": raw.get("techInstallCount", 0),
-            "alexa_rank": raw.get("alexaRank", ""),
-            "fortune_rank": raw.get("fortuneRank", ""),
+            "technologies": attrs.get("technologies", []),
+            "tech_install_count": attrs.get("techInstallCount", 0),
+            "alexa_rank": attrs.get("alexaRank", ""),
+            "fortune_rank": attrs.get("fortuneRank", ""),
 
             # Growth metrics
-            "one_year_employee_growth": raw.get("oneYearEmployeeGrowthRate", ""),
-            "two_year_employee_growth": raw.get("twoYearEmployeeGrowthRate", ""),
-            "funding_amount": raw.get("fundingAmount", ""),
-            "fortune_rank": raw.get("fortuneRank", ""),
-            "business_model": raw.get("businessModel", ""),
-            "num_locations": raw.get("numLocations", ""),
+            "one_year_employee_growth": attrs.get("oneYearEmployeeGrowthRate", ""),
+            "two_year_employee_growth": attrs.get("twoYearEmployeeGrowthRate", ""),
+            "funding_amount": attrs.get("fundingAmount", ""),
+            "fortune_rank": attrs.get("fortuneRank", ""),
+            "business_model": attrs.get("businessModel", ""),
+            "num_locations": attrs.get("numLocations", ""),
 
             # Additional metadata
-            "company_id": raw.get("companyId", raw.get("id", "")),
-            "logo_url": raw.get("logoUrl", raw.get("logo", "")),
-            "last_updated": raw.get("lastUpdated", ""),
-            "data_quality_score": raw.get("dataQualityScore", raw.get("confidenceScore", "")),
+            "company_id": attrs.get("companyId", attrs.get("id", raw.get("id", ""))),
+            "logo_url": attrs.get("logoUrl", attrs.get("logo", "")),
+            "last_updated": attrs.get("lastUpdated", ""),
+            "data_quality_score": attrs.get("dataQualityScore", attrs.get("confidenceScore", "")),
         }
 
     @staticmethod
@@ -834,22 +842,43 @@ class ZoomInfoClient:
 
         Includes phone numbers (direct, mobile, company), accuracy scores,
         department, and management level from Contact Enrich endpoint.
+
+        ZoomInfo uses JSON:API format, so data may be in 'attributes' field.
         """
-        first_name = raw.get("firstName", "")
-        last_name = raw.get("lastName", "")
-        name = f"{first_name} {last_name}".strip()
+        # Handle JSON:API format where data is nested in 'attributes'
+        attrs = raw.get("attributes", raw)
+
+        # Extract name fields with multiple possible locations
+        first_name = attrs.get("firstName", attrs.get("firstname", attrs.get("first_name", "")))
+        last_name = attrs.get("lastName", attrs.get("lastname", attrs.get("last_name", "")))
+
+        # If still N/A or empty, try alternate fields
+        if not first_name or first_name == "N/A":
+            first_name = attrs.get("givenName", attrs.get("given_name", ""))
+        if not last_name or last_name == "N/A":
+            last_name = attrs.get("familyName", attrs.get("family_name", attrs.get("surname", "")))
+
+        # Try fullName if individual fields not available
+        full_name = attrs.get("fullName", attrs.get("full_name", attrs.get("name", "")))
+        name = full_name if full_name else f"{first_name} {last_name}".strip()
+
+        # If name is still empty or N/A, use a placeholder
+        if not name or name.strip() == "N/A N/A" or name.strip() == "N/A":
+            name = "Contact"
 
         return {
             "name": name,
-            "title": raw.get("jobTitle", ""),
-            "email": raw.get("email", ""),
-            "phone": raw.get("phone", ""),
-            "linkedin": raw.get("linkedInUrl", ""),
-            "direct_phone": raw.get("directPhone", ""),
-            "mobile_phone": raw.get("mobilePhone", ""),
-            "company_phone": raw.get("companyPhone", ""),
-            "contact_accuracy_score": raw.get("contactAccuracyScore", 0),
-            "department": raw.get("department", ""),
-            "management_level": raw.get("managementLevel", ""),
-            "person_id": raw.get("personId", raw.get("id", "")),
+            "first_name": first_name,
+            "last_name": last_name,
+            "title": attrs.get("jobTitle", attrs.get("job_title", attrs.get("title", ""))),
+            "email": attrs.get("email", attrs.get("emailAddress", "")),
+            "phone": attrs.get("phone", attrs.get("phoneNumber", "")),
+            "linkedin": attrs.get("linkedInUrl", attrs.get("linkedin_url", attrs.get("linkedin", ""))),
+            "direct_phone": attrs.get("directPhone", attrs.get("direct_phone", "")),
+            "mobile_phone": attrs.get("mobilePhone", attrs.get("mobile_phone", "")),
+            "company_phone": attrs.get("companyPhone", attrs.get("company_phone", "")),
+            "contact_accuracy_score": attrs.get("contactAccuracyScore", attrs.get("accuracy_score", 0)),
+            "department": attrs.get("department", ""),
+            "management_level": attrs.get("managementLevel", attrs.get("management_level", "")),
+            "person_id": attrs.get("personId", attrs.get("person_id", attrs.get("id", raw.get("id", "")))),
         }

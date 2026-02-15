@@ -758,16 +758,19 @@ class IntelligenceGatherer:
             )
 
         try:
-            result = await self.zoominfo_client.search_contacts(
+            # Use search_and_enrich_contacts for complete profile data including phone numbers
+            result = await self.zoominfo_client.search_and_enrich_contacts(
                 domain=domain,
                 job_titles=["CEO", "CTO", "CFO", "CIO", "CISO", "COO", "CPO",
-                            "President", "VP"]
+                            "President", "VP"],
+                max_results=25
             )
             if result.get("success"):
                 circuit_breaker.record_success()
+                people_count = len(result.get('people', []))
                 logger.info(
-                    f"Successfully fetched ZoomInfo people data for {company_name} "
-                    f"({len(result.get('people', []))} executives found)"
+                    f"✅ Successfully fetched and enriched ZoomInfo people data for {company_name} "
+                    f"({people_count} executives found with full contact details)"
                 )
                 return IntelligenceResult(
                     source=source, success=True,
