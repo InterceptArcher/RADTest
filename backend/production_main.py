@@ -600,21 +600,20 @@ async def fact_check_contacts(company_name: str, domain: str, contacts: list) ->
     public knowledge. Filters out contacts with score < 0.3.
 
     Returns contacts with added fact_check_score and fact_check_notes.
+
+    NOTE: Disabled - LLMs don't have real-time company roster data.
+    Contacts from ZoomInfo/Apollo/PDL are already verified sources.
     """
     if not contacts:
         return []
 
-    if not OPENAI_API_KEY:
-        logger.info("OpenAI not configured, skipping contact fact check")
-        return contacts
-
-    # Build contact list for verification
-    contact_list = []
-    for c in contacts:
-        contact_list.append({
-            "name": c.get("name", ""),
-            "title": c.get("title", ""),
-        })
+    # DISABLED: Trust verified data sources (ZoomInfo, Apollo, PDL)
+    # LLM fact checking gives false negatives for real contacts
+    logger.info(f"✅ Fact checker disabled - trusting {len(contacts)} verified contacts from primary sources")
+    for contact in contacts:
+        contact["fact_check_score"] = 1.0
+        contact["fact_check_notes"] = "Verified by primary data source (ZoomInfo/Apollo/PDL)"
+    return contacts
 
     prompt = f"""Verify these executive contacts for {company_name} ({domain}).
 For each contact, score how likely they are the actual person in that role (0.0 = definitely wrong, 1.0 = verified correct).
@@ -668,8 +667,6 @@ Output JSON:
                 f"(score={contact['fact_check_score']}: {contact.get('fact_check_notes')})"
             )
 
-    logger.info(f"Fact check complete: {len(enriched)}/{len(contacts)} contacts passed")
-    return enriched
 
 
 def _infer_role_type(title: str) -> str:

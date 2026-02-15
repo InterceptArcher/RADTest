@@ -1129,7 +1129,8 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             all_stakeholders = []
 
             if isinstance(stakeholders, list):
-                all_stakeholders = stakeholders  # Use directly, already filtered
+                # Ensure all items are dicts, filter out any non-dict items
+                all_stakeholders = [s for s in stakeholders if isinstance(s, dict)]
             elif isinstance(stakeholders, dict):
                 for role, profile in stakeholders.items():
                     if isinstance(profile, dict):
@@ -1432,6 +1433,9 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         # Generate supporting assets for each unique persona found in stakeholders
         persona_types = set()
         for stakeholder in all_stakeholders:
+            # Ensure stakeholder is a dict
+            if not isinstance(stakeholder, dict):
+                continue
             title = stakeholder.get('title', '').upper()
             for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO']:
                 if p in title:
