@@ -645,6 +645,187 @@ class WorkerOrchestrator:
         logger.info(f"   - {with_mobile} with mobile phone")
         return stakeholders
 
+    def _calculate_confidence_score(
+        self,
+        data_dict: dict,
+        stakeholder_profiles: list,
+        sources_used: list
+    ) -> float:
+        """
+        Calculate comprehensive confidence score (0.0-1.0) based on data completeness and quality.
+
+        Scoring breakdown:
+        - Core Firmographic Data (30%): Critical company fields
+        - Stakeholder Data (25%): Number and quality of contacts
+        - Enrichment Data (25%): Scoops, intent, news, technologies
+        - Contact Quality (15%): Phone numbers, emails, LinkedIn
+        - Data Source Quality (5%): Primary source bonus
+
+        Returns:
+            float: Confidence score between 0.0 and 1.0
+        """
+        score = 0.0
+        max_score = 100.0
+
+        # ============================================================
+        # 1. CORE FIRMOGRAPHIC DATA (30 points)
+        # ============================================================
+        core_fields = {
+            "company_name": 3,
+            "domain": 3,
+            "industry": 4,
+            "employee_count": 3,
+            "revenue": 3,
+            "headquarters": 2,
+            "description": 3,
+            "founded_year": 2,
+            "ceo": 2,
+            "phone": 2,
+            "website": 2,
+            "linkedin_url": 1
+        }
+
+        for field, points in core_fields.items():
+            value = data_dict.get(field)
+            if value and value not in ["Not available", "", "N/A", None]:
+                score += points
+
+        # ============================================================
+        # 2. STAKEHOLDER DATA (25 points)
+        # ============================================================
+        stakeholder_count = len(stakeholder_profiles) if stakeholder_profiles else 0
+
+        if stakeholder_count >= 3:
+            score += 10  # Have at least 3 stakeholders
+        elif stakeholder_count >= 2:
+            score += 7
+        elif stakeholder_count >= 1:
+            score += 4
+
+        # Stakeholder contact quality (15 points)
+        if stakeholder_profiles:
+            with_emails = sum(1 for s in stakeholder_profiles
+                            if s.get("email") and s["email"] != "Not available")
+            with_phones = sum(1 for s in stakeholder_profiles
+                            if s.get("phone") and s["phone"] != "Not available")
+            with_direct_phones = sum(1 for s in stakeholder_profiles
+                                   if s.get("direct_phone"))
+            with_linkedin = sum(1 for s in stakeholder_profiles
+                              if s.get("linkedin") and s["linkedin"] != "Not available")
+
+            # Email quality (5 points)
+            if with_emails >= 3:
+                score += 5
+            elif with_emails >= 2:
+                score += 3
+            elif with_emails >= 1:
+                score += 2
+
+            # Phone quality (7 points)
+            if with_direct_phones >= 2:
+                score += 7  # Direct phones are gold
+            elif with_phones >= 3:
+                score += 5
+            elif with_phones >= 2:
+                score += 3
+            elif with_phones >= 1:
+                score += 2
+
+            # LinkedIn quality (3 points)
+            if with_linkedin >= 3:
+                score += 3
+            elif with_linkedin >= 2:
+                score += 2
+            elif with_linkedin >= 1:
+                score += 1
+
+        # ============================================================
+        # 3. ENRICHMENT DATA (25 points)
+        # ============================================================
+        # Scoops (7 points)
+        scoops = data_dict.get("scoops", [])
+        scoop_count = len(scoops) if isinstance(scoops, list) else 0
+        if scoop_count >= 5:
+            score += 7
+        elif scoop_count >= 3:
+            score += 5
+        elif scoop_count >= 1:
+            score += 3
+
+        # Intent signals (7 points)
+        intent_signals = data_dict.get("intent_signals", [])
+        intent_count = len(intent_signals) if isinstance(intent_signals, list) else 0
+        if intent_count >= 5:
+            score += 7
+        elif intent_count >= 3:
+            score += 5
+        elif intent_count >= 1:
+            score += 3
+
+        # News articles (6 points)
+        news_articles = data_dict.get("news_articles", [])
+        news_count = len(news_articles) if isinstance(news_articles, list) else 0
+        if news_count >= 3:
+            score += 6
+        elif news_count >= 2:
+            score += 4
+        elif news_count >= 1:
+            score += 2
+
+        # Technologies (5 points)
+        technologies = data_dict.get("technology_installs", [])
+        tech_count = len(technologies) if isinstance(technologies, list) else 0
+        if tech_count >= 10:
+            score += 5
+        elif tech_count >= 5:
+            score += 3
+        elif tech_count >= 1:
+            score += 2
+
+        # ============================================================
+        # 4. EXTENDED FIRMOGRAPHIC DATA (10 points)
+        # ============================================================
+        extended_fields = [
+            "sub_industry", "employees_range", "revenue_range",
+            "city", "state", "country", "metro_area",
+            "cfo", "cto", "ownership_type", "business_model"
+        ]
+
+        extended_filled = sum(
+            1 for field in extended_fields
+            if data_dict.get(field) and data_dict[field] not in ["Not available", "", "N/A", None]
+        )
+
+        if extended_filled >= 8:
+            score += 10
+        elif extended_filled >= 6:
+            score += 7
+        elif extended_filled >= 4:
+            score += 5
+        elif extended_filled >= 2:
+            score += 3
+
+        # ============================================================
+        # 5. DATA SOURCE QUALITY (5 points)
+        # ============================================================
+        if "zoominfo" in sources_used:
+            score += 5  # Primary source bonus
+        elif "apollo" in sources_used or "peopledatalabs" in sources_used:
+            score += 3  # Secondary source
+
+        # Normalize to 0.0-1.0
+        confidence = min(score / max_score, 1.0)
+
+        logger.info(
+            f"Confidence breakdown: "
+            f"Core={sum(points for f, points in core_fields.items() if data_dict.get(f) and data_dict[f] not in ['Not available', '', 'N/A', None])}/30, "
+            f"Stakeholders={stakeholder_count} profiles, "
+            f"Enrichment={scoop_count} scoops + {intent_count} intent + {news_count} news + {tech_count} tech, "
+            f"Sources={sources_used}"
+        )
+
+        return confidence
+
     async def _validate_and_normalize(
         self,
         company_name: str,
@@ -727,9 +908,6 @@ class WorkerOrchestrator:
                 validated_fields[field_name] = candidates[0]["value"]
                 total_confidence += 1.0
 
-        # Calculate average confidence
-        avg_confidence = total_confidence / len(fields_to_validate) if fields_to_validate else 0.0
-
         # CRITICAL: Merge ALL comprehensive data from ALL sources
         # Priority: ZoomInfo (TIER_1) > Apollo (TIER_2) > PDL (TIER_2)
         data_dict = {
@@ -790,9 +968,18 @@ class WorkerOrchestrator:
 
         logger.info(f"Final merged data contains {len(data_dict)} total fields")
 
+        # Calculate comprehensive confidence score based on data completeness and quality
+        confidence_score = self._calculate_confidence_score(
+            data_dict=data_dict,
+            stakeholder_profiles=stakeholder_profiles,
+            sources_used=list(sources_data.keys())
+        )
+
+        logger.info(f"📊 Overall confidence score: {confidence_score:.2f} (based on data completeness and quality)")
+
         return {
             "data": data_dict,
-            "confidence_score": avg_confidence,
+            "confidence_score": confidence_score,
             "metadata": {
                 "validated_fields": len(validated_fields),
                 "total_fields": len(fields_to_validate),
