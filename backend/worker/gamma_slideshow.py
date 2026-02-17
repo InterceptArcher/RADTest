@@ -64,6 +64,20 @@ class GammaSlideshowCreator:
             Exception: If slideshow creation fails
         """
         try:
+            # CRITICAL: Validate company_data is a dictionary
+            if not isinstance(company_data, dict):
+                error_msg = (
+                    f"company_data must be a dictionary, got {type(company_data).__name__}. "
+                    f"Expected format: {{'validated_data': {{}}, 'company_name': '...', 'confidence_score': 0.85}}"
+                )
+                logger.error(f"❌ {error_msg}")
+                return {
+                    "success": False,
+                    "error": error_msg,
+                    "slideshow_url": None,
+                    "slideshow_id": None
+                }
+
             company_name = company_data.get('validated_data', {}).get('company_name') or company_data.get('company_name', 'Company')
             logger.info(f"Creating slideshow for {company_name}")
 
