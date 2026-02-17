@@ -1025,6 +1025,8 @@ async def process_company_profile(job_id: str, company_data: dict):
         if zi_client:
             try:
                 zoominfo_data, zoominfo_contacts = await _fetch_all_zoominfo(zi_client, company_data)
+                # Store contacts in zoominfo_data so they can be retrieved later
+                zoominfo_data["contacts"] = zoominfo_contacts
                 jobs_store[job_id]["zoominfo_data"] = zoominfo_data
                 logger.info(f"ZoomInfo returned {len(zoominfo_data)} data fields, {len(zoominfo_contacts)} contacts")
             except Exception as e:
