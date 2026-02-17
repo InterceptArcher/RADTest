@@ -1710,14 +1710,20 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
                         status = status_data.get("status")
 
-                        # Log every 10 seconds to avoid spam
-                        if attempt % 5 == 0 or status in ["completed", "failed"]:
-                            elapsed = attempt * 2
-                            logger.info(f"Generation status after {elapsed}s (attempt {attempt}/{max_attempts}): {status}")
+                        # Log every 10 seconds to avoid spam, or on status change
+                        should_log = (
+                            attempt % 5 == 0 or
+                            status in ["completed", "failed"] or
+                            attempt == 1
+                        )
 
-                        # CRITICAL: Log full response structure for debugging
-                        logger.info(f"Full status response: {status_data}")
-                        logger.info(f"Response keys available: {list(status_data.keys())}")
+                        if should_log:
+                            elapsed = attempt * 2
+                            logger.info(f"⏳ Generation status after {elapsed}s (attempt {attempt}/{max_attempts}): {status}")
+                            logger.info(f"   Generation ID: {generation_id}")
+                            # Only log full response on first attempt and completion/failure
+                            if attempt == 1 or status in ["completed", "failed"]:
+                                logger.info(f"   Full status response: {status_data}")
 
                         if status == "completed":
                             # CRITICAL: Log all URL-related fields for debugging
@@ -1798,7 +1804,17 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                         if attempt >= max_attempts:
                             raise
 
-                raise Exception(f"Generation timed out after {max_attempts * 2} seconds")
+                # If we exit the loop without returning, generation timed out
+                timeout_seconds = max_attempts * 2
+                logger.error(f"❌ Generation TIMED OUT after {timeout_seconds} seconds ({max_attempts} attempts)")
+                logger.error(f"   Last known status: {status if 'status' in locals() else 'unknown'}")
+                logger.error(f"   Generation ID: {generation_id}")
+                logger.error(f"   This means Gamma API took too long to complete the slideshow")
+                raise Exception(
+                    f"Generation timed out after {timeout_seconds} seconds. "
+                    f"Last status: {status if 'status' in locals() else 'unknown'}. "
+                    f"Gamma API did not complete within the timeout period."
+                )
 
         except httpx.HTTPStatusError as e:
             error_body = ""
