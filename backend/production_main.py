@@ -2219,9 +2219,20 @@ async def generate_slideshow_endpoint(job_id: str):
         gamma_creator = GammaSlideshowCreator(GAMMA_API_KEY)
 
         # Prepare company data for slideshow
+        # CRITICAL: Ensure validated_data is a dict, not a JSON string
+        validated_data = result.get("validated_data", {})
+        if isinstance(validated_data, str):
+            import json
+            try:
+                validated_data = json.loads(validated_data)
+                logger.info("Parsed validated_data from JSON string")
+            except json.JSONDecodeError as e:
+                logger.error(f"Failed to parse validated_data JSON: {e}")
+                validated_data = {}
+
         company_data = {
             "company_name": result.get("company_name"),
-            "validated_data": result.get("validated_data", {}),
+            "validated_data": validated_data,
             "confidence_score": result.get("confidence_score", 0.85)
         }
 
@@ -2606,7 +2617,16 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
     zoominfo_data = job_data.get("zoominfo_data", {})
     slideshow_data = job_data.get("slideshow_data", {})
     result = job_data.get("result", {})
+
+    # CRITICAL: Ensure validated_data is a dict, not a JSON string
     validated_data = result.get("validated_data", {})
+    if isinstance(validated_data, str):
+        try:
+            validated_data = json.loads(validated_data)
+            logger.info("Parsed validated_data from JSON string in debug endpoint")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse validated_data JSON in debug endpoint: {e}")
+            validated_data = {}
 
     # Extract Apollo.io fields (handles both organization/enrich and mixed_companies/search)
     apollo_org = {}
@@ -3385,7 +3405,17 @@ async def generate_outreach_content(
 
     # Get validated data and stakeholder info
     result = job.get("result", {})
+
+    # CRITICAL: Ensure validated_data is a dict, not a JSON string
     validated_data = result.get("validated_data", {})
+    if isinstance(validated_data, str):
+        try:
+            validated_data = json.loads(validated_data)
+            logger.info("Parsed validated_data from JSON string in outreach endpoint")
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse validated_data JSON in outreach endpoint: {e}")
+            validated_data = {}
+
     stakeholders_data = job.get("stakeholders_data", [])
 
     # Find the specific stakeholder

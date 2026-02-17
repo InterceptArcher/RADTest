@@ -2,6 +2,7 @@
 Gamma API slideshow creation module.
 Creates markdown prompts and generates slideshows via Gamma API.
 """
+import json
 import logging
 import asyncio
 from typing import Dict, Any, Optional
@@ -77,6 +78,24 @@ class GammaSlideshowCreator:
                     "slideshow_url": None,
                     "slideshow_id": None
                 }
+
+            # CRITICAL: Ensure validated_data is a dict, not a JSON string
+            validated_data = company_data.get('validated_data', {})
+            if isinstance(validated_data, str):
+                import json
+                try:
+                    validated_data = json.loads(validated_data)
+                    logger.info("Parsed validated_data from JSON string in create_slideshow")
+                    company_data['validated_data'] = validated_data
+                except json.JSONDecodeError as e:
+                    error_msg = f"validated_data is a malformed JSON string: {e}"
+                    logger.error(f"❌ {error_msg}")
+                    return {
+                        "success": False,
+                        "error": error_msg,
+                        "slideshow_url": None,
+                        "slideshow_id": None
+                    }
 
             company_name = company_data.get('validated_data', {}).get('company_name') or company_data.get('company_name', 'Company')
             logger.info(f"Creating slideshow for {company_name}")

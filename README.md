@@ -21,7 +21,51 @@
 
 ---
 
-## Latest Features (2026-02-15)
+## Latest Features (2026-02-17)
+
+### 🚨 CRITICAL FIX: Slideshow Generation AttributeError Resolved
+
+**Problem Identified:** `AttributeError: 'str' object has no attribute 'get'` was preventing slideshow generation when `validated_data` was retrieved from storage as a JSON string instead of a dictionary object.
+
+**Root Cause:**
+- When job results were stored in the jobs store or retrieved from Supabase, the `validated_data` field could be serialized as a JSON string
+- Subsequent attempts to call `.get()` on the string (expecting a dict) caused the AttributeError
+- This occurred in multiple endpoints: slideshow generation, debug views, and outreach content generation
+
+**Solution Implemented:**
+1. **JSON String Detection & Parsing** - Added automatic detection and parsing of JSON strings in 4 critical locations:
+   - `generate_slideshow_endpoint()` - On-demand slideshow generation (line ~2223)
+   - `gamma_slideshow.GammaSlideshowCreator.create_slideshow()` - Core slideshow creation (line ~70)
+   - Debug endpoint - Job data inspection (line ~2620)
+   - Outreach content endpoint - Email/content generation (line ~3399)
+
+2. **Defensive Type Checking** - Each location now:
+   - Checks if `validated_data` is a string using `isinstance(validated_data, str)`
+   - Attempts JSON parsing with `json.loads()` if it's a string
+   - Logs the parsing operation for debugging
+   - Falls back to empty dict `{}` on JSON decode errors
+   - Continues processing with the parsed dictionary
+
+3. **Error Resilience** - Slideshow generation now handles data type mismatches gracefully:
+   - No job crashes due to type errors
+   - Comprehensive error logging for debugging
+   - Fallback behavior ensures users still receive feedback
+
+**Impact:**
+- ✅ Slideshows can now be generated from stored job results
+- ✅ No more AttributeError crashes in slideshow pipeline
+- ✅ Improved data handling across all endpoints that access validated_data
+- ✅ Better logging for diagnosing data serialization issues
+
+**Technical Details:**
+- Added `import json` to `gamma_slideshow.py` module imports
+- JSON parsing is performed before any `.get()` calls on `validated_data`
+- Type validation ensures backwards compatibility with dict-formatted data
+- Error messages include context (endpoint name) for faster debugging
+
+---
+
+## Previous Features (2026-02-15)
 
 ### 🔧 Gamma API URL Extraction Enhancement
 
