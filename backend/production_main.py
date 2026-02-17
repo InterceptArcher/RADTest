@@ -2055,6 +2055,20 @@ async def store_validated_data(company_name: str, validated_data: dict):
 
 async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[str, Any]:
     """Generate slideshow using Gamma API"""
+    # CRITICAL: Validate inputs are correct types
+    if not isinstance(validated_data, dict):
+        error_msg = (
+            f"validated_data must be a dictionary, got {type(validated_data).__name__}. "
+            f"Received value: {validated_data}"
+        )
+        logger.error(f"❌ {error_msg}")
+        return {
+            "success": False,
+            "slideshow_url": None,
+            "slideshow_id": None,
+            "error": error_msg
+        }
+
     if not GAMMA_API_KEY:
         logger.warning("Gamma API key not configured")
         return {
