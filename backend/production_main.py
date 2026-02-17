@@ -1203,16 +1203,31 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["current_step"] = "Generating slideshow..."
         logger.info(f"🎨 Starting slideshow generation for {company_data['company_name']}")
 
-        slideshow_result = await generate_slideshow(company_data["company_name"], validated_data)
+        # CRITICAL: Wrap in try-except so job continues even if slideshow fails
+        try:
+            slideshow_result = await generate_slideshow(company_data["company_name"], validated_data)
 
-        # Log slideshow result for debugging
-        if slideshow_result.get("success"):
-            logger.info(f"✅ Slideshow generated successfully: {slideshow_result.get('slideshow_url')}")
-        else:
-            logger.error(f"❌ Slideshow generation failed: {slideshow_result.get('error', 'Unknown error')}")
-            logger.error(f"   This will result in NO slideshow URL in the response")
+            # Log slideshow result for debugging
+            if slideshow_result.get("success"):
+                logger.info(f"✅ Slideshow generated successfully: {slideshow_result.get('slideshow_url')}")
+            else:
+                logger.error(f"❌ Slideshow generation failed: {slideshow_result.get('error', 'Unknown error')}")
+                logger.error(f"   This will result in NO slideshow URL in the response")
 
-        # Store complete slideshow data
+        except Exception as e:
+            # If slideshow generation crashes, log error but continue job
+            logger.error(f"❌ EXCEPTION during slideshow generation: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"   Traceback: {traceback.format_exc()}")
+            slideshow_result = {
+                "success": False,
+                "slideshow_url": None,
+                "slideshow_id": None,
+                "error": f"Slideshow generation crashed: {str(e)}"
+            }
+            logger.error(f"   Job will continue without slideshow")
+
+        # Store complete slideshow data (even if it failed)
         jobs_store[job_id]["slideshow_data"] = slideshow_result
 
         jobs_store[job_id]["progress"] = 95

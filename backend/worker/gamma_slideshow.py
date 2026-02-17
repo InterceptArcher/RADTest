@@ -127,8 +127,16 @@ class GammaSlideshowCreator:
             }
 
         except Exception as e:
-            logger.error(f"Failed to create slideshow: {e}")
-            raise
+            logger.error(f"❌ Failed to create slideshow: {e}")
+            import traceback
+            logger.error(f"   Traceback: {traceback.format_exc()}")
+            # Return error response instead of crashing
+            return {
+                "success": False,
+                "slideshow_url": None,
+                "slideshow_id": None,
+                "error": f"{type(e).__name__}: {str(e)}"
+            }
 
     def _format_for_template(self, company_data: Dict[str, Any], user_email: str = None) -> str:
         """
