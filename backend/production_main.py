@@ -1201,7 +1201,16 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Step 6: Generate slideshow
         jobs_store[job_id]["progress"] = 90
         jobs_store[job_id]["current_step"] = "Generating slideshow..."
+        logger.info(f"🎨 Starting slideshow generation for {company_data['company_name']}")
+
         slideshow_result = await generate_slideshow(company_data["company_name"], validated_data)
+
+        # Log slideshow result for debugging
+        if slideshow_result.get("success"):
+            logger.info(f"✅ Slideshow generated successfully: {slideshow_result.get('slideshow_url')}")
+        else:
+            logger.error(f"❌ Slideshow generation failed: {slideshow_result.get('error', 'Unknown error')}")
+            logger.error(f"   This will result in NO slideshow URL in the response")
 
         # Store complete slideshow data
         jobs_store[job_id]["slideshow_data"] = slideshow_result
@@ -1275,11 +1284,15 @@ async def process_company_profile(job_id: str, company_data: dict):
                         validated_data[_field] = _src[_field]
                         break
 
+        # Log what slideshow data we're including in the result
+        slideshow_url_to_return = slideshow_result.get("slideshow_url")
+        logger.info(f"📊 Final result will include slideshow_url: {slideshow_url_to_return or 'NONE (generation failed)'}")
+
         jobs_store[job_id]["result"] = {
             "success": True,
             "company_name": validated_data.get("company_name", company_data["company_name"]),
             "domain": validated_data.get("domain", company_data["domain"]),
-            "slideshow_url": slideshow_result.get("slideshow_url"),
+            "slideshow_url": slideshow_url_to_return,
             "slideshow_id": slideshow_result.get("slideshow_id"),
             "confidence_score": validated_data.get("confidence_score", 0.85),
             # Core company data fields for the overview
