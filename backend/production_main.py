@@ -578,7 +578,7 @@ async def _call_openai_json(prompt: str, system_prompt: str = "Output only valid
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": prompt}
                     ],
-                    "temperature": 0.1,
+                    "temperature": 0,
                     "response_format": {"type": "json_object"}
                 }
             )
@@ -871,11 +871,20 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
         # Contacts (Search → Enrich)
         if isinstance(contacts_result, dict) and contacts_result.get("success"):
             contacts = contacts_result.get("people", [])
-            logger.info(f"ZoomInfo contacts: {len(contacts)} enriched contacts")
+            logger.info(f"✅ ZoomInfo contacts SUCCESS: {len(contacts)} enriched contacts found for {domain}")
+            if contacts:
+                # Log sample contact to verify data structure
+                sample = contacts[0]
+                logger.info(f"   Sample contact: {sample.get('name', 'N/A')} - {sample.get('title', 'N/A')}")
+                logger.info(f"   Has phone: {bool(sample.get('direct_phone') or sample.get('mobile_phone'))}")
+            else:
+                logger.warning(f"⚠️  ZoomInfo returned success but ZERO contacts for domain: {domain}")
+                logger.warning(f"   This may indicate: (1) No executives found at company, (2) Domain not in ZoomInfo, (3) Search criteria too narrow")
         elif isinstance(contacts_result, Exception):
-            logger.warning(f"ZoomInfo contacts exception: {contacts_result}")
+            logger.error(f"❌ ZoomInfo contacts EXCEPTION: {type(contacts_result).__name__}: {contacts_result}")
         elif isinstance(contacts_result, dict):
-            logger.warning(f"ZoomInfo contacts failed: success=False, error={contacts_result.get('error', 'unknown')}")
+            logger.error(f"❌ ZoomInfo contacts FAILED: success=False, error={contacts_result.get('error', 'unknown')}")
+            logger.error(f"   Domain searched: {domain}, Full result: {contacts_result}")
 
         return combined_data, contacts
 
@@ -948,6 +957,16 @@ def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -
                 "management_level": zi_contact.get("management_level", ""),
                 "source": "zoominfo",
             })
+
+    # Sort stakeholders for deterministic output (by role_type priority, then by name)
+    role_priority = {
+        "ceo": 0, "cto": 1, "cio": 2, "ciso": 3, "cfo": 4, "coo": 5, "cpo": 6,
+        "vp": 7, "director": 8, "manager": 9, "other": 10
+    }
+    stakeholders_data.sort(key=lambda x: (
+        role_priority.get(x.get("role_type", "other").lower(), 10),
+        x.get("name", "").lower()
+    ))
 
     return stakeholders_data
 
@@ -1620,6 +1639,17 @@ def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
             break
 
     logger.info(f"Hunter.io: Extracted {len(stakeholders)} stakeholders from contacts")
+
+    # Sort stakeholders for deterministic output
+    role_priority = {
+        "ceo": 0, "cto": 1, "cio": 2, "ciso": 3, "cfo": 4, "coo": 5, "cpo": 6,
+        "vp": 7, "director": 8, "manager": 9, "other": 10
+    }
+    stakeholders.sort(key=lambda x: (
+        role_priority.get(x.get("role_type", "other").lower(), 10),
+        x.get("name", "").lower()
+    ))
+
     return stakeholders
 
 
@@ -1731,6 +1761,16 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
 
     except Exception as e:
         logger.error(f"Apollo stakeholder search error: {str(e)}")
+
+    # Sort stakeholders for deterministic output
+    role_priority = {
+        "ceo": 0, "cto": 1, "cio": 2, "ciso": 3, "cfo": 4, "coo": 5, "cpo": 6,
+        "vp": 7, "director": 8, "manager": 9, "other": 10
+    }
+    stakeholders.sort(key=lambda x: (
+        role_priority.get(x.get("role_type", "other").lower(), 10),
+        x.get("name", "").lower()
+    ))
 
     return stakeholders
 
@@ -3385,7 +3425,7 @@ Output as JSON with these exact field names:
                 {"role": "system", "content": "You are a sales enablement expert. Generate professional, value-focused outreach content."},
                 {"role": "user", "content": prompt}
             ],
-            temperature=0.7,
+            temperature=0,  # Set to 0 for deterministic results
             response_format={"type": "json_object"}
         )
 

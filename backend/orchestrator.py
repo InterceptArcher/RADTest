@@ -440,7 +440,7 @@ async def call_orchestrator_llm(prompt: str) -> Optional[Dict[str, Any]]:
                             "content": prompt
                         }
                     ],
-                    "temperature": 0.3,
+                    "temperature": 0,  # Set to 0 for deterministic API selection
                     "max_tokens": 1500  # Increased for granular output
                 },
                 timeout=30.0
