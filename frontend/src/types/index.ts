@@ -457,6 +457,35 @@ export interface StakeholderContact {
   companyPhone?: string;
   linkedinUrl?: string;
   contactAccuracyScore?: number;
+  /** 'zoominfo' when phone data was enriched via ZoomInfo Contact Enrich API */
+  phoneSource?: string;
+}
+
+/**
+ * Response from the /contacts/enrich/{domain} endpoint.
+ */
+export interface ZoomInfoEnrichedContact {
+  name: string;
+  title: string;
+  roleType: string;
+  email?: string;
+  phone?: string;
+  directPhone?: string;
+  mobilePhone?: string;
+  companyPhone?: string;
+  linkedinUrl?: string;
+  contactAccuracyScore?: number;
+  department?: string;
+  managementLevel?: string;
+  personId?: string;
+  phoneSource: 'zoominfo';
+}
+
+export interface ContactEnrichResponse {
+  domain: string;
+  total_count: number;
+  contacts: ZoomInfoEnrichedContact[];
+  source: string;
 }
 
 /**

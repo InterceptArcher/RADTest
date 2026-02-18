@@ -37,6 +37,28 @@ logger = logging.getLogger(__name__)
 # In-memory job storage (in production, use Redis or database)
 jobs_store: Dict[str, dict] = {}
 
+# ============================================================================
+# Stakeholder Role Configuration
+# CTO, CIO, COO, CFO are primary targets; all others are secondary fallbacks.
+# ============================================================================
+PRIMARY_STAKEHOLDER_ROLES = {"CTO", "CIO", "CFO", "COO"}
+
+ROLE_PRIORITY = {
+    "cto": 0,   # Primary target #1
+    "cio": 1,   # Primary target #2
+    "cfo": 2,   # Primary target #3
+    "coo": 3,   # Primary target #4
+    # Secondary — only shown when primary roles unavailable
+    "ciso": 4,
+    "cpo": 5,
+    "ceo": 6,
+    "cmo": 7,
+    "vp": 8,
+    "director": 9,
+    "manager": 10,
+    "other": 11,
+}
+
 # Create FastAPI app
 app = FastAPI(
     title="RADTest Backend (Production)",
@@ -958,13 +980,9 @@ def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -
                 "source": "zoominfo",
             })
 
-    # Sort stakeholders for deterministic output (by role_type priority, then by name)
-    role_priority = {
-        "ceo": 0, "cto": 1, "cio": 2, "ciso": 3, "cfo": 4, "coo": 5, "cpo": 6,
-        "vp": 7, "director": 8, "manager": 9, "other": 10
-    }
+    # Sort stakeholders for deterministic output (CTO > CIO > COO > CFO > others)
     stakeholders_data.sort(key=lambda x: (
-        role_priority.get(x.get("role_type", "other").lower(), 10),
+        ROLE_PRIORITY.get(x.get("role_type", "other").lower(), 99),
         x.get("name", "").lower()
     ))
 
@@ -1238,9 +1256,10 @@ async def process_company_profile(job_id: str, company_data: dict):
         pdl_data = pdl_data or {}
         zoominfo_data = zoominfo_data or {}
 
-        # Build stakeholder map from fetched stakeholders + AI-generated content
-        # Split into executives (C-suite) and other relevant contacts (VP, Director, Manager)
-        executive_roles = {"CIO", "CTO", "CISO", "COO", "CFO", "CPO", "CEO", "CMO"}
+        # Build stakeholder map from fetched stakeholders + AI-generated content.
+        # PRIMARY: CTO, CIO, COO, CFO — shown as full profile cards.
+        # SECONDARY: All other roles — shown as compact rows (otherContacts).
+        # FALLBACK: If no primary roles found, promote best available to primary.
         stakeholder_map_data = {
             "stakeholders": [],
             "otherContacts": [],
@@ -1269,6 +1288,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                         "companyPhone": s.get("company_phone"),
                         "linkedinUrl": s.get("linkedin_url"),
                         "contactAccuracyScore": s.get("contact_accuracy_score"),
+                        "phoneSource": "zoominfo" if s.get("source") == "zoominfo" else None,
                     },
                     "factCheckScore": s.get("fact_check_score"),
                     "factCheckNotes": s.get("fact_check_notes"),
@@ -1277,10 +1297,24 @@ async def process_company_profile(job_id: str, company_data: dict):
                     "recommendedPlay": ai_profile.get("recommended_play", "")
                 }
 
-                if role_type in executive_roles:
+                if role_type in PRIMARY_STAKEHOLDER_ROLES:
                     stakeholder_map_data["stakeholders"].append(contact_entry)
                 else:
                     stakeholder_map_data["otherContacts"].append(contact_entry)
+
+            # Fallback: if no primary (CTO/CIO/COO/CFO) contacts were found,
+            # promote the most senior available contacts to primary display.
+            if not stakeholder_map_data["stakeholders"] and stakeholder_map_data["otherContacts"]:
+                fallback_contacts = sorted(
+                    stakeholder_map_data["otherContacts"],
+                    key=lambda x: ROLE_PRIORITY.get(x.get("roleType", "other").lower(), 99)
+                )
+                stakeholder_map_data["stakeholders"] = fallback_contacts[:4]
+                stakeholder_map_data["otherContacts"] = fallback_contacts[4:]
+                logger.info(
+                    f"No primary stakeholders (CTO/CIO/COO/CFO) found — "
+                    f"promoted {len(stakeholder_map_data['stakeholders'])} fallback contacts to primary"
+                )
 
         # Backfill validated_data with raw API sources for any fields the LLM Council missed.
         # This ensures _build_executive_snapshot, build_buying_signals, and other downstream
@@ -1668,13 +1702,9 @@ def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
 
     logger.info(f"Hunter.io: Extracted {len(stakeholders)} stakeholders from contacts")
 
-    # Sort stakeholders for deterministic output
-    role_priority = {
-        "ceo": 0, "cto": 1, "cio": 2, "ciso": 3, "cfo": 4, "coo": 5, "cpo": 6,
-        "vp": 7, "director": 8, "manager": 9, "other": 10
-    }
+    # Sort stakeholders for deterministic output (CTO > CIO > COO > CFO > others)
     stakeholders.sort(key=lambda x: (
-        role_priority.get(x.get("role_type", "other").lower(), 10),
+        ROLE_PRIORITY.get(x.get("role_type", "other").lower(), 99),
         x.get("name", "").lower()
     ))
 
@@ -1790,13 +1820,9 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Apollo stakeholder search error: {str(e)}")
 
-    # Sort stakeholders for deterministic output
-    role_priority = {
-        "ceo": 0, "cto": 1, "cio": 2, "ciso": 3, "cfo": 4, "coo": 5, "cpo": 6,
-        "vp": 7, "director": 8, "manager": 9, "other": 10
-    }
+    # Sort stakeholders for deterministic output (CTO > CIO > COO > CFO > others)
     stakeholders.sort(key=lambda x: (
-        role_priority.get(x.get("role_type", "other").lower(), 10),
+        ROLE_PRIORITY.get(x.get("role_type", "other").lower(), 99),
         x.get("name", "").lower()
     ))
 
@@ -2354,6 +2380,78 @@ async def get_job_status(job_id: str):
         news_data=job.get("news_data"),
         created_at=job.get("created_at")
     )
+
+
+# ============================================================================
+# ZoomInfo Contact Phone Enrichment Endpoint
+# ============================================================================
+
+@app.get("/contacts/enrich/{domain}", tags=["Contacts"])
+async def enrich_contacts_by_domain(domain: str):
+    """
+    On-demand ZoomInfo Contact Phone Enrichment for a company domain.
+
+    Calls ZoomInfo Contact Search → Enrich (2-step) and returns contacts
+    with direct phone, mobile phone, company phone, and accuracy scores.
+    All phone data is attributed to ZoomInfo via the phoneSource field.
+
+    This value must be provided via environment variables:
+      ZOOMINFO_ACCESS_TOKEN or ZOOMINFO_CLIENT_ID + ZOOMINFO_CLIENT_SECRET
+
+    Args:
+        domain: Company domain to enrich (e.g., 'example.com')
+
+    Returns:
+        JSON with domain, total_count, and contacts list
+    """
+    zi_client = _get_zoominfo_client()
+    if not zi_client:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "error": "ZoomInfo not configured",
+                "message": "ZOOMINFO_ACCESS_TOKEN or ZOOMINFO_CLIENT_ID/SECRET must be set via environment variables."
+            }
+        )
+
+    try:
+        result = await zi_client.search_and_enrich_contacts(domain=domain)
+    except Exception as e:
+        logger.error(f"ZoomInfo contact enrich failed for domain {domain}: {e}")
+        raise HTTPException(
+            status_code=502,
+            detail={"error": "ZoomInfo enrichment failed", "message": str(e)}
+        )
+
+    people = result.get("people", []) if result.get("success") else []
+
+    contacts = []
+    for p in people:
+        contacts.append({
+            "name": p.get("name", ""),
+            "title": p.get("title", ""),
+            "roleType": _infer_role_type(p.get("title", "")),
+            "email": p.get("email") or None,
+            "phone": p.get("phone") or None,
+            "directPhone": p.get("direct_phone") or None,
+            "mobilePhone": p.get("mobile_phone") or None,
+            "companyPhone": p.get("company_phone") or None,
+            "linkedinUrl": p.get("linkedin") or None,
+            "contactAccuracyScore": p.get("contact_accuracy_score") or None,
+            "department": p.get("department") or None,
+            "managementLevel": p.get("management_level") or None,
+            "personId": p.get("person_id") or None,
+            "phoneSource": "zoominfo",
+        })
+
+    logger.info(f"Contact enrichment for {domain}: returned {len(contacts)} contacts")
+
+    return {
+        "domain": domain,
+        "total_count": len(contacts),
+        "contacts": contacts,
+        "source": "zoominfo",
+    }
 
 
 # ============================================================================

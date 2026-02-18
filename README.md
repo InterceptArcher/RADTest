@@ -21,6 +21,27 @@
 
 ---
 
+## Latest Features (2026-02-18)
+
+### ZoomInfo Contact Phone Enrichment & Stakeholder Role Priority
+
+#### ZoomInfo Phone Enrichment
+- **New endpoint `GET /contacts/enrich/{domain}`** — on-demand ZoomInfo Contact Search → Enrich (2-step) pipeline. Returns direct phone, mobile phone, company phone, contact accuracy scores, and `phoneSource: "zoominfo"` for all enriched contacts.
+- **`phoneSource` field** added to `StakeholderContact` (backend + TypeScript types). When a phone number comes from ZoomInfo Contact Enrich, the `contact.phoneSource` is set to `"zoominfo"`.
+- **ZoomInfo badge** displayed in the Contact Info block of every stakeholder card when `phoneSource === 'zoominfo'`. Badge shows a clear "ZoomInfo" label so the data source is transparent.
+- **Frontend API client**: `apiClient.enrichContacts(domain)` calls the new endpoint and returns `ContactEnrichResponse` with typed `ZoomInfoEnrichedContact[]`.
+- **Rationale**: ZoomInfo Contact Enrich is a 2-step API (Search → Enrich by personId) and returns direct/mobile/company phone at higher accuracy than single-step APIs. Surfacing the source badge builds user trust and clarifies data provenance.
+
+#### Stakeholder Role Priority: CTO, CIO, CFO, COO Always
+- **`PRIMARY_STAKEHOLDER_ROLES = {"CTO", "CIO", "CFO", "COO"}`** — these 4 roles are always shown as primary stakeholders (full profile cards) in the Stakeholder Map.
+- **All other roles** (CISO, CEO, CMO, CPO, VP, Director, Manager) are shown as `otherContacts` (compact rows) only.
+- **Fallback logic**: If none of the 4 primary roles are found for a company, the best available contacts are promoted to primary display (up to 4), so the stakeholder map always shows something useful.
+- **`ROLE_PRIORITY` sort order**: CTO (0) → CIO (1) → CFO (2) → COO (3) → others. Applied consistently across ZoomInfo, Apollo, and Hunter.io contact fetchers.
+- **LLM Council** `determine_strategic_roles` now always returns `["CTO", "CIO", "CFO", "COO"]` — no LLM inference needed for role selection.
+- **Rationale**: CTO, CIO, CFO, COO are the universal technology and operations decision-makers relevant to enterprise sales across all industries. Fixing the target list eliminates LLM variability and ensures consistent, focused outreach.
+
+---
+
 ## Latest Features (2026-02-17)
 
 ### 🚨 CRITICAL FIX: Slideshow Generation AttributeError Resolved

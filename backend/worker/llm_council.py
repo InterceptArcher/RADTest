@@ -718,26 +718,13 @@ Examples:
             content = response.choices[0].message.content.strip()
             roles = json.loads(content)
 
-            if not isinstance(roles, list) or len(roles) != 3:
-                logger.warning(f"LLM returned invalid roles format, using defaults: {roles}")
-                # Default based on company size
-                if employee_count and isinstance(employee_count, int):
-                    if employee_count > 10000:
-                        roles = ["CIO", "CISO", "CFO"]
-                    elif employee_count > 1000:
-                        roles = ["CIO", "CFO", "COO"]
-                    else:
-                        roles = ["CIO", "CFO", "VP of IT"]
-                else:
-                    roles = ["CIO", "CFO", "CISO"]  # Universal default
-
-            logger.info(f"Determined strategic roles for {company_name}: {roles}")
-            return roles[:3]
+            # Always target CTO, CIO, CFO, COO — ignore LLM suggestion
+            logger.info(f"Strategic roles for {company_name}: always CTO, CIO, CFO, COO")
+            return ["CTO", "CIO", "CFO", "COO"]
 
         except Exception as e:
             logger.error(f"Failed to determine strategic roles: {e}")
-            # Fallback to universal default
-            return ["CIO", "CFO", "CISO"]
+            return ["CTO", "CIO", "CFO", "COO"]
 
     async def generate_synthetic_profile(
         self,

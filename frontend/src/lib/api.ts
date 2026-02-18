@@ -11,6 +11,7 @@ import type {
   ProfileRequestResponse,
   JobStatus,
   ErrorResponse,
+  ContactEnrichResponse,
 } from '@/types';
 
 // Get API URL from environment variable with fallback to production backend
@@ -114,6 +115,40 @@ class APIClient {
       }
 
       throw new Error('Failed to check job status');
+    }
+  }
+
+  /**
+   * Enrich contacts for a company domain via ZoomInfo Contact Enrich API.
+   * Returns contacts with direct phone, mobile phone, company phone, and accuracy scores.
+   * All phone data is attributed to ZoomInfo (phoneSource: 'zoominfo').
+   *
+   * This value must be provided via environment variables on the backend:
+   *   ZOOMINFO_ACCESS_TOKEN or ZOOMINFO_CLIENT_ID + ZOOMINFO_CLIENT_SECRET
+   *
+   * @param domain - Company domain to enrich (e.g., 'example.com')
+   * @returns ContactEnrichResponse with enriched contacts
+   * @throws Error if enrichment fails or ZoomInfo is not configured
+   */
+  async enrichContacts(domain: string): Promise<ContactEnrichResponse> {
+    try {
+      const response = await axios.get<ContactEnrichResponse>(
+        `${this.baseURL}/contacts/enrich/${encodeURIComponent(domain)}`,
+        { timeout: 30000 }
+      );
+      return response.data;
+    } catch (error) {
+      if (axios.isAxiosError(error)) {
+        const axiosError = error as AxiosError<ErrorResponse>;
+        if (axiosError.response?.status === 503) {
+          throw new Error('ZoomInfo not configured. ZOOMINFO_ACCESS_TOKEN must be provided via environment variables.');
+        }
+        if (axiosError.response) {
+          const errorData = axiosError.response.data;
+          throw new Error(errorData?.error || 'Contact enrichment failed');
+        }
+      }
+      throw new Error('Failed to enrich contacts');
     }
   }
 

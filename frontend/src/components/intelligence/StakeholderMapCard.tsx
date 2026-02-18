@@ -278,17 +278,39 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
 }
 
 /**
+ * ZoomInfo source badge — shown when phone data is attributed to ZoomInfo.
+ */
+function ZoomInfoBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20">
+      <svg className="w-2.5 h-2.5" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z"/>
+      </svg>
+      ZoomInfo
+    </span>
+  );
+}
+
+/**
  * Shared contact info block used by both detail cards and compact rows.
+ * Shows ZoomInfo badge and accuracy score when phone data comes from ZoomInfo.
  */
 function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
   if (!contact) return null;
+
+  const hasPhones = contact.directPhone || contact.mobilePhone || contact.companyPhone || contact.phone;
+  const isZoomInfoSource = contact.phoneSource === 'zoominfo';
+
   return (
     <div className="bg-slate-50 rounded-lg p-3">
-      <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide flex items-center">
-        <svg className="w-3 h-3 mr-1 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
-        </svg>
-        Contact
+      <h5 className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide flex items-center justify-between">
+        <span className="flex items-center">
+          <svg className="w-3 h-3 mr-1 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+          </svg>
+          Contact
+        </span>
+        {isZoomInfoSource && hasPhones && <ZoomInfoBadge />}
       </h5>
       <div className="space-y-1.5">
         {contact.email && (
@@ -340,7 +362,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
           </a>
         )}
         {contact.contactAccuracyScore != null && contact.contactAccuracyScore > 0 && (
-          <div className="flex items-center text-xs mt-1">
+          <div className="flex items-center gap-1.5 text-xs mt-1">
             <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium ${
               contact.contactAccuracyScore >= 80 ? 'bg-emerald-100 text-emerald-700' :
               contact.contactAccuracyScore >= 50 ? 'bg-amber-100 text-amber-700' :
