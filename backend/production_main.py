@@ -910,8 +910,9 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
         return combined_data, contacts
 
     except Exception as e:
-        logger.error(f"ZoomInfo comprehensive fetch failed: {e}")
-        return {}, []
+        err = f"{type(e).__name__}: {e}"
+        logger.error(f"ZoomInfo comprehensive fetch failed: {err}")
+        return {"_contact_search_error": err}, []
 
 
 def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -> list:

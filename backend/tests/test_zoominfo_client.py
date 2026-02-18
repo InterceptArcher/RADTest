@@ -49,10 +49,10 @@ class TestZoomInfoClientInit:
         assert client.base_url == "https://api.zoominfo.com/gtm"
 
     def test_content_type_header(self):
-        """Client sends application/vnd.api+json content type."""
+        """Client sends application/json content type (not vnd.api+json)."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test")
-        assert client.headers["Content-Type"] == "application/vnd.api+json"
+        assert client.headers["Content-Type"] == "application/json"
         assert client.headers["Authorization"] == "Bearer test"
 
 
@@ -718,3 +718,75 @@ class TestNormalizeCompanyGrowthFields:
         assert result["one_year_employee_growth"] == ""
         assert result["two_year_employee_growth"] == ""
         assert result["funding_amount"] == ""
+
+
+class TestZoomInfoNotConfiguredDiagnostics:
+    """
+    TDD: When ZoomInfo is not configured, the debug panel must show a meaningful
+    diagnostic message instead of silently showing 'skipped' with no explanation.
+
+    Currently failing: zoominfo_data = {} when not configured, causing
+    _contact_search_error to be absent → debug panel shows 'skipped' with no hint.
+
+    Fix: always include _contact_search_error or _not_configured in zoominfo_data
+    so step-1d shows 'skipped' with a clear 'credentials not configured' message.
+    """
+
+    def test_not_configured_zoominfo_data_has_contact_search_error(self):
+        """When ZoomInfo is not configured, zoominfo_data must have _contact_search_error set.
+        This ensures step-1d shows 'skipped' + 'not configured' message, not silent 'skipped'."""
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from production_main import _get_zoominfo_client
+
+        with __import__("unittest.mock", fromlist=["patch"]).patch(
+            "production_main.ZOOMINFO_CLIENT_ID", ""
+        ), __import__("unittest.mock", fromlist=["patch"]).patch(
+            "production_main.ZOOMINFO_CLIENT_SECRET", ""
+        ), __import__("unittest.mock", fromlist=["patch"]).patch(
+            "production_main.ZOOMINFO_ACCESS_TOKEN", ""
+        ):
+            client = _get_zoominfo_client()
+            assert client is None, "ZoomInfo client should be None when not configured"
+
+    def test_fetch_all_zoominfo_outer_exception_includes_error_key(self):
+        """If _fetch_all_zoominfo's outer try-except fires, the returned dict
+        must include _contact_search_error so step-1d shows 'failed', not 'skipped'."""
+        import asyncio
+        import sys
+        import os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from production_main import _fetch_all_zoominfo
+
+        class BrokenClient:
+            """Client whose first call throws an unrecoverable exception."""
+            def enrich_company(self, **kw):
+                raise RuntimeError("unexpected error")
+            def enrich_intent(self, **kw):
+                async def _(): return {"success": False, "intent_signals": [], "error": ""}
+                return _()
+            def search_scoops(self, **kw):
+                async def _(): return {"success": False, "scoops": [], "error": ""}
+                return _()
+            def search_news(self, **kw):
+                async def _(): return {"success": False, "articles": [], "error": ""}
+                return _()
+            def enrich_technologies(self, **kw):
+                async def _(): return {"success": False, "technologies": [], "error": ""}
+                return _()
+            def search_and_enrich_contacts(self, **kw):
+                async def _(): return {"success": False, "people": [], "error": "no contacts"}
+                return _()
+
+        company_data = {"domain": "test.com", "company_name": "TestCo"}
+        result_data, result_contacts = asyncio.get_event_loop().run_until_complete(
+            _fetch_all_zoominfo(BrokenClient(), company_data)
+        )
+        # The returned dict must include _contact_search_error so the debug
+        # panel shows 'failed' instead of 'skipped'
+        assert "_contact_search_error" in result_data, (
+            "Outer exception path must set _contact_search_error in returned dict. "
+            f"Got keys: {list(result_data.keys())}"
+        )
+        assert result_data["_contact_search_error"], "Error message must be non-empty"

@@ -680,6 +680,7 @@ class ZoomInfoClient:
         """
         Normalize ZoomInfo news article to extract ALL fields.
         """
+        attrs = raw.get("attributes", raw)
         return {
             # Identification
             "article_id": attrs.get("articleId", attrs.get("id", "")),
@@ -725,6 +726,7 @@ class ZoomInfoClient:
         """
         Normalize ZoomInfo technology installation data to extract ALL fields.
         """
+        attrs = raw.get("attributes", raw)
         return {
             # Technology identification
             "tech_id": attrs.get("technologyId", attrs.get("id", "")),
@@ -773,6 +775,7 @@ class ZoomInfoClient:
         - Temporal: lastSeen, firstSeen, timestamp
         - Engagement: activityLevel, engagementScore
         """
+        attrs = raw.get("attributes", raw)
         return {
             # Topic identification
             "topic_id": attrs.get("topicId", attrs.get("id", "")),
