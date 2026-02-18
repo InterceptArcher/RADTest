@@ -107,7 +107,7 @@ class ZoomInfoClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.headers = {
-            "Content-Type": "application/vnd.api+json",
+            "Content-Type": "application/json",
             "Accept": "application/json"
         }
         if self.access_token:
@@ -161,12 +161,48 @@ class ZoomInfoClient:
         await self._ensure_valid_token()
         await self.rate_limiter.acquire()
         url = f"{self.base_url}{endpoint}"
+        logger.debug(f"ZoomInfo POST {url}")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
                 url, json=payload, headers=self.headers
             )
-            response.raise_for_status()
+            if not response.is_success:
+                # Log full response body so the root cause is visible in logs
+                try:
+                    body = response.json()
+                except Exception:
+                    body = response.text[:500]
+                logger.error(
+                    f"ZoomInfo API error: {response.status_code} {response.reason_phrase} "
+                    f"for {url} — body: {body}"
+                )
+                response.raise_for_status()
+            # Handle 204 No Content (valid empty response)
+            if response.status_code == 204 or not response.content:
+                return {}
             return response.json()
+
+    def _extract_data_list(self, response: Dict[str, Any]) -> list:
+        """
+        Extract the data list from a ZoomInfo API response.
+        Handles multiple response formats:
+          - {"data": [...]}              (JSON:API)
+          - {"result": {"data": [...]}}  (legacy)
+          - {"contacts": [...]}          (flat)
+          - {"people": [...]}            (flat)
+        """
+        if "data" in response:
+            return response["data"] if isinstance(response["data"], list) else []
+        if "result" in response and isinstance(response["result"], dict):
+            inner = response["result"]
+            if "data" in inner:
+                return inner["data"] if isinstance(inner["data"], list) else []
+        for key in ("contacts", "people", "persons", "results", "items"):
+            if key in response and isinstance(response[key], list):
+                return response[key]
+        # Log unexpected format to aid debugging
+        logger.warning(f"ZoomInfo: unrecognised response format — keys: {list(response.keys())}")
+        return []
 
     async def enrich_company(
         self,
@@ -224,46 +260,64 @@ class ZoomInfoClient:
         """
         all_people = []
         seen_ids = set()
+        last_error: Optional[str] = None
 
-        # Strategy 1: Search by management level (array required by ZoomInfo API).
-        # Run C-Level first to find CTO/CIO/CFO/COO, then broaden if needed.
-        management_levels = [
-            "C-Level", "VP-Level", "Director", "Manager"
-        ]
+        # Strategy 1: Search by management level.
+        # ZoomInfo requires managementLevel as an array, not a string.
+        management_levels = ["C-Level", "VP-Level", "Director", "Manager"]
         for level in management_levels:
-            try:
-                payload: Dict[str, Any] = {
+            # Try JSON:API wrapper format first, then flat format as fallback
+            payloads_to_try = [
+                # Format A: JSON:API wrapper (current ZoomInfo GTM format)
+                {
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
                             "companyDomain": domain,
-                            "managementLevel": [level],   # ZoomInfo requires array, not string
+                            "managementLevel": [level],
                             "pageSize": min(max_results, 10)
                         }
                     }
-                }
-                response = await self._make_request(
-                    ENDPOINTS["contact_search"], payload
-                )
-                data_list = response.get("data", [])
-                if not data_list:
-                    # Log full response on empty result to aid diagnosis
-                    logger.warning(
-                        f"ZoomInfo managementLevel=[{level}] returned 0 contacts for domain={domain}. "
-                        f"Response keys: {list(response.keys())}, "
-                        f"meta: {response.get('meta', {})}, errors: {response.get('errors', [])}"
+                },
+                # Format B: flat JSON (ZoomInfo Enrich API / legacy format)
+                {
+                    "companyDomain": domain,
+                    "managementLevel": [level],
+                    "maxResults": min(max_results, 10)
+                },
+            ]
+            found_this_level = 0
+            for fmt_payload in payloads_to_try:
+                try:
+                    response = await self._make_request(
+                        ENDPOINTS["contact_search"], fmt_payload
                     )
-                for c in data_list:
-                    person = self._normalize_contact(c)
-                    pid = person.get("person_id") or person.get("email") or person.get("name")
-                    if pid and pid not in seen_ids:
-                        seen_ids.add(pid)
-                        all_people.append(person)
-                logger.info(f"ZoomInfo managementLevel=[{level}]: found {len(data_list)} contacts")
-            except Exception as e:
-                logger.warning(f"ZoomInfo managementLevel=[{level}] search failed: {e}")
+                    data_list = self._extract_data_list(response)
+                    if data_list:
+                        for c in data_list:
+                            person = self._normalize_contact(c)
+                            pid = person.get("person_id") or person.get("email") or person.get("name")
+                            if pid and pid not in seen_ids:
+                                seen_ids.add(pid)
+                                all_people.append(person)
+                        found_this_level = len(data_list)
+                        logger.info(f"ZoomInfo managementLevel=[{level}]: found {found_this_level} contacts")
+                        break  # Success — no need to try next format
+                    else:
+                        logger.warning(
+                            f"ZoomInfo managementLevel=[{level}] returned 0 contacts for domain={domain}. "
+                            f"Response: {response}"
+                        )
+                except httpx.HTTPStatusError as e:
+                    last_error = f"HTTP {e.response.status_code}"
+                    logger.error(f"ZoomInfo managementLevel=[{level}] HTTP error: {e}")
+                    break  # HTTP error — no point retrying different format
+                except Exception as e:
+                    last_error = str(e)
+                    logger.error(f"ZoomInfo managementLevel=[{level}] search failed: {e}")
+                    break
 
-        # Strategy 2: Explicit job title search targeting CTO/CIO/CFO/COO and senior roles.
+        # Strategy 2: Explicit job title search for CTO/CIO/CFO/COO and senior roles.
         if len(all_people) < max_results:
             if job_titles is None:
                 job_titles = [
@@ -277,8 +331,8 @@ class ZoomInfoClient:
                     "Director", "Senior Director",
                 ]
 
-            try:
-                payload = {
+            payloads_to_try = [
+                {
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
@@ -287,32 +341,50 @@ class ZoomInfoClient:
                             "pageSize": max_results
                         }
                     }
-                }
-                response = await self._make_request(
-                    ENDPOINTS["contact_search"], payload
-                )
-                data_list = response.get("data", [])
-                if not data_list:
-                    logger.warning(
-                        f"ZoomInfo jobTitle search returned 0 contacts for domain={domain}. "
-                        f"Response keys: {list(response.keys())}, "
-                        f"meta: {response.get('meta', {})}, errors: {response.get('errors', [])}"
+                },
+                {
+                    "companyDomain": domain,
+                    "jobTitle": job_titles,
+                    "maxResults": max_results
+                },
+            ]
+            for fmt_payload in payloads_to_try:
+                try:
+                    response = await self._make_request(
+                        ENDPOINTS["contact_search"], fmt_payload
                     )
-                for c in data_list:
-                    person = self._normalize_contact(c)
-                    pid = person.get("person_id") or person.get("email") or person.get("name")
-                    if pid and pid not in seen_ids:
-                        seen_ids.add(pid)
-                        all_people.append(person)
-                logger.info(f"ZoomInfo jobTitle search: found {len(data_list)} additional contacts")
-            except Exception as e:
-                logger.warning(f"ZoomInfo jobTitle search failed: {e}")
+                    data_list = self._extract_data_list(response)
+                    if data_list:
+                        for c in data_list:
+                            person = self._normalize_contact(c)
+                            pid = person.get("person_id") or person.get("email") or person.get("name")
+                            if pid and pid not in seen_ids:
+                                seen_ids.add(pid)
+                                all_people.append(person)
+                        logger.info(f"ZoomInfo jobTitle search: found {len(data_list)} additional contacts")
+                        break
+                    else:
+                        logger.warning(
+                            f"ZoomInfo jobTitle search returned 0 contacts for domain={domain}. "
+                            f"Response: {response}"
+                        )
+                except httpx.HTTPStatusError as e:
+                    last_error = f"HTTP {e.response.status_code}"
+                    logger.error(f"ZoomInfo jobTitle search HTTP error: {e}")
+                    break
+                except Exception as e:
+                    last_error = str(e)
+                    logger.error(f"ZoomInfo jobTitle search failed: {e}")
+                    break
 
-        logger.info(f"ZoomInfo total contacts found: {len(all_people)}")
+        logger.info(f"ZoomInfo total contacts found: {len(all_people)} for domain={domain}")
         if all_people:
             return {"success": True, "people": all_people, "error": None}
-        else:
-            return {"success": True, "people": [], "error": None}
+        return {
+            "success": False if last_error else True,
+            "people": [],
+            "error": last_error or "No contacts found for this domain in ZoomInfo"
+        }
 
     async def enrich_contacts(
         self,

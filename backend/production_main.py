@@ -891,22 +891,21 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
             logger.warning(f"ZoomInfo tech failed: success=False, error={tech_result.get('error', 'unknown')}")
 
         # Contacts (Search → Enrich)
-        if isinstance(contacts_result, dict) and contacts_result.get("success"):
-            contacts = contacts_result.get("people", [])
-            logger.info(f"✅ ZoomInfo contacts SUCCESS: {len(contacts)} enriched contacts found for {domain}")
-            if contacts:
-                # Log sample contact to verify data structure
+        if isinstance(contacts_result, Exception):
+            err = f"{type(contacts_result).__name__}: {contacts_result}"
+            logger.error(f"❌ ZoomInfo contacts EXCEPTION for domain={domain}: {err}")
+            combined_data["_contact_search_error"] = err
+        elif isinstance(contacts_result, dict):
+            if contacts_result.get("success") and contacts_result.get("people"):
+                contacts = contacts_result["people"]
+                logger.info(f"✅ ZoomInfo contacts SUCCESS: {len(contacts)} enriched contacts for domain={domain}")
                 sample = contacts[0]
-                logger.info(f"   Sample contact: {sample.get('name', 'N/A')} - {sample.get('title', 'N/A')}")
+                logger.info(f"   Sample: {sample.get('name', 'N/A')} — {sample.get('title', 'N/A')}")
                 logger.info(f"   Has phone: {bool(sample.get('direct_phone') or sample.get('mobile_phone'))}")
             else:
-                logger.warning(f"⚠️  ZoomInfo returned success but ZERO contacts for domain: {domain}")
-                logger.warning(f"   This may indicate: (1) No executives found at company, (2) Domain not in ZoomInfo, (3) Search criteria too narrow")
-        elif isinstance(contacts_result, Exception):
-            logger.error(f"❌ ZoomInfo contacts EXCEPTION: {type(contacts_result).__name__}: {contacts_result}")
-        elif isinstance(contacts_result, dict):
-            logger.error(f"❌ ZoomInfo contacts FAILED: success=False, error={contacts_result.get('error', 'unknown')}")
-            logger.error(f"   Domain searched: {domain}, Full result: {contacts_result}")
+                err = contacts_result.get("error") or "No contacts returned"
+                logger.warning(f"⚠️  ZoomInfo contacts returned 0 for domain={domain}: {err}")
+                combined_data["_contact_search_error"] = err
 
         return combined_data, contacts
 
@@ -2925,7 +2924,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "id": "step-1d",
                 "name": "ZoomInfo Contact Enrich",
                 "description": "Enriching contacts with direct phone, mobile phone, company phone, accuracy scores via ZoomInfo Contact Enrich API (Search → Enrich 2-step)",
-                "status": "completed" if zi_contacts else "skipped",
+                "status": "completed" if zi_contacts else ("failed" if zoominfo_data.get("_contact_search_error") else "skipped"),
                 "start_time": (base_time + timedelta(seconds=2, milliseconds=400)).isoformat() + "Z",
                 "end_time": (base_time + timedelta(seconds=3, milliseconds=200)).isoformat() + "Z",
                 "duration": 800,
@@ -2933,6 +2932,13 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                     "source": "ZoomInfo Contact Enrich",
                     "contacts_enriched": len(zi_contacts) if zi_contacts else 0,
                     "fields_added": ["directPhone", "mobilePhone", "companyPhone", "contactAccuracyScore", "department", "managementLevel"],
+                    "error": zoominfo_data.get("_contact_search_error") if not zi_contacts else None,
+                    "debug_hint": (
+                        "Check backend logs for ZoomInfo HTTP error details. "
+                        "Likely causes: (1) token lacks contact-search scope, "
+                        "(2) domain not in ZoomInfo database, "
+                        "(3) API plan doesn't include Contact Search."
+                    ) if not zi_contacts else None,
                 }
             },
             {
