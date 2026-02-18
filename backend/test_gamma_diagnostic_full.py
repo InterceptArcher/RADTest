@@ -89,7 +89,7 @@ async def test_gamma_with_email():
         print("[1] Initializing GammaSlideshowCreator...")
         creator = GammaSlideshowCreator(
             gamma_api_key=api_key,
-            template_id="g_vsj27dcr73l1nv1"
+            template_id="g_b18rs7bet2if0n9"
         )
         print(f"✅ Creator initialized with template: {creator.template_id}")
         print()
@@ -173,7 +173,7 @@ async def test_gamma_without_email():
         print("[1] Initializing GammaSlideshowCreator...")
         creator = GammaSlideshowCreator(
             gamma_api_key=api_key,
-            template_id="g_vsj27dcr73l1nv1"
+            template_id="g_b18rs7bet2if0n9"
         )
         print(f"✅ Creator initialized")
         print()

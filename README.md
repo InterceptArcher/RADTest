@@ -5,7 +5,7 @@
 **Configuration**: ✅ 100% Complete
 **API Integrations**: ✅ Apollo, PDL, GNews, Hunter.io, ZoomInfo Active
 **LLM Enrichment**: ✅ Pain Points, Opportunities, Intent Signals Generated
-**Gamma Templates**: ✅ Template g_vsj27dcr73l1nv1 Used by Default
+**Gamma Templates**: ✅ Template g_b18rs7bet2if0n9 Used by Default
 **Email Verification**: ✅ Hunter.io Integrated
 **Code Status**: ✅ Pushed to GitHub (Latest commit)
 **Deployment**: 🔄 Auto-deploying on Render.com
@@ -324,7 +324,7 @@ All fields in Gamma slideshows now populated with **real data** from live APIs:
 - Generates summaries for buying signals
 - Identifies growth triggers and expansion signals
 
-**4. Gamma Template Integration** (g_vsj27dcr73l1nv1)
+**4. Gamma Template Integration** (g_b18rs7bet2if0n9)
 - Always uses template by default (preserves fonts, logos, design)
 - Sends structured data instead of markdown
 - Template controls all formatting and layout

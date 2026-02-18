@@ -17,7 +17,7 @@ async def test_data_unavailable():
         print("❌ GAMMA_API_KEY not set")
         return False
 
-    creator = GammaSlideshowCreator(api_key, template_id="g_vsj27dcr73l1nv1")
+    creator = GammaSlideshowCreator(api_key, template_id="g_b18rs7bet2if0n9")
 
     # Test case 1: Company with no substantive data (company doesn't exist)
     nonexistent_company = {
@@ -74,7 +74,7 @@ async def test_minimal_data():
         print("❌ GAMMA_API_KEY not set")
         return False
 
-    creator = GammaSlideshowCreator(api_key, template_id="g_vsj27dcr73l1nv1")
+    creator = GammaSlideshowCreator(api_key, template_id="g_b18rs7bet2if0n9")
 
     # Test case 2: Minimal but viable data
     minimal_company = {

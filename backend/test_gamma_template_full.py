@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Test Gamma template with FULL comprehensive company data.
-Verifies all fields are properly sent to template g_vsj27dcr73l1nv1
+Verifies all fields are properly sent to template g_b18rs7bet2if0n9
 """
 import asyncio
 import sys
@@ -17,7 +17,7 @@ async def test_full_data():
         return False
 
     # Create with your template
-    creator = GammaSlideshowCreator(api_key, template_id="g_vsj27dcr73l1nv1")
+    creator = GammaSlideshowCreator(api_key, template_id="g_b18rs7bet2if0n9")
 
     # Comprehensive test data with ALL fields populated
     full_company_data = {
@@ -273,7 +273,7 @@ async def test_full_data():
     print("=" * 70)
     print("TESTING GAMMA TEMPLATE WITH COMPREHENSIVE DATA")
     print("=" * 70)
-    print(f"Template ID: g_vsj27dcr73l1nv1")
+    print(f"Template ID: g_b18rs7bet2if0n9")
     print(f"Company: {full_company_data['company_name']}")
     print(f"Stakeholders: {len(full_company_data['validated_data']['stakeholder_profiles'])}")
     print(f"Intent Topics: {len(full_company_data['validated_data']['intent_topics'])}")

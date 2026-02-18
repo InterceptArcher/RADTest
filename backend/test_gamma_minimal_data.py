@@ -13,7 +13,7 @@ async def test_minimal():
         print("❌ GAMMA_API_KEY not set")
         return False
 
-    creator = GammaSlideshowCreator(api_key, template_id="g_vsj27dcr73l1nv1")
+    creator = GammaSlideshowCreator(api_key, template_id="g_b18rs7bet2if0n9")
 
     # Minimal data - most fields missing
     minimal_data = {

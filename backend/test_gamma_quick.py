@@ -23,10 +23,10 @@ payload = {
     "inputText": "# Test Slideshow\n\nThis is a test slideshow to verify the Gamma API integration.\n\n## Slide 2\n\nSome content here.",
     "textMode": "preserve",
     "format": "presentation",
-    "templateId": "g_vsj27dcr73l1nv1"
+    "templateId": "g_b18rs7bet2if0n9"
 }
 
-print("\n🔄 Creating generation with template g_vsj27dcr73l1nv1...")
+print("\n🔄 Creating generation with template g_b18rs7bet2if0n9...")
 print(f"Payload: {json.dumps(payload, indent=2)}\n")
 
 try:
