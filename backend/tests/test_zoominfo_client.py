@@ -218,6 +218,97 @@ class TestContactSearch:
             assert result["people"] == []
 
 
+class TestContactSearchPayloadFormat:
+    """Verify the Contact Search payload sends managementLevel as an array."""
+
+    @pytest.mark.asyncio
+    async def test_management_level_sent_as_array_not_string(self):
+        """managementLevel must be a list ['C-Level'], not a string 'C-Level'.
+        ZoomInfo silently returns 0 results when passed as a string."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+
+        async def capture_payload(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture_payload):
+            await client.search_contacts(domain="example.com")
+
+        # Find C-Level payload
+        c_level_payload = next(
+            (p for p in captured_payloads
+             if p.get("data", {}).get("attributes", {}).get("managementLevel") is not None),
+            None
+        )
+        assert c_level_payload is not None, "No managementLevel payload found"
+        management_level = c_level_payload["data"]["attributes"]["managementLevel"]
+        assert isinstance(management_level, list), (
+            f"managementLevel must be a list, got {type(management_level).__name__}: {management_level!r}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_management_level_array_contains_correct_values(self):
+        """managementLevel array values are valid ZoomInfo management levels."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+
+        async def capture_payload(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        valid_levels = {"C-Level", "VP-Level", "Director", "Manager"}
+
+        with patch.object(client, "_make_request", side_effect=capture_payload):
+            await client.search_contacts(domain="example.com")
+
+        management_level_payloads = [
+            p for p in captured_payloads
+            if isinstance(p.get("data", {}).get("attributes", {}).get("managementLevel"), list)
+        ]
+        assert len(management_level_payloads) > 0
+
+        for p in management_level_payloads:
+            levels = p["data"]["attributes"]["managementLevel"]
+            for level in levels:
+                assert level in valid_levels, f"Invalid management level: {level!r}"
+
+    @pytest.mark.asyncio
+    async def test_job_title_strategy_targets_primary_roles(self):
+        """Strategy 2 job title search includes CTO, CIO, CFO, COO titles."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+
+        async def capture_payload(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture_payload):
+            await client.search_contacts(domain="example.com")
+
+        title_payloads = [
+            p for p in captured_payloads
+            if "jobTitle" in p.get("data", {}).get("attributes", {})
+        ]
+        assert len(title_payloads) > 0, "No jobTitle search payload found"
+
+        all_titles = []
+        for p in title_payloads:
+            all_titles.extend(p["data"]["attributes"]["jobTitle"])
+
+        all_titles_lower = [t.lower() for t in all_titles]
+        assert any("cto" in t or "chief technology" in t for t in all_titles_lower), "CTO not in job title search"
+        assert any("cio" in t or "chief information officer" in t for t in all_titles_lower), "CIO not in job title search"
+        assert any("cfo" in t or "chief financial" in t for t in all_titles_lower), "CFO not in job title search"
+        assert any("coo" in t or "chief operating" in t for t in all_titles_lower), "COO not in job title search"
+
+
 class TestIntentEnrich:
     """Test ZoomInfo Intent Enrich endpoint."""
 

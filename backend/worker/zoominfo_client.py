@@ -225,7 +225,8 @@ class ZoomInfoClient:
         all_people = []
         seen_ids = set()
 
-        # Strategy 1: Search by management level — most reliable for finding decision makers
+        # Strategy 1: Search by management level (array required by ZoomInfo API).
+        # Run C-Level first to find CTO/CIO/CFO/COO, then broaden if needed.
         management_levels = [
             "C-Level", "VP-Level", "Director", "Manager"
         ]
@@ -236,7 +237,7 @@ class ZoomInfoClient:
                         "type": "ContactSearch",
                         "attributes": {
                             "companyDomain": domain,
-                            "managementLevel": level,
+                            "managementLevel": [level],   # ZoomInfo requires array, not string
                             "pageSize": min(max_results, 10)
                         }
                     }
@@ -245,25 +246,35 @@ class ZoomInfoClient:
                     ENDPOINTS["contact_search"], payload
                 )
                 data_list = response.get("data", [])
+                if not data_list:
+                    # Log full response on empty result to aid diagnosis
+                    logger.warning(
+                        f"ZoomInfo managementLevel=[{level}] returned 0 contacts for domain={domain}. "
+                        f"Response keys: {list(response.keys())}, "
+                        f"meta: {response.get('meta', {})}, errors: {response.get('errors', [])}"
+                    )
                 for c in data_list:
                     person = self._normalize_contact(c)
                     pid = person.get("person_id") or person.get("email") or person.get("name")
                     if pid and pid not in seen_ids:
                         seen_ids.add(pid)
                         all_people.append(person)
-                logger.info(f"ZoomInfo managementLevel={level}: found {len(data_list)} contacts")
+                logger.info(f"ZoomInfo managementLevel=[{level}]: found {len(data_list)} contacts")
             except Exception as e:
-                logger.warning(f"ZoomInfo managementLevel={level} search failed: {e}")
+                logger.warning(f"ZoomInfo managementLevel=[{level}] search failed: {e}")
 
-        # Strategy 2: Broad job title search for any remaining roles
+        # Strategy 2: Explicit job title search targeting CTO/CIO/CFO/COO and senior roles.
         if len(all_people) < max_results:
             if job_titles is None:
                 job_titles = [
-                    "Chief", "President", "Vice President", "VP",
-                    "SVP", "EVP", "Director", "Head",
-                    "Manager", "Senior Manager", "General Manager",
-                    "Partner", "Principal", "Fellow", "Lead",
-                    "Analyst", "Architect", "Engineer",
+                    "Chief Technology Officer", "CTO",
+                    "Chief Information Officer", "CIO",
+                    "Chief Financial Officer", "CFO",
+                    "Chief Operating Officer", "COO",
+                    "Chief Executive Officer", "CEO",
+                    "Chief Information Security Officer", "CISO",
+                    "Vice President", "VP", "SVP", "EVP",
+                    "Director", "Senior Director",
                 ]
 
             try:
@@ -281,6 +292,12 @@ class ZoomInfoClient:
                     ENDPOINTS["contact_search"], payload
                 )
                 data_list = response.get("data", [])
+                if not data_list:
+                    logger.warning(
+                        f"ZoomInfo jobTitle search returned 0 contacts for domain={domain}. "
+                        f"Response keys: {list(response.keys())}, "
+                        f"meta: {response.get('meta', {})}, errors: {response.get('errors', [])}"
+                    )
                 for c in data_list:
                     person = self._normalize_contact(c)
                     pid = person.get("person_id") or person.get("email") or person.get("name")
