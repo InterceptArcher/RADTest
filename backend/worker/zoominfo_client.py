@@ -13,6 +13,7 @@ import asyncio
 import base64
 import logging
 import os
+import re
 import time
 from typing import Dict, Any, List, Optional
 
@@ -52,14 +53,20 @@ OUTPUT_FIELDS = [
     "contactAccuracyScore",
 ]
 
-# Full C-suite job title list — covers all chiefs, not just CEO/CTO/COO.
-CSUITE_JOB_TITLES = [
-    "Chief Executive Officer", "CEO",
+# Priority C-Suite titles — CTO, CFO, CMO, CIO are searched first.
+# These are Intercept's primary target personas.
+PRIORITY_CSUITE_TITLES = [
     "Chief Technology Officer", "CTO",
-    "Chief Information Officer", "CIO",
     "Chief Financial Officer", "CFO",
-    "Chief Operating Officer", "COO",
     "Chief Marketing Officer", "CMO",
+    "Chief Information Officer", "CIO",
+]
+
+# Other C-Suite titles searched after priority titles.
+# Excludes CTO/CFO/CMO/CIO (already in PRIORITY_CSUITE_TITLES).
+OTHER_CSUITE_TITLES = [
+    "Chief Executive Officer", "CEO",
+    "Chief Operating Officer", "COO",
     "Chief Revenue Officer", "CRO",
     "Chief Product Officer", "CPO",
     "Chief People Officer", "Chief HR Officer", "Chief Human Resources Officer", "CHRO",
@@ -72,9 +79,17 @@ CSUITE_JOB_TITLES = [
     "Chief Compliance Officer",
     "Chief Strategy Officer",
     "Chief Transformation Officer",
+]
+
+# Full C-Suite + leadership list (priority + other + VP/Director) for backward compatibility.
+CSUITE_JOB_TITLES = PRIORITY_CSUITE_TITLES + OTHER_CSUITE_TITLES + [
     "Vice President", "VP", "SVP", "EVP",
     "Director", "Senior Director",
 ]
+
+# North America country names passed to ZoomInfo contact search where supported.
+# Used as a soft filter — falls back to global search if geo returns 0 results.
+NORTH_AMERICA_COUNTRIES = ["United States", "Canada", "Mexico"]
 
 # Broad B2B intent topics used when querying ZoomInfo Intent Enrich.
 # ZoomInfo requires at least 1 topic; this set covers the domains most
@@ -423,190 +438,152 @@ class ZoomInfoClient:
     ) -> Dict[str, Any]:
         """
         Search for executive and key contacts at a company.
-        Uses multiple search strategies for maximum coverage:
-        1. Management level search (C-Level, VP, Director, Manager)
-        2. Broad job title keyword search as fallback
+
+        Priority order (per Intercept requirements):
+        1. CTO, CFO, CMO, CIO — primary target personas, by job title
+        2. Other C-Suite (CEO, COO, CRO, CPO, etc.) — by job title
+        3. C-Level management level (broader net for any missed chiefs)
+        4. VP-Level, then Director-Level as additional coverage
+        5. Unfiltered fallbacks if all above yield nothing
+
+        Partners are excluded from all results.
+        North America (US, Canada, Mexico) is preferred via geo filter;
+        if geo-filtered search returns 0, falls back to global.
 
         Returns:
-            Dict with success, people (normalized list), error
+            Dict with success, people (priority-sorted normalized list), error
         """
-        all_people = []
-        seen_ids = set()
+        all_people: List[Dict[str, Any]] = []
+        seen_ids: set = set()
         last_error: Optional[str] = None
 
-        # Build URL candidates once — comma-separated list covers all ZoomInfo URL formats.
-        # ZoomInfo companyWebsite accepts comma-separated lists so we pass all variants
-        # (https://www., https://, http://www., bare domain) in a single request to
-        # maximise the chance of matching however ZoomInfo stores the company's website.
         website_candidates = self._website_candidates(domain)
 
-        # Strategy 1: Search by management level.
-        # ZoomInfo requires managementLevel as an array, not a string.
-        # outputFields is intentionally omitted — it causes HTTP 400 on the search
-        # endpoint. Phone data is retrieved via the separate contact enrich step.
-        # Valid ZoomInfo GTM managementLevel enum values (hyphenated -Level suffix required)
-        management_levels = ["C-Level", "VP-Level", "Director-Level", "Manager-Level"]
-        for level in management_levels:
-            # Try JSON:API wrapper format first, then flat format as fallback
-            payloads_to_try = [
-                # Format A: JSON:API wrapper (ZoomInfo GTM API format)
-                {
-                    "data": {
-                        "type": "ContactSearch",
-                        "attributes": {
-                            "companyWebsite": website_candidates,
-                            "managementLevel": [level],
-                            "rpp": min(max_results, 10)
-                        }
-                    }
-                },
-                # Format B: flat JSON fallback (tries without wrapper if A fails)
-                {
-                    "companyWebsite": website_candidates,
-                    "managementLevel": [level],
-                    "maxResults": min(max_results, 10)
-                },
+        def _add_contacts(data_list: list) -> int:
+            """Deduplicate, exclude partners, and append to all_people. Returns count added."""
+            added = 0
+            for c in data_list:
+                person = self._normalize_contact(c)
+                if self._is_partner(person.get("title", "")):
+                    logger.debug("ZoomInfo: skipping partner title: %s", person.get("title"))
+                    continue
+                pid = person.get("person_id") or person.get("email") or person.get("name")
+                if pid and pid not in seen_ids:
+                    seen_ids.add(pid)
+                    all_people.append(person)
+                    added += 1
+            return added
+
+        async def _search(attrs: Dict[str, Any], label: str) -> int:
+            """
+            POST contact_search with JSON:API format, flat format as fallback.
+            Returns count of new contacts added.
+            """
+            nonlocal last_error
+            # Flat fallback payload: rename rpp → maxResults for older endpoint format
+            flat_attrs = {("maxResults" if k == "rpp" else k): v for k, v in attrs.items()}
+            payloads = [
+                {"data": {"type": "ContactSearch", "attributes": attrs}},
+                flat_attrs,
             ]
-            found_this_level = 0
-            for fmt_payload in payloads_to_try:
+            for payload in payloads:
                 try:
-                    response = await self._make_request(
-                        ENDPOINTS["contact_search"], fmt_payload
-                    )
+                    response = await self._make_request(ENDPOINTS["contact_search"], payload)
                     data_list = self._extract_data_list(response)
                     if data_list:
-                        for c in data_list:
-                            person = self._normalize_contact(c)
-                            pid = person.get("person_id") or person.get("email") or person.get("name")
-                            if pid and pid not in seen_ids:
-                                seen_ids.add(pid)
-                                all_people.append(person)
-                        found_this_level = len(data_list)
-                        logger.info(f"ZoomInfo managementLevel=[{level}]: found {found_this_level} contacts")
-                        break  # Success — no need to try next format
-                    else:
-                        logger.warning(
-                            f"ZoomInfo managementLevel=[{level}] returned 0 contacts for domain={domain}. "
-                            f"Response: {response}"
+                        added = _add_contacts(data_list)
+                        logger.info(
+                            "ZoomInfo %s: %d results, %d new contacts added",
+                            label, len(data_list), added
                         )
-                except httpx.HTTPStatusError as e:
-                    last_error = f"HTTP {e.response.status_code}"
-                    logger.error(f"ZoomInfo managementLevel=[{level}] HTTP error: {e}")
-                    continue  # Try next format (flat) before giving up on this level
-                except Exception as e:
-                    last_error = str(e)
-                    logger.error(f"ZoomInfo managementLevel=[{level}] search failed: {e}")
-                    continue  # Try next format before giving up
-
-        # Strategy 2: Explicit job title search covering the full C-suite.
-        # Uses CSUITE_JOB_TITLES (all chiefs, not just CEO/CTO/CIO/CFO/COO).
-        if len(all_people) < max_results:
-            if job_titles is None:
-                job_titles = CSUITE_JOB_TITLES
-
-            payloads_to_try = [
-                {
-                    "data": {
-                        "type": "ContactSearch",
-                        "attributes": {
-                            "companyWebsite": website_candidates,
-                            "jobTitle": job_titles,
-                            "rpp": max_results
-                        }
-                    }
-                },
-                {
-                    "companyWebsite": website_candidates,
-                    "jobTitle": job_titles,
-                    "maxResults": max_results
-                },
-            ]
-            for fmt_payload in payloads_to_try:
-                try:
-                    response = await self._make_request(
-                        ENDPOINTS["contact_search"], fmt_payload
-                    )
-                    data_list = self._extract_data_list(response)
-                    if data_list:
-                        for c in data_list:
-                            person = self._normalize_contact(c)
-                            pid = person.get("person_id") or person.get("email") or person.get("name")
-                            if pid and pid not in seen_ids:
-                                seen_ids.add(pid)
-                                all_people.append(person)
-                        logger.info(f"ZoomInfo jobTitle search: found {len(data_list)} additional contacts")
-                        break
-                    else:
-                        logger.warning(
-                            f"ZoomInfo jobTitle search returned 0 contacts for domain={domain}. "
-                            f"Response: {response}"
-                        )
-                except httpx.HTTPStatusError as e:
-                    last_error = f"HTTP {e.response.status_code}"
-                    logger.error(f"ZoomInfo jobTitle search HTTP error: {e}")
-                    continue  # Try flat format fallback
-                except Exception as e:
-                    last_error = str(e)
-                    logger.error(f"ZoomInfo jobTitle search failed: {e}")
-                    continue  # Try flat format fallback
-
-        # Strategy 3: All URL variants, no filter — ensures we always try the broadest
-        # possible companyWebsite query with all URL format candidates.
-        if not all_people:
-            try:
-                response = await self._make_request(
-                    ENDPOINTS["contact_search"],
-                    {"data": {"type": "ContactSearch", "attributes": {
-                        "companyWebsite": website_candidates,
-                        "rpp": max_results,
-                    }}}
-                )
-                data_list = self._extract_data_list(response)
-                for c in data_list:
-                    person = self._normalize_contact(c)
-                    pid = person.get("person_id") or person.get("email") or person.get("name")
-                    if pid and pid not in seen_ids:
-                        seen_ids.add(pid)
-                        all_people.append(person)
-                if all_people:
-                    logger.info(f"ZoomInfo multi-URL fallback: found {len(all_people)} contacts for domain={domain}")
-                else:
+                        return added
                     logger.warning(
-                        f"ZoomInfo multi-URL fallback returned 0 contacts for domain={domain}. "
-                        f"website_candidates={website_candidates}"
+                        "ZoomInfo %s: 0 contacts for domain=%s response=%s",
+                        label, domain, response
                     )
-            except Exception as e:
-                logger.warning(f"ZoomInfo multi-URL fallback failed: {e}")
+                except httpx.HTTPStatusError as e:
+                    last_error = f"HTTP {e.response.status_code}"
+                    logger.error("ZoomInfo %s HTTP error: %s", label, e)
+                except Exception as e:
+                    last_error = str(e)
+                    logger.error("ZoomInfo %s failed: %s", label, e)
+            return 0
 
-        # Strategy 4: Company name fallback — derive company name from domain and search by
-        # companyName. ZoomInfo stores company names separately from website URLs, so this
-        # may match when the website-based search fails.
+        async def _search_na_first(base_attrs: Dict[str, Any], label: str) -> int:
+            """
+            Try contact search with North America geo filter first, then global.
+            Maximises NA coverage without hard-failing when geo returns nothing
+            (some companies have no NA contacts in ZoomInfo, or the field isn't
+            supported for a given search type).
+            """
+            na_attrs = {**base_attrs, "country": NORTH_AMERICA_COUNTRIES}
+            count = await _search(na_attrs, f"{label} [NA]")
+            if count > 0:
+                return count
+            logger.info("ZoomInfo %s: NA geo returned 0, falling back to global", label)
+            return await _search(base_attrs, f"{label} [global]")
+
+        rpp = min(max_results, 10)
+
+        # --- Strategy 1: CTO, CFO, CMO, CIO (Intercept primary targets) ---
+        if len(all_people) < max_results:
+            titles = job_titles if job_titles else PRIORITY_CSUITE_TITLES
+            await _search_na_first(
+                {"companyWebsite": website_candidates, "jobTitle": titles, "rpp": rpp},
+                "priority-csuite"
+            )
+
+        # --- Strategy 2: Other C-Suite (CEO, COO, CRO, CPO, etc.) ---
+        # Only run when no custom job_titles override is in effect.
+        if len(all_people) < max_results and job_titles is None:
+            await _search_na_first(
+                {"companyWebsite": website_candidates, "jobTitle": OTHER_CSUITE_TITLES, "rpp": rpp},
+                "other-csuite"
+            )
+
+        # --- Strategy 3: C-Level management level (broader net) ---
+        if len(all_people) < max_results:
+            await _search_na_first(
+                {"companyWebsite": website_candidates, "managementLevel": ["C-Level"], "rpp": rpp},
+                "C-Level"
+            )
+
+        # --- Strategy 4: VP-Level ---
+        if len(all_people) < max_results:
+            await _search_na_first(
+                {"companyWebsite": website_candidates, "managementLevel": ["VP-Level"], "rpp": rpp},
+                "VP-Level"
+            )
+
+        # --- Strategy 5: Director-Level ---
+        if len(all_people) < max_results:
+            await _search_na_first(
+                {"companyWebsite": website_candidates, "managementLevel": ["Director-Level"], "rpp": rpp},
+                "Director-Level"
+            )
+
+        # --- Strategy 6: No-filter fallback (all roles, all regions) ---
+        if not all_people:
+            await _search(
+                {"companyWebsite": website_candidates, "rpp": max_results},
+                "no-filter fallback"
+            )
+
+        # --- Strategy 7: Company name fallback ---
+        # ZoomInfo stores company names separately from URLs — this catches cases
+        # where the website-based lookup finds nothing.
         if not all_people:
             company_name = self._company_name_from_domain(domain)
             if company_name:
-                try:
-                    response = await self._make_request(
-                        ENDPOINTS["contact_search"],
-                        {"data": {"type": "ContactSearch", "attributes": {
-                            "companyName": company_name,
-                            "rpp": max_results,
-                        }}}
-                    )
-                    data_list = self._extract_data_list(response)
-                    for c in data_list:
-                        person = self._normalize_contact(c)
-                        pid = person.get("person_id") or person.get("email") or person.get("name")
-                        if pid and pid not in seen_ids:
-                            seen_ids.add(pid)
-                            all_people.append(person)
-                    if all_people:
-                        logger.info(f"ZoomInfo companyName fallback: found {len(all_people)} contacts for name={company_name}")
-                    else:
-                        logger.warning(f"ZoomInfo companyName fallback also returned 0 contacts for name={company_name}")
-                except Exception as e:
-                    logger.warning(f"ZoomInfo companyName fallback failed: {e}")
+                await _search(
+                    {"companyName": company_name, "rpp": max_results},
+                    f"companyName={company_name} fallback"
+                )
 
-        logger.info(f"ZoomInfo total contacts found: {len(all_people)} for domain={domain}")
+        # Sort results: CTO/CFO/CMO/CIO → other C-Suite → VP → Director → other
+        all_people.sort(key=self._contact_priority)
+
+        logger.info("ZoomInfo total contacts: %d for domain=%s", len(all_people), domain)
         if all_people:
             return {"success": True, "people": all_people, "error": None}
         return {
@@ -977,6 +954,71 @@ class ZoomInfoClient:
         except Exception as e:
             logger.error(f"ZoomInfo tech enrich failed: {e}")
             return {"success": False, "technologies": [], "raw_data": [], "error": str(e)}
+
+    @staticmethod
+    def _is_partner(title: str) -> bool:
+        """
+        Return True if the job title indicates a Partner role (to be excluded).
+
+        Catches: "Partner", "Managing Partner", "Senior Partner",
+                 "General Partner", "Partner, Technology", "Partner – Digital".
+        Does NOT catch: "Partnership Manager", "Channel Partner Director",
+                        "Director of Partnerships", "Strategic Partner Manager".
+        """
+        if not title:
+            return False
+        t = title.strip().lower()
+        # Exact match
+        if t == "partner":
+            return True
+        # Ends with " partner" (e.g. "Managing Partner", "Senior Partner", "General Partner")
+        if t.endswith(" partner"):
+            return True
+        # Starts with "partner," or "partner -/–" (e.g. "Partner, Technology", "Partner – Digital")
+        if t.startswith("partner,") or re.match(r"^partner\s*[-–]", t):
+            return True
+        return False
+
+    @staticmethod
+    def _contact_priority(person: Dict[str, Any]) -> int:
+        """
+        Return sort key for contacts — lower value = shown first.
+
+        Priority 0: CTO, CFO, CMO, CIO  (Intercept primary targets)
+        Priority 1: Other C-Suite chiefs (CEO, COO, CRO, CISO, etc.)
+        Priority 2: VP-Level
+        Priority 3: Director-Level
+        Priority 4: Other / unknown
+        """
+        title = (person.get("title") or "").lower()
+        mgmt = (person.get("management_level") or "").lower()
+
+        # Priority 0: CTO, CFO, CMO, CIO
+        # Use word boundaries to avoid false matches (e.g. CISO should not count as CIO)
+        cto = re.search(r"\bchief technology officer\b|\bcto\b", title)
+        cfo = re.search(r"\bchief financial officer\b|\bcfo\b", title)
+        cmo = re.search(r"\bchief marketing officer\b|\bcmo\b", title)
+        # CIO: match "chief information officer" but NOT "chief information security officer"
+        cio = (
+            re.search(r"\bchief information officer\b", title)
+            or (re.search(r"\bcio\b", title) and not re.search(r"\bciso\b", title))
+        )
+        if any([cto, cfo, cmo, cio]):
+            return 0
+
+        # Priority 1: other C-Suite / C-Level
+        if "chief" in title or "c-level" in mgmt:
+            return 1
+
+        # Priority 2: VP-Level
+        if "vp-level" in mgmt or re.search(r"\bvice president\b|\bvp\b|\bsvp\b|\bevp\b", title):
+            return 2
+
+        # Priority 3: Director-Level
+        if "director-level" in mgmt or "director" in title:
+            return 3
+
+        return 4
 
     @staticmethod
     def _normalize_scoop(raw: Dict[str, Any]) -> Dict[str, Any]:
