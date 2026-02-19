@@ -2685,6 +2685,83 @@ async def get_job_status(job_id: str):
 
 
 # ============================================================================
+# ZoomInfo Raw Diagnostics Endpoint
+# ============================================================================
+
+@app.get("/debug-zoominfo/{domain}", tags=["Debug"])
+async def debug_zoominfo_raw(domain: str):
+    """
+    Diagnostic endpoint: make a raw ZoomInfo API call and return the full
+    response body so we can see exactly what ZoomInfo returns.
+    """
+    zi_client = _get_zoominfo_client()
+    if not zi_client:
+        return {"error": "ZoomInfo not configured"}
+
+    from worker.zoominfo_client import ENDPOINTS, OUTPUT_FIELDS
+
+    normalized = zi_client._normalize_website(domain)
+    results: dict = {"domain_input": domain, "domain_normalized": normalized}
+
+    # 1. Company enrich — raw
+    try:
+        company_raw = await zi_client._make_request(
+            ENDPOINTS["company_enrich"],
+            {"data": {"type": "CompanyEnrich", "attributes": {"companyWebsite": normalized}}}
+        )
+        results["company_enrich_raw"] = company_raw
+        results["company_enrich_keys"] = list(company_raw.keys())
+    except Exception as e:
+        results["company_enrich_error"] = str(e)
+
+    # 2. Contact search — bare domain only (no filters), raw
+    try:
+        contact_raw = await zi_client._make_request(
+            ENDPOINTS["contact_search"],
+            {"data": {"type": "ContactSearch", "attributes": {
+                "companyWebsite": normalized,
+                "outputFields": OUTPUT_FIELDS,
+                "pageSize": 5,
+            }}}
+        )
+        results["contact_search_raw"] = contact_raw
+        results["contact_search_keys"] = list(contact_raw.keys())
+        results["contact_search_data_len"] = len(contact_raw.get("data", []))
+    except Exception as e:
+        results["contact_search_error"] = str(e)
+
+    # 3. Contact search — flat format (no JSON:API wrapper)
+    try:
+        contact_flat_raw = await zi_client._make_request(
+            ENDPOINTS["contact_search"],
+            {"companyWebsite": normalized, "maxResults": 5}
+        )
+        results["contact_search_flat_raw"] = contact_flat_raw
+        results["contact_search_flat_keys"] = list(contact_flat_raw.keys())
+    except Exception as e:
+        results["contact_search_flat_error"] = str(e)
+
+    # 4. Contact search — try companyName instead of companyWebsite
+    company_name = domain.split(".")[0].title()
+    try:
+        contact_name_raw = await zi_client._make_request(
+            ENDPOINTS["contact_search"],
+            {"data": {"type": "ContactSearch", "attributes": {
+                "companyName": company_name,
+                "outputFields": OUTPUT_FIELDS,
+                "pageSize": 5,
+            }}}
+        )
+        results["contact_search_by_name_raw"] = contact_name_raw
+        results["contact_search_by_name_keys"] = list(contact_name_raw.keys())
+        results["contact_search_by_name_data_len"] = len(contact_name_raw.get("data", []))
+    except Exception as e:
+        results["contact_search_by_name_error"] = str(e)
+
+    return results
+
+
+# ============================================================================
 # ZoomInfo Contact Phone Enrichment Endpoint
 # ============================================================================
 
