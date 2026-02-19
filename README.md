@@ -21,6 +21,45 @@
 
 ---
 
+## Latest Features (2026-02-19)
+
+### Frontend: Explicit Phone Number Display on Every Stakeholder Card
+
+#### Detail Cards (`StakeholderDetailCard`)
+The Contact block in every executive profile card now always renders a phone section. Previously, if no phone was available the section was simply empty. Now:
+- If `directPhone`, `mobilePhone`, `companyPhone`, or `phone` is present, the numbers are shown as clickable `tel:` links with their type label (Direct / Mobile / Company)
+- If **no phone is available**, an explicit **"Phone unavailable"** row is shown in muted italic text so it is always clear whether data is missing vs not yet loaded
+
+#### Compact Contact Rows (`CompactContactRow`)
+The "Other Contacts" section rows now always include a phone indicator alongside the email and LinkedIn icons:
+- Phone icon is a clickable `tel:` link when a number is present
+- If **no phone is available**, a greyed-out phone icon and **"No phone"** label are shown so the absence is visible rather than silently omitted
+
+#### Rationale
+Showing "unavailable" states explicitly prevents ambiguity — users know whether data is truly missing or whether the UI just hasn't rendered it yet. This is especially important when ZoomInfo enrichment is the source of phone data, since contacts from Apollo/Hunter may have emails but no phones until the ZoomInfo GTM lookup resolves.
+
+---
+
+### ZoomInfo GTM Phone Lookup — Full Fix for Apollo/Hunter Contacts
+
+#### Root Cause & Fix
+The ZoomInfo contact enrichment pipeline had two compounding issues preventing phone numbers from being returned:
+
+1. **`outputFields` missing from search payloads** — ZoomInfo's GTM API requires an explicit `outputFields` list to return phone data (`directPhone`, `mobilePhone`, `companyPhone`) from the contact search step. Without it, the API returns contacts with empty phone fields even when the data exists. Fixed by adding a module-level `OUTPUT_FIELDS` constant and including it in every management-level and job-title search payload.
+
+2. **Apollo/Hunter contacts have no ZoomInfo `personId`** — The `/contacts/enrich` endpoint requires a ZoomInfo `personId` to return enriched data including phones. Since Apollo and Hunter do not provide ZoomInfo IDs, enrichment of those contacts silently returned nothing. Fixed by adding a new pipeline step (Step 2.84) and a new `lookup_contacts_by_identity()` method on `ZoomInfoClient` that searches the GTM contact SEARCH endpoint (not enrich) by email or firstName+lastName+domain to cross-reference Apollo/Hunter contacts against ZoomInfo and retrieve their phone data.
+
+#### Expanded C-Suite Coverage (`CSUITE_JOB_TITLES`)
+The previous job-title search only covered CEO, CTO, CIO, CFO, COO, CISO. A new `CSUITE_JOB_TITLES` constant covers the full C-suite: CMO, CRO, CPO, CHRO, CLO, CSO, CDO, CCO, Chief Commercial Officer, Chief Compliance Officer, Chief Strategy Officer, Chief Transformation Officer plus VP/Director/Senior Director. This ensures phone data is fetched for all executive-level contacts discovered by ZoomInfo.
+
+#### ZoomInfo Contact Prioritization in Sort Order
+`_merge_zoominfo_contacts` now sorts ZoomInfo-sourced contacts to the top of the stakeholder list (source_priority=0) before applying role priority (CTO > CIO > CFO > COO > ...). This ensures contacts with verified phone data are displayed first in the Stakeholder Map.
+
+#### Rationale
+The GTM contact search API is the correct mechanism to look up unknown contacts — it supports email and name+domain queries and returns phone data when `outputFields` is specified. The contact enrich endpoint is reserved for contacts already known to ZoomInfo (those with a `personId`). Using search for identity-based lookups and enrich for ID-based lookups is the canonical two-path strategy for ZoomInfo's GTM API.
+
+---
+
 ## Latest Features (2026-02-18)
 
 ### ZoomInfo Contact Phone Enrichment & Stakeholder Role Priority

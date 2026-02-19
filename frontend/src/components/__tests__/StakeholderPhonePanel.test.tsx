@@ -9,7 +9,7 @@
  * - No badge shown for non-ZoomInfo sources
  */
 
-import { render, screen } from '@testing-library/react';
+import { render, screen, fireEvent } from '@testing-library/react';
 import StakeholderMapCard from '../intelligence/StakeholderMapCard';
 import type { StakeholderMap } from '@/types';
 
@@ -145,5 +145,72 @@ describe('StakeholderMapCard - ZoomInfo Phone Display', () => {
     header.click();
 
     expect(screen.getByText(/\+1-555-999-8888/)).toBeInTheDocument();
+  });
+
+  it('shows "Phone unavailable" when no phone fields are present on a detail card', () => {
+    const map = buildStakeholderMap({
+      directPhone: undefined,
+      mobilePhone: undefined,
+      companyPhone: undefined,
+      phone: undefined,
+      phoneSource: undefined,
+    });
+    render(<StakeholderMapCard stakeholderMap={map} />);
+
+    fireEvent.click(screen.getByRole('button'));
+
+    expect(screen.getByText(/phone unavailable/i)).toBeInTheDocument();
+  });
+
+  it('shows "No phone" in compact contact row when no phone is available', () => {
+    // CompactContactRow renders when there ARE primary stakeholders (executiveCount > 0)
+    // and this person is in otherContacts. Build that scenario.
+    const map: StakeholderMap = {
+      stakeholders: [
+        {
+          name: 'Jane Smith',
+          title: 'CIO',
+          roleType: 'CIO',
+          isNewHire: false,
+          contact: { email: 'jane@example.com' },
+          strategicPriorities: [],
+        },
+      ],
+      otherContacts: [
+        {
+          name: 'Bob Jones',
+          title: 'VP Engineering',
+          roleType: 'VP',
+          isNewHire: false,
+          contact: {
+            email: 'bob@example.com',
+            directPhone: undefined,
+            mobilePhone: undefined,
+            companyPhone: undefined,
+            phone: undefined,
+          },
+          strategicPriorities: [],
+        },
+      ],
+    };
+    render(<StakeholderMapCard stakeholderMap={map} />);
+
+    fireEvent.click(screen.getByRole('button'));
+
+    expect(screen.getByText(/no phone/i)).toBeInTheDocument();
+  });
+
+  it('does NOT show "Phone unavailable" when at least one phone is present', () => {
+    const map = buildStakeholderMap({
+      directPhone: '+1-555-111-2222',
+      mobilePhone: undefined,
+      companyPhone: undefined,
+      phone: undefined,
+    });
+    render(<StakeholderMapCard stakeholderMap={map} />);
+
+    fireEvent.click(screen.getByRole('button'));
+
+    expect(screen.queryByText(/phone unavailable/i)).not.toBeInTheDocument();
   });
 });

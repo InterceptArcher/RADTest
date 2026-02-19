@@ -980,11 +980,15 @@ def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -
                 "source": "zoominfo",
             })
 
-    # Sort stakeholders for deterministic output (CTO > CIO > COO > CFO > others)
-    stakeholders_data.sort(key=lambda x: (
-        ROLE_PRIORITY.get(x.get("role_type", "other").lower(), 99),
-        x.get("name", "").lower()
-    ))
+    # Sort stakeholders: ZoomInfo-sourced contacts first (they have verified phones),
+    # then by role priority (CTO > CIO > CFO > COO > ...), then alphabetically.
+    def _sort_key(x: dict):
+        source = (x.get("source") or "").lower()
+        source_priority = 0 if source == "zoominfo" else 1
+        role_priority = ROLE_PRIORITY.get(x.get("role_type", "other").lower(), 99)
+        return (source_priority, role_priority, x.get("name", "").lower())
+
+    stakeholders_data.sort(key=_sort_key)
 
     return stakeholders_data
 
@@ -1095,6 +1099,47 @@ async def process_company_profile(job_id: str, company_data: dict):
             jobs_store[job_id]["current_step"] = "Merging ZoomInfo enriched contacts..."
             stakeholders_data = _merge_zoominfo_contacts(stakeholders_data or [], zoominfo_contacts)
             logger.info(f"After ZoomInfo merge: {len(stakeholders_data)} total stakeholders")
+
+        # Step 2.84: ZoomInfo GTM identity lookup for Apollo/Hunter contacts.
+        # Apollo and Hunter contacts have no ZoomInfo personId, so the enrich
+        # endpoint cannot be used for them.  Instead we search the ZoomInfo GTM
+        # contact search API by email (primary) or firstName+lastName (fallback)
+        # to find their ZoomInfo record and pull directPhone/mobilePhone directly
+        # from the search result — no separate enrich call required.
+        if zi_client and stakeholders_data:
+            contacts_needing_phones = [
+                s for s in stakeholders_data
+                if s.get("source") in ("apollo", "hunter.io", "hunter")
+                and not s.get("direct_phone")
+                and not s.get("mobile_phone")
+                and (s.get("email") or s.get("name"))
+            ]
+            if contacts_needing_phones:
+                jobs_store[job_id]["current_step"] = (
+                    f"Looking up {len(contacts_needing_phones)} Apollo/Hunter contacts "
+                    "in ZoomInfo GTM for phone numbers..."
+                )
+                try:
+                    lookup_result = await zi_client.lookup_contacts_by_identity(
+                        contacts=contacts_needing_phones,
+                        domain=company_data["domain"]
+                    )
+                    if lookup_result.get("success") and lookup_result.get("people"):
+                        zi_lookup_contacts = lookup_result["people"]
+                        logger.info(
+                            f"ZoomInfo GTM identity lookup: {len(zi_lookup_contacts)} contacts "
+                            f"found for domain={company_data['domain']}"
+                        )
+                        stakeholders_data = _merge_zoominfo_contacts(
+                            stakeholders_data, zi_lookup_contacts
+                        )
+                    else:
+                        logger.info(
+                            f"ZoomInfo GTM identity lookup: 0 matches for "
+                            f"{len(contacts_needing_phones)} Apollo/Hunter contacts"
+                        )
+                except Exception as e:
+                    logger.warning(f"ZoomInfo GTM identity lookup failed: {e}")
 
         # Step 2.83: LLM Contact Fact Checker - Validate contacts against public knowledge
         jobs_store[job_id]["progress"] = 46

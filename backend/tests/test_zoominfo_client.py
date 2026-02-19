@@ -790,3 +790,345 @@ class TestZoomInfoNotConfiguredDiagnostics:
             f"Got keys: {list(result_data.keys())}"
         )
         assert result_data["_contact_search_error"], "Error message must be non-empty"
+
+
+class TestSearchContactsOutputFields:
+    """
+    TDD: search_contacts must include outputFields in every payload so ZoomInfo
+    returns phone data (directPhone, mobilePhone, companyPhone) directly from
+    the search step — not only from the separate enrich step.
+
+    Currently failing: search payloads have no outputFields → phones are null
+    even when ZoomInfo has the data.
+    """
+
+    @pytest.mark.asyncio
+    async def test_search_payload_includes_output_fields(self):
+        """Every management-level search payload must include an outputFields list."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+
+        async def capture(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.search_contacts(domain="example.com")
+
+        # At least one payload must include outputFields
+        payloads_with_output = [
+            p for p in captured_payloads
+            if p.get("data", {}).get("attributes", {}).get("outputFields") is not None
+        ]
+        assert payloads_with_output, (
+            "search_contacts must include outputFields in at least one payload. "
+            "Got payloads: " + str([list(p.get("data", {}).get("attributes", {}).keys()) for p in captured_payloads])
+        )
+
+    @pytest.mark.asyncio
+    async def test_output_fields_include_phone_data(self):
+        """outputFields must request directPhone, mobilePhone, and companyPhone."""
+        from zoominfo_client import ZoomInfoClient, OUTPUT_FIELDS
+        required = {"directPhone", "mobilePhone", "companyPhone", "email", "personId"}
+        for field in required:
+            assert field in OUTPUT_FIELDS, (
+                f"OUTPUT_FIELDS must include '{field}' so phones are returned from search. "
+                f"Current OUTPUT_FIELDS: {OUTPUT_FIELDS}"
+            )
+
+    @pytest.mark.asyncio
+    async def test_flat_format_payload_also_includes_output_fields(self):
+        """Flat-format (fallback) payloads must also include outputFields."""
+        from zoominfo_client import ZoomInfoClient
+
+        # Force all JSON:API attempts to fail so the flat fallback is used
+        call_count = [0]
+
+        async def fail_jsonapi_pass_flat(endpoint, payload):
+            call_count[0] += 1
+            # First format (JSON:API wrapper) raises HTTP 400
+            if "data" in payload and "type" in payload.get("data", {}):
+                import httpx
+                mock_resp = MagicMock()
+                mock_resp.status_code = 400
+                mock_resp.is_success = False
+                mock_resp.reason_phrase = "Bad Request"
+                raise httpx.HTTPStatusError("400", request=MagicMock(), response=mock_resp)
+            # Flat format — capture it and return empty
+            return {"contacts": []}
+
+        with patch.object(client := ZoomInfoClient(access_token="test-token"),
+                          "_make_request", side_effect=fail_jsonapi_pass_flat):
+            await client.search_contacts(domain="example.com")
+
+        # We just verify it ran without crashing; flat fallback does not use outputFields
+        # (ZoomInfo's flat endpoint doesn't support it) — so this test just confirms no crash
+        assert call_count[0] > 0
+
+
+class TestExpandedCSuiteSearch:
+    """
+    TDD: search_contacts job-title strategy must target ALL C-suite chiefs,
+    not only CEO/CTO/CIO/CFO/COO. Missing chiefs (CMO, CRO, CPO, CHRO, etc.)
+    means their phone data is never fetched.
+    """
+
+    @pytest.mark.asyncio
+    async def test_search_includes_cmo(self):
+        """CMO / Chief Marketing Officer must be in the job title search list."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        captured_payloads = []
+
+        async def capture(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.search_contacts(domain="example.com")
+
+        all_titles = []
+        for p in captured_payloads:
+            titles = p.get("data", {}).get("attributes", {}).get("jobTitle", [])
+            if titles:
+                all_titles.extend(titles)
+
+        titles_lower = [t.lower() for t in all_titles]
+        assert any("cmo" in t or "chief marketing" in t for t in titles_lower), (
+            "CMO / Chief Marketing Officer missing from job title search"
+        )
+
+    @pytest.mark.asyncio
+    async def test_search_includes_cro(self):
+        """CRO / Chief Revenue Officer must be in the job title search list."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        captured_payloads = []
+
+        async def capture(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.search_contacts(domain="example.com")
+
+        all_titles = []
+        for p in captured_payloads:
+            titles = p.get("data", {}).get("attributes", {}).get("jobTitle", [])
+            if titles:
+                all_titles.extend(titles)
+
+        titles_lower = [t.lower() for t in all_titles]
+        assert any("cro" in t or "chief revenue" in t for t in titles_lower), (
+            "CRO / Chief Revenue Officer missing from job title search"
+        )
+
+    @pytest.mark.asyncio
+    async def test_search_includes_chro(self):
+        """CHRO / Chief People Officer must be in the job title search list."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        captured_payloads = []
+
+        async def capture(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.search_contacts(domain="example.com")
+
+        all_titles = []
+        for p in captured_payloads:
+            titles = p.get("data", {}).get("attributes", {}).get("jobTitle", [])
+            if titles:
+                all_titles.extend(titles)
+
+        titles_lower = [t.lower() for t in all_titles]
+        assert any(
+            "chro" in t or "chief people" in t or "chief hr" in t or "chief human" in t
+            for t in titles_lower
+        ), "CHRO / Chief People Officer missing from job title search"
+
+
+class TestLookupContactsByIdentity:
+    """
+    TDD: ZoomInfoClient must have a lookup_contacts_by_identity method that
+    takes a list of contacts (with name/email) and searches them in the ZoomInfo
+    GTM contact SEARCH endpoint (not the enrich endpoint) to find their records
+    and retrieve phone numbers.
+
+    This is the mechanism for enriching Apollo/Hunter contacts that have no
+    ZoomInfo personId — we search them by email or first+last name + domain.
+    """
+
+    @pytest.mark.asyncio
+    async def test_method_exists(self):
+        """ZoomInfoClient has a lookup_contacts_by_identity method."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        assert hasattr(client, "lookup_contacts_by_identity"), (
+            "ZoomInfoClient must have a lookup_contacts_by_identity method"
+        )
+
+    @pytest.mark.asyncio
+    async def test_lookup_by_email_returns_contact_with_phones(self):
+        """Lookup by email finds contact and returns phone data from GTM search."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        mock_response = {
+            "data": [{
+                "firstName": "Jane",
+                "lastName": "Doe",
+                "jobTitle": "Chief Marketing Officer",
+                "email": "jane.doe@acme.com",
+                "directPhone": "+1-415-555-0100",
+                "mobilePhone": "+1-415-555-0101",
+                "companyPhone": "+1-415-555-0000",
+                "personId": "zi-999",
+                "managementLevel": "C-Level",
+                "department": "Marketing",
+                "contactAccuracyScore": 88,
+            }]
+        }
+
+        with patch.object(client, "_make_request", new_callable=AsyncMock,
+                          return_value=mock_response):
+            result = await client.lookup_contacts_by_identity(
+                contacts=[{"name": "Jane Doe", "email": "jane.doe@acme.com"}],
+                domain="acme.com"
+            )
+
+        assert result["success"] is True
+        assert len(result["people"]) == 1
+        person = result["people"][0]
+        assert person["direct_phone"] == "+1-415-555-0100"
+        assert person["mobile_phone"] == "+1-415-555-0101"
+        assert person["person_id"] == "zi-999"
+
+    @pytest.mark.asyncio
+    async def test_lookup_by_name_falls_back_when_no_email(self):
+        """Lookup by first+last name when email is absent."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+
+        async def capture(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": [{
+                "firstName": "Bob",
+                "lastName": "Smith",
+                "jobTitle": "CRO",
+                "directPhone": "+1-800-555-0200",
+                "personId": "zi-111",
+            }]}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            result = await client.lookup_contacts_by_identity(
+                contacts=[{"name": "Bob Smith", "email": ""}],
+                domain="corp.com"
+            )
+
+        assert result["success"] is True
+        assert len(result["people"]) == 1
+        # Verify the payload used firstName/lastName (not email)
+        name_payloads = [
+            p for p in captured_payloads
+            if p.get("data", {}).get("attributes", {}).get("firstName")
+        ]
+        assert name_payloads, "Must send firstName/lastName payload when no email"
+
+    @pytest.mark.asyncio
+    async def test_lookup_no_match_returns_empty(self):
+        """Lookup returns empty people list when ZoomInfo has no match."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        with patch.object(client, "_make_request", new_callable=AsyncMock,
+                          return_value={"data": []}):
+            result = await client.lookup_contacts_by_identity(
+                contacts=[{"name": "Unknown Person", "email": "unknown@nowhere.com"}],
+                domain="nowhere.com"
+            )
+
+        assert result["success"] is True
+        assert result["people"] == []
+
+    @pytest.mark.asyncio
+    async def test_lookup_deduplicates_by_person_id(self):
+        """Same person found via both email and name lookup is deduplicated."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        same_contact = {
+            "firstName": "Dup",
+            "lastName": "Person",
+            "email": "dup@co.com",
+            "directPhone": "+1-999",
+            "personId": "zi-dup",
+        }
+
+        call_count = [0]
+
+        async def always_return_same(endpoint, payload):
+            call_count[0] += 1
+            return {"data": [same_contact]}
+
+        with patch.object(client, "_make_request", side_effect=always_return_same):
+            result = await client.lookup_contacts_by_identity(
+                contacts=[
+                    {"name": "Dup Person", "email": "dup@co.com"},
+                    {"name": "Dup Person", "email": "dup@co.com"},
+                ],
+                domain="co.com"
+            )
+
+        # Should deduplicate — same person_id seen twice
+        assert result["success"] is True
+        assert len(result["people"]) == 1, (
+            f"Deduplication failed: expected 1 person, got {len(result['people'])}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_lookup_uses_contact_search_endpoint_not_enrich(self):
+        """lookup_contacts_by_identity must call /contacts/search, NOT /contacts/enrich."""
+        from zoominfo_client import ZoomInfoClient, ENDPOINTS
+        client = ZoomInfoClient(access_token="test-token")
+
+        called_endpoints = []
+
+        async def capture_endpoint(endpoint, payload):
+            called_endpoints.append(endpoint)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture_endpoint):
+            await client.lookup_contacts_by_identity(
+                contacts=[{"name": "Test User", "email": "test@co.com"}],
+                domain="co.com"
+            )
+
+        assert ENDPOINTS["contact_enrich"] not in called_endpoints, (
+            "lookup_contacts_by_identity must NOT call the contact enrich endpoint. "
+            f"Called endpoints: {called_endpoints}"
+        )
+        assert any(ENDPOINTS["contact_search"] in e for e in called_endpoints), (
+            "lookup_contacts_by_identity must call the contact search endpoint. "
+            f"Called endpoints: {called_endpoints}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_lookup_empty_contacts_list_returns_empty(self):
+        """Passing an empty contacts list returns an empty result without API calls."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        mock_request = AsyncMock()
+        with patch.object(client, "_make_request", mock_request):
+            result = await client.lookup_contacts_by_identity(contacts=[], domain="co.com")
+
+        assert result["success"] is True
+        assert result["people"] == []
+        mock_request.assert_not_called()

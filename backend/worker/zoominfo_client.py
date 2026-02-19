@@ -33,6 +33,48 @@ ENDPOINTS = {
     "tech_enrich": "/data/v1/technologies/enrich",
 }
 
+# Fields explicitly requested from ZoomInfo contact search so that phone data
+# is returned directly from the search step without a separate enrich call.
+OUTPUT_FIELDS = [
+    "personId",
+    "firstName",
+    "lastName",
+    "email",
+    "jobTitle",
+    "managementLevel",
+    "department",
+    "linkedInUrl",
+    "phone",
+    "directPhone",
+    "mobilePhone",
+    "companyPhone",
+    "contactAccuracyScore",
+]
+
+# Full C-suite job title list — covers all chiefs, not just CEO/CTO/COO.
+CSUITE_JOB_TITLES = [
+    "Chief Executive Officer", "CEO",
+    "Chief Technology Officer", "CTO",
+    "Chief Information Officer", "CIO",
+    "Chief Financial Officer", "CFO",
+    "Chief Operating Officer", "COO",
+    "Chief Marketing Officer", "CMO",
+    "Chief Revenue Officer", "CRO",
+    "Chief Product Officer", "CPO",
+    "Chief People Officer", "Chief HR Officer", "Chief Human Resources Officer", "CHRO",
+    "Chief Legal Officer", "CLO", "General Counsel",
+    "Chief Security Officer", "CSO",
+    "Chief Data Officer", "CDO",
+    "Chief Customer Officer", "CCO",
+    "Chief Commercial Officer",
+    "Chief Information Security Officer", "CISO",
+    "Chief Compliance Officer",
+    "Chief Strategy Officer",
+    "Chief Transformation Officer",
+    "Vice President", "VP", "SVP", "EVP",
+    "Director", "Senior Director",
+]
+
 
 class ZoomInfoRateLimiter:
     """Token-bucket rate limiter for ZoomInfo's 25 req/sec limit."""
@@ -264,6 +306,8 @@ class ZoomInfoClient:
 
         # Strategy 1: Search by management level.
         # ZoomInfo requires managementLevel as an array, not a string.
+        # outputFields explicitly requests phone data so it's returned from the
+        # search step itself — no separate enrich call needed for ZoomInfo contacts.
         management_levels = ["C-Level", "VP-Level", "Director", "Manager"]
         for level in management_levels:
             # Try JSON:API wrapper format first, then flat format as fallback
@@ -275,6 +319,7 @@ class ZoomInfoClient:
                         "attributes": {
                             "companyDomain": domain,
                             "managementLevel": [level],
+                            "outputFields": OUTPUT_FIELDS,
                             "pageSize": min(max_results, 10)
                         }
                     }
@@ -317,19 +362,12 @@ class ZoomInfoClient:
                     logger.error(f"ZoomInfo managementLevel=[{level}] search failed: {e}")
                     break
 
-        # Strategy 2: Explicit job title search for CTO/CIO/CFO/COO and senior roles.
+        # Strategy 2: Explicit job title search covering the full C-suite.
+        # Uses CSUITE_JOB_TITLES (all chiefs, not just CEO/CTO/CIO/CFO/COO).
+        # outputFields ensures phone data is returned from the search directly.
         if len(all_people) < max_results:
             if job_titles is None:
-                job_titles = [
-                    "Chief Technology Officer", "CTO",
-                    "Chief Information Officer", "CIO",
-                    "Chief Financial Officer", "CFO",
-                    "Chief Operating Officer", "COO",
-                    "Chief Executive Officer", "CEO",
-                    "Chief Information Security Officer", "CISO",
-                    "Vice President", "VP", "SVP", "EVP",
-                    "Director", "Senior Director",
-                ]
+                job_titles = CSUITE_JOB_TITLES
 
             payloads_to_try = [
                 {
@@ -338,6 +376,7 @@ class ZoomInfoClient:
                         "attributes": {
                             "companyDomain": domain,
                             "jobTitle": job_titles,
+                            "outputFields": OUTPUT_FIELDS,
                             "pageSize": max_results
                         }
                     }
@@ -466,6 +505,113 @@ class ZoomInfoClient:
         # Fall back to search results if enrich fails
         logger.warning("Contact enrich failed, returning search results")
         return search_result
+
+    async def lookup_contacts_by_identity(
+        self,
+        contacts: List[Dict[str, Any]],
+        domain: str
+    ) -> Dict[str, Any]:
+        """
+        Search ZoomInfo GTM contact search endpoint for specific contacts by
+        identity (email or first+last name + domain).
+
+        Used to cross-reference Apollo/Hunter contacts against ZoomInfo to
+        retrieve their direct phone, mobile phone, and company phone numbers.
+
+        This deliberately uses the GTM contact SEARCH endpoint (not the
+        /contacts/enrich endpoint) because the enrich endpoint requires a valid
+        ZoomInfo personId which Apollo/Hunter contacts do not have.
+
+        Args:
+            contacts: List of dicts with any of: name, first_name, last_name, email
+            domain:   Company domain to scope the search
+
+        Returns:
+            Dict with success, people (list of normalized contacts with phones), error
+        """
+        if not contacts:
+            return {"success": True, "people": [], "error": None}
+
+        found: List[Dict[str, Any]] = []
+        seen_ids: set = set()
+
+        for contact in contacts:
+            email = (contact.get("email") or "").strip()
+            name = (contact.get("name") or "").strip()
+            first_name = (contact.get("first_name") or "").strip()
+            last_name = (contact.get("last_name") or "").strip()
+
+            # Derive first/last from full name if not split yet
+            if name and not (first_name and last_name):
+                parts = name.split(None, 1)
+                first_name = first_name or (parts[0] if parts else "")
+                last_name = last_name or (parts[1] if len(parts) > 1 else "")
+
+            payloads_to_try = []
+
+            # Email-based lookup is most precise — try first
+            if email:
+                payloads_to_try.append({
+                    "data": {
+                        "type": "ContactSearch",
+                        "attributes": {
+                            "companyDomain": domain,
+                            "email": email,
+                            "outputFields": OUTPUT_FIELDS,
+                            "pageSize": 1,
+                        }
+                    }
+                })
+
+            # Name-based lookup as fallback
+            if first_name and last_name:
+                payloads_to_try.append({
+                    "data": {
+                        "type": "ContactSearch",
+                        "attributes": {
+                            "companyDomain": domain,
+                            "firstName": first_name,
+                            "lastName": last_name,
+                            "outputFields": OUTPUT_FIELDS,
+                            "pageSize": 1,
+                        }
+                    }
+                })
+
+            if not payloads_to_try:
+                logger.debug(f"ZoomInfo identity lookup: skipping contact with no email/name")
+                continue
+
+            for payload in payloads_to_try:
+                try:
+                    response = await self._make_request(ENDPOINTS["contact_search"], payload)
+                    data_list = self._extract_data_list(response)
+                    if data_list:
+                        person = self._normalize_contact(data_list[0])
+                        pid = (
+                            person.get("person_id")
+                            or person.get("email")
+                            or person.get("name")
+                        )
+                        if pid and pid not in seen_ids:
+                            seen_ids.add(pid)
+                            found.append(person)
+                        break  # Found this contact — stop trying further payloads
+                except httpx.HTTPStatusError as e:
+                    logger.warning(
+                        f"ZoomInfo identity lookup HTTP {e.response.status_code} "
+                        f"for {email or name}: {e}"
+                    )
+                    break
+                except Exception as e:
+                    logger.warning(f"ZoomInfo identity lookup failed for {email or name}: {e}")
+                    break
+
+        logger.info(
+            f"ZoomInfo identity lookup: {len(found)}/{len(contacts)} contacts "
+            f"found for domain={domain}"
+        )
+        return {"success": True, "people": found, "error": None}
 
     async def enrich_intent(self, domain: str) -> Dict[str, Any]:
         """
