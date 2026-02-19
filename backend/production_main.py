@@ -939,103 +939,107 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                 logger.warning(f"⚠️  ZoomInfo contacts returned 0 for domain={domain}: {err}")
                 combined_data["_contact_search_error"] = err
 
-        # Log all ZoomInfo sub-calls to job's api_calls list for debug mode
+        # Log all ZoomInfo sub-calls — wrapped in its own try/except so that ANY
+        # logging failure is non-fatal and never corrupts combined_data/contacts.
         if job_data is not None:
-            _log_api_call(
-                job_data, "ZoomInfo Company Enrichment",
-                "https://api.zoominfo.com/gtm/data/v1/companies/enrich", "POST",
-                {"data": {"type": "CompanyEnrich", "attributes": {"companyDomain": domain, "companyName": company_name}}},
-                company_result.get("data") if isinstance(company_result, dict) else {"error": str(company_result)},
-                200 if isinstance(company_result, dict) and company_result.get("success") else 500,
-                0, is_sensitive=True, masked_fields=["authorization"],
-            )
-            _log_api_call(
-                job_data, "ZoomInfo Intent Enrichment",
-                "https://api.zoominfo.com/gtm/data/v1/intent/enrich", "POST",
-                {"data": {"type": "IntentEnrich", "attributes": {"companyDomain": domain}}},
-                {"intent_signals": intent_result.get("intent_signals", [])} if isinstance(intent_result, dict) else {"error": str(intent_result)},
-                200 if isinstance(intent_result, dict) and intent_result.get("success") else 500,
-                0, is_sensitive=True, masked_fields=["authorization"],
-            )
-            _log_api_call(
-                job_data, "ZoomInfo Scoops Search",
-                "https://api.zoominfo.com/gtm/data/v1/scoops/search", "POST",
-                {"data": {"type": "ScoopSearch", "attributes": {"companyDomain": domain}}},
-                {"scoops": scoops_result.get("scoops", [])} if isinstance(scoops_result, dict) else {"error": str(scoops_result)},
-                200 if isinstance(scoops_result, dict) and scoops_result.get("success") else 500,
-                0, is_sensitive=True, masked_fields=["authorization"],
-            )
-            _log_api_call(
-                job_data, "ZoomInfo News Search",
-                "https://api.zoominfo.com/gtm/data/v1/news/search", "POST",
-                {"data": {"type": "NewsSearch", "attributes": {"companyName": company_name}}},
-                {"articles_count": len(news_result.get("articles", []))} if isinstance(news_result, dict) else {"error": str(news_result)},
-                200 if isinstance(news_result, dict) and news_result.get("success") else 500,
-                0, is_sensitive=True, masked_fields=["authorization"],
-            )
-            _log_api_call(
-                job_data, "ZoomInfo Technologies Enrichment",
-                "https://api.zoominfo.com/gtm/data/v1/technologies/enrich", "POST",
-                {"data": {"type": "TechEnrich", "attributes": {"companyDomain": domain}}},
-                {"technologies_count": len(tech_result.get("technologies", []))} if isinstance(tech_result, dict) else {"error": str(tech_result)},
-                200 if isinstance(tech_result, dict) and tech_result.get("success") else 500,
-                0, is_sensitive=True, masked_fields=["authorization"],
-            )
-            # Contact Search — show the actual management-level + outputFields approach
-            from worker.zoominfo_client import OUTPUT_FIELDS, CSUITE_JOB_TITLES
-            contact_search_req = {
-                "data": {"type": "ContactSearch", "attributes": {
-                    "companyDomain": domain,
-                    "managementLevel": ["C-Level", "VP-Level", "Director", "Manager"],
-                    "jobTitle": CSUITE_JOB_TITLES,
-                    "outputFields": OUTPUT_FIELDS,
-                    "pageSize": 25,
-                }}
-            }
-            contacts_with_phones = [c for c in contacts if c.get("direct_phone") or c.get("mobile_phone") or c.get("company_phone")]
-            _log_api_call(
-                job_data, "ZoomInfo Contact Search (Management Level + C-Suite Titles)",
-                "https://api.zoominfo.com/gtm/data/v1/contacts/search", "POST",
-                contact_search_req,
-                {
-                    "contacts_found": len(contacts),
-                    "contacts_with_phones": len(contacts_with_phones),
-                    "sample": [
-                        {
-                            "name": c.get("name"), "title": c.get("title"),
-                            "directPhone": c.get("direct_phone") or "N/A",
-                            "mobilePhone": c.get("mobile_phone") or "N/A",
-                            "contactAccuracyScore": c.get("contact_accuracy_score"),
-                        }
-                        for c in contacts[:5]
-                    ],
-                    "error": combined_data.get("_contact_search_error"),
-                },
-                200 if contacts else (500 if combined_data.get("_contact_search_error") else 204),
-                0, is_sensitive=True, masked_fields=["authorization", "email", "directPhone", "mobilePhone"],
-            )
-            # Contact Enrich — show actual person IDs extracted from search
-            person_ids = [c.get("person_id") for c in contacts if c.get("person_id")]
-            _log_api_call(
-                job_data, "ZoomInfo Contact Enrich (from Search person_ids)",
-                "https://api.zoominfo.com/gtm/data/v1/contacts/enrich", "POST",
-                {"data": {"type": "ContactEnrich", "attributes": {"personId": person_ids or ["(no person_ids returned from search)"]}}},
-                {
-                    "contacts_enriched": len(person_ids),
-                    "enriched_contacts": [
-                        {
-                            "personId": c.get("person_id"), "name": c.get("name"),
-                            "directPhone": c.get("direct_phone") or "N/A",
-                            "mobilePhone": c.get("mobile_phone") or "N/A",
-                            "companyPhone": c.get("company_phone") or "N/A",
-                            "contactAccuracyScore": c.get("contact_accuracy_score"),
-                        }
-                        for c in contacts[:5]
-                    ] if person_ids else [{"note": "Search did not return personId — phones come from outputFields in search response"}],
-                },
-                200 if person_ids else 204,
-                0, is_sensitive=True, masked_fields=["authorization", "directPhone", "mobilePhone"],
-            )
+            try:
+                _log_api_call(
+                    job_data, "ZoomInfo Company Enrichment",
+                    "https://api.zoominfo.com/gtm/data/v1/companies/enrich", "POST",
+                    {"data": {"type": "CompanyEnrich", "attributes": {"companyDomain": domain, "companyName": company_name}}},
+                    company_result.get("data") if isinstance(company_result, dict) else {"error": str(company_result)},
+                    200 if isinstance(company_result, dict) and company_result.get("success") else 500,
+                    0, is_sensitive=True, masked_fields=["authorization"],
+                )
+                _log_api_call(
+                    job_data, "ZoomInfo Intent Enrichment",
+                    "https://api.zoominfo.com/gtm/data/v1/intent/enrich", "POST",
+                    {"data": {"type": "IntentEnrich", "attributes": {"companyDomain": domain}}},
+                    {"intent_signals": intent_result.get("intent_signals", [])} if isinstance(intent_result, dict) else {"error": str(intent_result)},
+                    200 if isinstance(intent_result, dict) and intent_result.get("success") else 500,
+                    0, is_sensitive=True, masked_fields=["authorization"],
+                )
+                _log_api_call(
+                    job_data, "ZoomInfo Scoops Search",
+                    "https://api.zoominfo.com/gtm/data/v1/scoops/search", "POST",
+                    {"data": {"type": "ScoopSearch", "attributes": {"companyDomain": domain}}},
+                    {"scoops": scoops_result.get("scoops", [])} if isinstance(scoops_result, dict) else {"error": str(scoops_result)},
+                    200 if isinstance(scoops_result, dict) and scoops_result.get("success") else 500,
+                    0, is_sensitive=True, masked_fields=["authorization"],
+                )
+                _log_api_call(
+                    job_data, "ZoomInfo News Search",
+                    "https://api.zoominfo.com/gtm/data/v1/news/search", "POST",
+                    {"data": {"type": "NewsSearch", "attributes": {"companyName": company_name}}},
+                    {"articles_count": len(news_result.get("articles", []))} if isinstance(news_result, dict) else {"error": str(news_result)},
+                    200 if isinstance(news_result, dict) and news_result.get("success") else 500,
+                    0, is_sensitive=True, masked_fields=["authorization"],
+                )
+                _log_api_call(
+                    job_data, "ZoomInfo Technologies Enrichment",
+                    "https://api.zoominfo.com/gtm/data/v1/technologies/enrich", "POST",
+                    {"data": {"type": "TechEnrich", "attributes": {"companyDomain": domain}}},
+                    {"technologies_count": len(tech_result.get("technologies", []))} if isinstance(tech_result, dict) else {"error": str(tech_result)},
+                    200 if isinstance(tech_result, dict) and tech_result.get("success") else 500,
+                    0, is_sensitive=True, masked_fields=["authorization"],
+                )
+                # Contact Search — actual management-level + outputFields strategy
+                from worker.zoominfo_client import OUTPUT_FIELDS, CSUITE_JOB_TITLES
+                contacts_with_phones = [c for c in contacts if c.get("direct_phone") or c.get("mobile_phone") or c.get("company_phone")]
+                _log_api_call(
+                    job_data, "ZoomInfo Contact Search (Management Level + C-Suite Titles)",
+                    "https://api.zoominfo.com/gtm/data/v1/contacts/search", "POST",
+                    {"data": {"type": "ContactSearch", "attributes": {
+                        "companyDomain": domain,
+                        "managementLevel": ["C-Level", "VP-Level", "Director", "Manager"],
+                        "jobTitle": CSUITE_JOB_TITLES,
+                        "outputFields": OUTPUT_FIELDS,
+                        "pageSize": 25,
+                    }}},
+                    {
+                        "contacts_found": len(contacts),
+                        "contacts_with_phones": len(contacts_with_phones),
+                        "sample": [
+                            {
+                                "name": c.get("name"), "title": c.get("title"),
+                                "directPhone": c.get("direct_phone") or "N/A",
+                                "mobilePhone": c.get("mobile_phone") or "N/A",
+                                "contactAccuracyScore": c.get("contact_accuracy_score"),
+                            }
+                            for c in contacts[:5]
+                        ],
+                        "error": combined_data.get("_contact_search_error"),
+                    },
+                    200 if contacts else (500 if combined_data.get("_contact_search_error") else 204),
+                    0, is_sensitive=True, masked_fields=["authorization", "email", "directPhone", "mobilePhone"],
+                )
+                # Contact Enrich — show actual person IDs from search results
+                person_ids = [c.get("person_id") for c in contacts if c.get("person_id")]
+                _log_api_call(
+                    job_data, "ZoomInfo Contact Enrich (from Search person_ids)",
+                    "https://api.zoominfo.com/gtm/data/v1/contacts/enrich", "POST",
+                    {"data": {"type": "ContactEnrich", "attributes": {
+                        "personId": person_ids or ["(no person_ids returned — phones sourced from outputFields in search)"]
+                    }}},
+                    {
+                        "contacts_enriched": len(person_ids),
+                        "enriched_contacts": [
+                            {
+                                "personId": c.get("person_id"), "name": c.get("name"),
+                                "directPhone": c.get("direct_phone") or "N/A",
+                                "mobilePhone": c.get("mobile_phone") or "N/A",
+                                "companyPhone": c.get("company_phone") or "N/A",
+                                "contactAccuracyScore": c.get("contact_accuracy_score"),
+                            }
+                            for c in contacts[:5]
+                        ] if person_ids else [{"note": "phones come from outputFields in search response"}],
+                    },
+                    200 if person_ids else 204,
+                    0, is_sensitive=True, masked_fields=["authorization", "directPhone", "mobilePhone"],
+                )
+            except Exception as log_err:
+                # Logging is non-critical — never let it corrupt combined_data / contacts
+                logger.warning(f"ZoomInfo debug logging failed (non-fatal): {log_err}")
 
         return combined_data, contacts
 
