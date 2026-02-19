@@ -165,7 +165,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-oauth2-static-token-fallback",
+        "deploy_version": "zoominfo-auth-diagnostics-v2",
     }
 
 
@@ -2698,7 +2698,9 @@ async def debug_zoominfo_raw(domain: str):
     if not zi_client:
         return {"error": "ZoomInfo not configured"}
 
-    from worker.zoominfo_client import ENDPOINTS, OUTPUT_FIELDS
+    import base64
+    import httpx as _httpx
+    from worker.zoominfo_client import ENDPOINTS, OUTPUT_FIELDS, ZOOMINFO_TOKEN_URL
 
     website_candidates = zi_client._website_candidates(domain)
     company_name = zi_client._company_name_from_domain(domain)
@@ -2706,7 +2708,38 @@ async def debug_zoominfo_raw(domain: str):
         "domain_input": domain,
         "website_candidates": website_candidates,
         "company_name_guess": company_name,
+        "auto_auth_mode": zi_client._auto_auth,
+        "has_static_token": bool(zi_client._static_token),
+        "current_token_set": bool(zi_client.access_token),
     }
+
+    # 0. OAuth2 token attempt — test each scope variant and return raw response body
+    if zi_client._auto_auth:
+        creds = f"{zi_client._client_id}:{zi_client._client_secret}"
+        basic = base64.b64encode(creds.encode()).decode()
+        oauth_results = {}
+        for scope in ["openid", "", "api"]:
+            body = "grant_type=client_credentials"
+            if scope:
+                body += f"&scope={scope}"
+            try:
+                async with _httpx.AsyncClient(timeout=10) as hc:
+                    r = await hc.post(
+                        ZOOMINFO_TOKEN_URL,
+                        headers={"Authorization": f"Basic {basic}", "Content-Type": "application/x-www-form-urlencoded"},
+                        data=body,
+                    )
+                    try:
+                        resp_body = r.json()
+                    except Exception:
+                        resp_body = r.text[:500]
+                    oauth_results[f"scope_{scope or 'empty'}"] = {
+                        "status": r.status_code,
+                        "body": resp_body,
+                    }
+            except Exception as e:
+                oauth_results[f"scope_{scope or 'empty'}"] = {"error": str(e)}
+        results["oauth2_token_attempts"] = oauth_results
 
     # 1. Company enrich — all URL variants
     try:
