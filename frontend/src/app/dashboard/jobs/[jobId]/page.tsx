@@ -22,13 +22,16 @@ interface InfoItemProps {
 }
 
 function InfoItem({ label, value, icon }: InfoItemProps) {
-  if (!value) return null;
   return (
     <div className="flex items-start space-x-3 py-3 border-b border-slate-100 last:border-0">
       {icon && <div className="text-slate-400 mt-0.5">{icon}</div>}
       <div className="flex-1 min-w-0">
         <p className="text-sm text-slate-500">{label}</p>
-        <p className="text-slate-900 font-medium truncate">{value}</p>
+        {value ? (
+          <p className="text-slate-900 font-medium truncate">{value}</p>
+        ) : (
+          <p className="text-slate-400 font-medium">—</p>
+        )}
       </div>
     </div>
   );
@@ -152,7 +155,10 @@ export default function JobDetailPage() {
     industry: job.result.industry || job.result.validated_data?.industry,
     sub_industry: job.result.sub_industry || job.result.validated_data?.sub_industry,
     employee_count: job.result.employee_count || job.result.validated_data?.employee_count,
+    employees_range: job.result.employees_range || job.result.validated_data?.employees_range,
     annual_revenue: job.result.annual_revenue || job.result.validated_data?.annual_revenue,
+    revenue: job.result.revenue || job.result.validated_data?.revenue,
+    revenue_range: job.result.revenue_range || job.result.validated_data?.revenue_range,
     headquarters: job.result.headquarters || job.result.validated_data?.headquarters,
     geographic_reach: job.result.geographic_reach || job.result.validated_data?.geographic_reach,
     founded_year: job.result.founded_year || job.result.validated_data?.founded_year,
@@ -164,7 +170,12 @@ export default function JobDetailPage() {
     technologies: job.result.technologies || job.result.validated_data?.technologies,
     competitors: job.result.competitors || job.result.validated_data?.competitors,
     company_type: job.result.company_type || job.result.validated_data?.company_type,
+    ownership_type: job.result.ownership_type || job.result.validated_data?.ownership_type,
     linkedin_url: job.result.linkedin_url || job.result.validated_data?.linkedin_url,
+    phone: job.result.phone || job.result.validated_data?.phone,
+    ticker: job.result.ticker || job.result.validated_data?.ticker,
+    parent_company: job.result.parent_company || job.result.validated_data?.parent_company,
+    num_locations: job.result.num_locations || job.result.validated_data?.num_locations,
   };
 
   // Extract new intelligence sections from result
@@ -252,12 +263,16 @@ export default function JobDetailPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
               <InfoItem label="Industry" value={data.industry} />
               <InfoItem label="Sub-Industry" value={(data as any).sub_industry} />
-              <InfoItem label="Employee Count" value={data.employee_count} />
-              <InfoItem label="Annual Revenue" value={(data as any).annual_revenue || data.revenue} />
+              <InfoItem label="Employee Count" value={data.employee_count || (data as any).employees_range} />
+              <InfoItem label="Annual Revenue" value={(data as any).annual_revenue || data.revenue || (data as any).revenue_range} />
               <InfoItem label="Headquarters" value={data.headquarters} />
               <InfoItem label="Founded" value={data.founded_year} />
               <InfoItem label="CEO" value={data.ceo} />
-              <InfoItem label="Company Type" value={(data as any).company_type} />
+              <InfoItem label="Company Type" value={(data as any).company_type || (data as any).ownership_type} />
+              <InfoItem label="Locations" value={(data as any).num_locations} />
+              <InfoItem label="Phone" value={(data as any).phone} />
+              <InfoItem label="Ticker" value={(data as any).ticker} />
+              <InfoItem label="Parent Company" value={(data as any).parent_company} />
             </div>
           </div>
 

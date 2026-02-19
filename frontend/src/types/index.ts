@@ -56,7 +56,10 @@ export interface ProfileResult {
   industry?: string;
   sub_industry?: string;
   employee_count?: number | string;
+  employees_range?: string;
   annual_revenue?: string;
+  revenue?: string;
+  revenue_range?: string;
   headquarters?: string;
   geographic_reach?: string[];
   founded_year?: number | string;
@@ -68,7 +71,12 @@ export interface ProfileResult {
   technologies?: string[];
   competitors?: string[];
   company_type?: string;
+  ownership_type?: string;
   linkedin_url?: string;
+  phone?: string;
+  ticker?: string;
+  parent_company?: string;
+  num_locations?: number | string;
   // New expanded intelligence sections
   executive_snapshot?: ExecutiveSnapshot;
   buying_signals?: BuyingSignals;
@@ -89,8 +97,10 @@ export interface CompanyData {
   industry?: string;
   sub_industry?: string;
   employee_count?: number | string;
+  employees_range?: string;
   annual_revenue?: string;
   revenue?: string;
+  revenue_range?: string;
   headquarters?: string;
   founded_year?: number | string;
   founders?: string[];
@@ -103,7 +113,12 @@ export interface CompanyData {
   products?: string[];
   competitors?: string[];
   company_type?: string;
+  ownership_type?: string;
   linkedin_url?: string;
+  phone?: string;
+  ticker?: string;
+  parent_company?: string;
+  num_locations?: number | string;
   contacts?: {
     website?: string;
     linkedin?: string;
