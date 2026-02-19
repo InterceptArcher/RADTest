@@ -11,6 +11,7 @@ import json
 import logging
 import sys
 import os
+import time
 from datetime import datetime
 from dotenv import load_dotenv
 
@@ -814,7 +815,38 @@ def _get_zoominfo_client():
         return None
 
 
-async def _fetch_all_zoominfo(zi_client, company_data: dict):
+def _log_api_call(
+    job_data: dict,
+    api_name: str,
+    url: str,
+    method: str,
+    request_body: Any,
+    response_body: Any,
+    status_code: int,
+    duration_ms: int,
+    is_sensitive: bool = True,
+    masked_fields: Optional[List[str]] = None,
+) -> None:
+    """Append a real API call record to the job's api_calls list for debug mode."""
+    calls = job_data.setdefault("api_calls", [])
+    calls.append({
+        "id": f"api-{len(calls)}",
+        "api_name": api_name,
+        "url": url,
+        "method": method,
+        "status_code": status_code,
+        "status_text": "OK" if 200 <= status_code < 300 else "Error",
+        "headers": {"content-type": "application/json"},
+        "request_body": request_body,
+        "response_body": response_body,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+        "duration": duration_ms,
+        "is_sensitive": is_sensitive,
+        "masked_fields": masked_fields or [],
+    })
+
+
+async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[dict] = None):
     """
     Fetch all ZoomInfo data in parallel: company enrich, intent, scoops,
     news, tech, and search-and-enrich contacts.
@@ -906,6 +938,104 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict):
                 err = contacts_result.get("error") or "No contacts returned"
                 logger.warning(f"⚠️  ZoomInfo contacts returned 0 for domain={domain}: {err}")
                 combined_data["_contact_search_error"] = err
+
+        # Log all ZoomInfo sub-calls to job's api_calls list for debug mode
+        if job_data is not None:
+            _log_api_call(
+                job_data, "ZoomInfo Company Enrichment",
+                "https://api.zoominfo.com/gtm/data/v1/companies/enrich", "POST",
+                {"data": {"type": "CompanyEnrich", "attributes": {"companyDomain": domain, "companyName": company_name}}},
+                company_result.get("data") if isinstance(company_result, dict) else {"error": str(company_result)},
+                200 if isinstance(company_result, dict) and company_result.get("success") else 500,
+                0, is_sensitive=True, masked_fields=["authorization"],
+            )
+            _log_api_call(
+                job_data, "ZoomInfo Intent Enrichment",
+                "https://api.zoominfo.com/gtm/data/v1/intent/enrich", "POST",
+                {"data": {"type": "IntentEnrich", "attributes": {"companyDomain": domain}}},
+                {"intent_signals": intent_result.get("intent_signals", [])} if isinstance(intent_result, dict) else {"error": str(intent_result)},
+                200 if isinstance(intent_result, dict) and intent_result.get("success") else 500,
+                0, is_sensitive=True, masked_fields=["authorization"],
+            )
+            _log_api_call(
+                job_data, "ZoomInfo Scoops Search",
+                "https://api.zoominfo.com/gtm/data/v1/scoops/search", "POST",
+                {"data": {"type": "ScoopSearch", "attributes": {"companyDomain": domain}}},
+                {"scoops": scoops_result.get("scoops", [])} if isinstance(scoops_result, dict) else {"error": str(scoops_result)},
+                200 if isinstance(scoops_result, dict) and scoops_result.get("success") else 500,
+                0, is_sensitive=True, masked_fields=["authorization"],
+            )
+            _log_api_call(
+                job_data, "ZoomInfo News Search",
+                "https://api.zoominfo.com/gtm/data/v1/news/search", "POST",
+                {"data": {"type": "NewsSearch", "attributes": {"companyName": company_name}}},
+                {"articles_count": len(news_result.get("articles", []))} if isinstance(news_result, dict) else {"error": str(news_result)},
+                200 if isinstance(news_result, dict) and news_result.get("success") else 500,
+                0, is_sensitive=True, masked_fields=["authorization"],
+            )
+            _log_api_call(
+                job_data, "ZoomInfo Technologies Enrichment",
+                "https://api.zoominfo.com/gtm/data/v1/technologies/enrich", "POST",
+                {"data": {"type": "TechEnrich", "attributes": {"companyDomain": domain}}},
+                {"technologies_count": len(tech_result.get("technologies", []))} if isinstance(tech_result, dict) else {"error": str(tech_result)},
+                200 if isinstance(tech_result, dict) and tech_result.get("success") else 500,
+                0, is_sensitive=True, masked_fields=["authorization"],
+            )
+            # Contact Search — show the actual management-level + outputFields approach
+            from worker.zoominfo_client import OUTPUT_FIELDS, CSUITE_JOB_TITLES
+            contact_search_req = {
+                "data": {"type": "ContactSearch", "attributes": {
+                    "companyDomain": domain,
+                    "managementLevel": ["C-Level", "VP-Level", "Director", "Manager"],
+                    "jobTitle": CSUITE_JOB_TITLES,
+                    "outputFields": OUTPUT_FIELDS,
+                    "pageSize": 25,
+                }}
+            }
+            contacts_with_phones = [c for c in contacts if c.get("direct_phone") or c.get("mobile_phone") or c.get("company_phone")]
+            _log_api_call(
+                job_data, "ZoomInfo Contact Search (Management Level + C-Suite Titles)",
+                "https://api.zoominfo.com/gtm/data/v1/contacts/search", "POST",
+                contact_search_req,
+                {
+                    "contacts_found": len(contacts),
+                    "contacts_with_phones": len(contacts_with_phones),
+                    "sample": [
+                        {
+                            "name": c.get("name"), "title": c.get("title"),
+                            "directPhone": c.get("direct_phone") or "N/A",
+                            "mobilePhone": c.get("mobile_phone") or "N/A",
+                            "contactAccuracyScore": c.get("contact_accuracy_score"),
+                        }
+                        for c in contacts[:5]
+                    ],
+                    "error": combined_data.get("_contact_search_error"),
+                },
+                200 if contacts else (500 if combined_data.get("_contact_search_error") else 204),
+                0, is_sensitive=True, masked_fields=["authorization", "email", "directPhone", "mobilePhone"],
+            )
+            # Contact Enrich — show actual person IDs extracted from search
+            person_ids = [c.get("person_id") for c in contacts if c.get("person_id")]
+            _log_api_call(
+                job_data, "ZoomInfo Contact Enrich (from Search person_ids)",
+                "https://api.zoominfo.com/gtm/data/v1/contacts/enrich", "POST",
+                {"data": {"type": "ContactEnrich", "attributes": {"personId": person_ids or ["(no person_ids returned from search)"]}}},
+                {
+                    "contacts_enriched": len(person_ids),
+                    "enriched_contacts": [
+                        {
+                            "personId": c.get("person_id"), "name": c.get("name"),
+                            "directPhone": c.get("direct_phone") or "N/A",
+                            "mobilePhone": c.get("mobile_phone") or "N/A",
+                            "companyPhone": c.get("company_phone") or "N/A",
+                            "contactAccuracyScore": c.get("contact_accuracy_score"),
+                        }
+                        for c in contacts[:5]
+                    ] if person_ids else [{"note": "Search did not return personId — phones come from outputFields in search response"}],
+                },
+                200 if person_ids else 204,
+                0, is_sensitive=True, masked_fields=["authorization", "directPhone", "mobilePhone"],
+            )
 
         return combined_data, contacts
 
@@ -1014,6 +1144,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["status"] = "processing"
         jobs_store[job_id]["progress"] = 10
         jobs_store[job_id]["current_step"] = "Initializing..."
+        jobs_store[job_id]["api_calls"] = []  # Real API call log for debug mode
 
         # Step 0.5: Run Orchestrator to determine optimal API routing
         jobs_store[job_id]["progress"] = 15
@@ -1035,23 +1166,59 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Step 1: ALWAYS query Apollo.io — primary source for company data and contacts
         jobs_store[job_id]["progress"] = 20
         jobs_store[job_id]["current_step"] = "Querying Apollo.io..."
+        _t0 = time.monotonic()
         apollo_data = await fetch_apollo_data(company_data)
+        _log_api_call(
+            jobs_store[job_id], "Apollo.io Organization Search",
+            "https://api.apollo.io/v1/mixed_companies/search", "POST",
+            {"q_organization_name": company_data["company_name"], "domain": company_data["domain"]},
+            {"fields_returned": list(apollo_data.keys())[:20], "has_data": bool(apollo_data)},
+            200 if apollo_data else 401,
+            int((time.monotonic() - _t0) * 1000),
+            is_sensitive=True, masked_fields=["api_key"],
+        )
         logger.info(f"Apollo returned {len(apollo_data)} fields: {list(apollo_data.keys())[:10]}")
 
         # Step 2: ALWAYS query PeopleDataLabs — primary source for technographics and firmographics
         jobs_store[job_id]["progress"] = 30
         jobs_store[job_id]["current_step"] = "Querying PeopleDataLabs..."
+        _t0 = time.monotonic()
         pdl_data = await fetch_pdl_data(company_data)
+        _log_api_call(
+            jobs_store[job_id], "PeopleDataLabs Company Enrich",
+            "https://api.peopledatalabs.com/v5/company/enrich", "GET",
+            {"website": company_data["domain"]},
+            {"fields_returned": list(pdl_data.keys())[:20], "has_data": bool(pdl_data)},
+            200 if pdl_data else 404,
+            int((time.monotonic() - _t0) * 1000),
+            is_sensitive=True, masked_fields=["api_key"],
+        )
         logger.info(f"PDL returned {len(pdl_data)} fields: {list(pdl_data.keys())[:10]}")
 
         # Step 2.5: Gather intelligence from Hunter.io (ALWAYS QUERIED - required for contacts)
-        # Hunter.io is ALWAYS queried regardless of orchestrator decision because:
-        # - It provides verified email addresses for stakeholders
-        # - It's the primary source for contact information
-        # - should_query_api("hunter") ALWAYS returns True
         jobs_store[job_id]["progress"] = 40
         jobs_store[job_id]["current_step"] = "Querying Hunter.io for contact data..."
+        _t0 = time.monotonic()
         hunter_data = await fetch_hunter_data(company_data)
+        _log_api_call(
+            jobs_store[job_id], "Hunter.io Domain Search",
+            "https://api.hunter.io/v2/domain-search", "GET",
+            {"domain": company_data["domain"], "limit": 20},
+            {
+                "emails_found": len(hunter_data.get("emails", [])) if hunter_data else 0,
+                "domain": hunter_data.get("domain") if hunter_data else None,
+                "email_pattern": hunter_data.get("pattern") if hunter_data else None,
+                "organization": hunter_data.get("organization") if hunter_data else None,
+                "sample_contacts": [
+                    {"name": f"{e.get('first_name','')} {e.get('last_name','')}".strip(),
+                     "email": e.get("value"), "position": e.get("position")}
+                    for e in (hunter_data.get("emails", [])[:5] if hunter_data else [])
+                ],
+            },
+            200 if hunter_data else 404,
+            int((time.monotonic() - _t0) * 1000),
+            is_sensitive=True, masked_fields=["api_key", "email"],
+        )
         if hunter_data:
             logger.info(f"Hunter.io returned {len(hunter_data.get('emails', []))} contacts")
         else:
@@ -1065,7 +1232,9 @@ async def process_company_profile(job_id: str, company_data: dict):
         zi_client = _get_zoominfo_client()
         if zi_client:
             try:
-                zoominfo_data, zoominfo_contacts = await _fetch_all_zoominfo(zi_client, company_data)
+                zoominfo_data, zoominfo_contacts = await _fetch_all_zoominfo(
+                    zi_client, company_data, job_data=jobs_store[job_id]
+                )
                 # Store contacts in zoominfo_data so they can be retrieved later
                 zoominfo_data["contacts"] = zoominfo_contacts
                 jobs_store[job_id]["zoominfo_data"] = zoominfo_data
@@ -1076,6 +1245,13 @@ async def process_company_profile(job_id: str, company_data: dict):
         else:
             logger.info("ZoomInfo not configured, skipping")
             jobs_store[job_id]["zoominfo_data"] = {}
+            _log_api_call(
+                jobs_store[job_id], "ZoomInfo (not configured)",
+                "https://api.zoominfo.com/gtm/data/v1/contacts/search", "POST",
+                {"note": "ZoomInfo credentials not set — ZOOMINFO_CLIENT_ID/ZOOMINFO_CLIENT_SECRET or ZOOMINFO_ACCESS_TOKEN required"},
+                {"error": "ZoomInfo not configured"},
+                0, 0, is_sensitive=False,
+            )
 
         # Step 2.75: Fetch stakeholders from Apollo
         jobs_store[job_id]["progress"] = 45
@@ -1119,13 +1295,56 @@ async def process_company_profile(job_id: str, company_data: dict):
                     f"Looking up {len(contacts_needing_phones)} Apollo/Hunter contacts "
                     "in ZoomInfo GTM for phone numbers..."
                 )
+                _t_identity = time.monotonic()
                 try:
                     lookup_result = await zi_client.lookup_contacts_by_identity(
                         contacts=contacts_needing_phones,
                         domain=company_data["domain"]
                     )
-                    if lookup_result.get("success") and lookup_result.get("people"):
-                        zi_lookup_contacts = lookup_result["people"]
+                    zi_lookup_contacts = lookup_result.get("people", []) if lookup_result.get("success") else []
+                    contacts_with_phones = [c for c in zi_lookup_contacts if c.get("direct_phone") or c.get("mobile_phone")]
+                    _identity_duration = int((time.monotonic() - _t_identity) * 1000)
+
+                    # Store step result for debug process steps
+                    jobs_store[job_id]["step_2_84_result"] = {
+                        "contacts_looked_up": len(contacts_needing_phones),
+                        "contacts_found": len(zi_lookup_contacts),
+                        "contacts_with_phones": len(contacts_with_phones),
+                        "duration_ms": _identity_duration,
+                    }
+
+                    # Log as real API call
+                    _log_api_call(
+                        jobs_store[job_id],
+                        "ZoomInfo GTM Identity Lookup (Apollo/Hunter cross-reference)",
+                        "https://api.zoominfo.com/gtm/data/v1/contacts/search", "POST",
+                        {
+                            "strategy": "Search by email then firstName+lastName for each Apollo/Hunter contact",
+                            "contacts_attempted": [
+                                {"name": c.get("name"), "email": c.get("email"), "source": c.get("source")}
+                                for c in contacts_needing_phones[:10]
+                            ],
+                            "domain": company_data["domain"],
+                        },
+                        {
+                            "contacts_found": len(zi_lookup_contacts),
+                            "contacts_with_phones": len(contacts_with_phones),
+                            "results": [
+                                {
+                                    "name": c.get("name"), "title": c.get("title"),
+                                    "directPhone": c.get("direct_phone") or "N/A",
+                                    "mobilePhone": c.get("mobile_phone") or "N/A",
+                                    "contactAccuracyScore": c.get("contact_accuracy_score"),
+                                }
+                                for c in zi_lookup_contacts[:10]
+                            ],
+                        },
+                        200 if zi_lookup_contacts else 204,
+                        _identity_duration,
+                        is_sensitive=True, masked_fields=["authorization", "directPhone", "mobilePhone"],
+                    )
+
+                    if zi_lookup_contacts:
                         logger.info(
                             f"ZoomInfo GTM identity lookup: {len(zi_lookup_contacts)} contacts "
                             f"found for domain={company_data['domain']}"
@@ -1140,6 +1359,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                         )
                 except Exception as e:
                     logger.warning(f"ZoomInfo GTM identity lookup failed: {e}")
+                    jobs_store[job_id]["step_2_84_result"] = {"error": str(e)}
 
         # Step 2.83: LLM Contact Fact Checker - Validate contacts against public knowledge
         jobs_store[job_id]["progress"] = 46
@@ -1231,11 +1451,35 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["progress"] = 48
         if should_query_api("gnews", orchestrator_plan):
             jobs_store[job_id]["current_step"] = "Gathering recent news and buying signals..."
+            _t0 = time.monotonic()
             try:
                 news_data = await fetch_company_news(company_data["company_name"], company_data.get("domain"))
+                _log_api_call(
+                    jobs_store[job_id], "GNews API - Recent Company News",
+                    "https://gnews.io/api/v4/search", "GET",
+                    {"q": company_data["company_name"], "lang": "en", "max": 10, "sortby": "publishedAt"},
+                    {
+                        "success": news_data.get("success", False) if news_data else False,
+                        "articles_count": news_data.get("articles_count", 0) if news_data else 0,
+                        "date_range": news_data.get("date_range") if news_data else "N/A",
+                        "summaries": news_data.get("summaries", {}) if news_data else {},
+                        "error": news_data.get("error") if news_data and not news_data.get("success") else None,
+                    },
+                    200 if news_data and news_data.get("success") else 503,
+                    int((time.monotonic() - _t0) * 1000),
+                    is_sensitive=True, masked_fields=["token"],
+                )
             except Exception as e:
                 logger.warning(f"News gathering failed: {e}")
                 news_data = None
+                _log_api_call(
+                    jobs_store[job_id], "GNews API - Recent Company News",
+                    "https://gnews.io/api/v4/search", "GET",
+                    {"q": company_data["company_name"]},
+                    {"error": str(e)},
+                    500, int((time.monotonic() - _t0) * 1000),
+                    is_sensitive=True, masked_fields=["token"],
+                )
         else:
             logger.info("Orchestrator skipped GNews - not needed for required data points")
             jobs_store[job_id]["current_step"] = "Skipped GNews (not in orchestrator plan)..."
@@ -2906,6 +3150,10 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
 
     base_time = datetime.fromisoformat(created_at.replace("Z", ""))
 
+    # Use real API calls logged during pipeline execution if available.
+    # The synthetic fallback exists for old jobs and serves as a template.
+    _real_api_calls = job_data.get("api_calls", [])
+
     return {
         "job_id": job_id,
         "company_name": company_name,
@@ -3003,6 +3251,37 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                     "passed_contacts": fact_check_results.get("passed_count", 0),
                     "filtered_contacts": fact_check_results.get("filtered_count", 0),
                     "threshold": 0.3,
+                }
+            },
+            {
+                "id": "step-1f",
+                "name": "ZoomInfo GTM Identity Lookup (Apollo/Hunter cross-reference)",
+                "description": (
+                    "Cross-referencing Apollo.io and Hunter.io contacts against ZoomInfo GTM API to retrieve "
+                    "direct phone, mobile phone, and company phone numbers. Searches by email first, then "
+                    "firstName+lastName. Concurrent lookups capped at 10 contacts."
+                ),
+                "status": (
+                    "completed" if job_data.get("step_2_84_result", {}).get("contacts_found", 0) > 0
+                    else ("failed" if job_data.get("step_2_84_result", {}).get("error") else
+                          ("skipped" if not job_data.get("step_2_84_result") else "completed"))
+                ),
+                "start_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(
+                    milliseconds=4000 + job_data.get("step_2_84_result", {}).get("duration_ms", 0)
+                )).isoformat() + "Z",
+                "duration": job_data.get("step_2_84_result", {}).get("duration_ms", 0),
+                "metadata": {
+                    "source": "ZoomInfo GTM Contact Search",
+                    "strategy": "Email lookup → firstName+lastName fallback (concurrent)",
+                    "contacts_looked_up": job_data.get("step_2_84_result", {}).get("contacts_looked_up", 0),
+                    "contacts_found_in_zoominfo": job_data.get("step_2_84_result", {}).get("contacts_found", 0),
+                    "contacts_with_phones_added": job_data.get("step_2_84_result", {}).get("contacts_with_phones", 0),
+                    "error": job_data.get("step_2_84_result", {}).get("error"),
+                    "note": (
+                        "Apollo/Hunter contacts lack ZoomInfo personId so the enrich endpoint cannot be used. "
+                        "Instead we use the GTM contact search with outputFields to retrieve phone data directly."
+                    ) if not job_data.get("step_2_84_result", {}).get("error") else None,
                 }
             },
             {
@@ -3126,7 +3405,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "metadata": {"slideshow_url": result.get("slideshow_url", "N/A")}
             },
         ],
-        "api_responses": [
+        "api_responses": (_real_api_calls if _real_api_calls else [
             {
                 "id": "api-0",
                 "api_name": "ZoomInfo Company Enrichment (PRIMARY SOURCE)",
@@ -3203,7 +3482,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "status_code": 200,
                 "status_text": "OK",
                 "headers": {"content-type": "application/vnd.api+json"},
-                "request_body": {"data": {"type": "ContactSearch", "attributes": {"companyDomain": domain, "jobTitle": ["CEO", "CTO", "CFO"]}}},
+                "request_body": {"data": {"type": "ContactSearch", "attributes": {"companyDomain": domain, "managementLevel": ["C-Level", "VP-Level", "Director", "Manager"], "jobTitle": ["Chief Executive Officer", "CEO", "Chief Technology Officer", "CTO", "Chief Information Officer", "CIO", "Chief Financial Officer", "CFO", "Chief Operating Officer", "COO", "...38 more titles"], "outputFields": ["personId", "firstName", "lastName", "email", "jobTitle", "phone", "directPhone", "mobilePhone", "companyPhone", "contactAccuracyScore", "...3 more"]}}},
                 "response_body": {
                     "data": zi_contacts[:5] if zi_contacts else [
                         {"firstName": zoominfo_extracted["ceo"].split()[0] if zoominfo_extracted["ceo"] != "N/A" and " " in str(zoominfo_extracted["ceo"]) else "N/A",
@@ -3224,7 +3503,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "status_code": 200 if zi_contacts else 204,
                 "status_text": "OK" if zi_contacts else "No Content",
                 "headers": {"content-type": "application/vnd.api+json"},
-                "request_body": {"data": {"type": "ContactEnrich", "attributes": {"personId": ["<contact_ids>"]}}},
+                "request_body": {"data": {"type": "ContactEnrich", "attributes": {"personId": [c.get("person_id") for c in zi_contacts[:5] if c.get("person_id")] or ["(person_ids come from contact search results)"]}}},
                 "response_body": {
                     "data": [
                         {
@@ -3399,7 +3678,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "is_sensitive": True,
                 "masked_fields": ["api_key"]
             },
-        ],
+        ]),
         "llm_thought_processes": _generate_council_thought_processes(
             job_data, company_name, base_time, apollo_extracted, pdl_extracted, validated_data
         ),
