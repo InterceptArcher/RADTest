@@ -180,10 +180,12 @@ class ZoomInfoClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.headers = {
-            # ZoomInfo GTM API is JSON:API compliant — responses are sent as
-            # application/vnd.api+json. Sending Accept: application/json causes
-            # HTTP 406 Not Acceptable because the server can't satisfy that type.
-            "Content-Type": "application/vnd.api+json",
+            # Content-Type stays application/json — ZoomInfo accepts both
+            # JSON:API and flat JSON request bodies with this type. Using
+            # application/vnd.api+json breaks flat-format fallback payloads.
+            # Accept must include application/vnd.api+json — ZoomInfo GTM sends
+            # responses with that type and returns 406 if it's not accepted.
+            "Content-Type": "application/json",
             "Accept": "application/vnd.api+json, application/json",
         }
         if self.access_token:
@@ -440,8 +442,8 @@ class ZoomInfoClient:
 
         # Strategy 1: Search by management level.
         # ZoomInfo requires managementLevel as an array, not a string.
-        # outputFields explicitly requests phone data so it's returned from the
-        # search step itself — no separate enrich call needed for ZoomInfo contacts.
+        # outputFields is intentionally omitted — it causes HTTP 400 on the search
+        # endpoint. Phone data is retrieved via the separate contact enrich step.
         # Valid ZoomInfo GTM managementLevel enum values (hyphenated -Level suffix required)
         management_levels = ["C-Level", "VP-Level", "Director-Level", "Manager-Level"]
         for level in management_levels:
@@ -454,7 +456,6 @@ class ZoomInfoClient:
                         "attributes": {
                             "companyWebsite": website_candidates,
                             "managementLevel": [level],
-                            "outputFields": OUTPUT_FIELDS,
                             "rpp": min(max_results, 10)
                         }
                     }
@@ -499,7 +500,6 @@ class ZoomInfoClient:
 
         # Strategy 2: Explicit job title search covering the full C-suite.
         # Uses CSUITE_JOB_TITLES (all chiefs, not just CEO/CTO/CIO/CFO/COO).
-        # outputFields ensures phone data is returned from the search directly.
         if len(all_people) < max_results:
             if job_titles is None:
                 job_titles = CSUITE_JOB_TITLES
@@ -511,7 +511,6 @@ class ZoomInfoClient:
                         "attributes": {
                             "companyWebsite": website_candidates,
                             "jobTitle": job_titles,
-                            "outputFields": OUTPUT_FIELDS,
                             "rpp": max_results
                         }
                     }
@@ -559,7 +558,6 @@ class ZoomInfoClient:
                     ENDPOINTS["contact_search"],
                     {"data": {"type": "ContactSearch", "attributes": {
                         "companyWebsite": website_candidates,
-                        "outputFields": OUTPUT_FIELDS,
                         "rpp": max_results,
                     }}}
                 )
@@ -591,7 +589,6 @@ class ZoomInfoClient:
                         ENDPOINTS["contact_search"],
                         {"data": {"type": "ContactSearch", "attributes": {
                             "companyName": company_name,
-                            "outputFields": OUTPUT_FIELDS,
                             "rpp": max_results,
                         }}}
                     )
@@ -757,7 +754,6 @@ class ZoomInfoClient:
                         "attributes": {
                             "companyWebsite": website_candidates,
                             "email": email,
-                            "outputFields": OUTPUT_FIELDS,
                             "rpp": 1,
                         }
                     }
@@ -772,7 +768,6 @@ class ZoomInfoClient:
                             "companyWebsite": website_candidates,
                             "firstName": first_name,
                             "lastName": last_name,
-                            "outputFields": OUTPUT_FIELDS,
                             "rpp": 1,
                         }
                     }

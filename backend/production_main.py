@@ -1002,18 +1002,17 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                     200 if isinstance(tech_result, dict) and tech_result.get("success") else 500,
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
-                # Contact Search — actual management-level + outputFields strategy
-                from worker.zoominfo_client import OUTPUT_FIELDS, CSUITE_JOB_TITLES
+                # Contact Search — actual management-level + C-suite titles strategy
+                from worker.zoominfo_client import CSUITE_JOB_TITLES
                 contacts_with_phones = [c for c in contacts if c.get("direct_phone") or c.get("mobile_phone") or c.get("company_phone")]
                 _log_api_call(
                     job_data, "ZoomInfo Contact Search (Management Level + C-Suite Titles)",
                     "https://api.zoominfo.com/gtm/data/v1/contacts/search", "POST",
                     {"data": {"type": "ContactSearch", "attributes": {
                         "companyWebsite": domain,
-                        "managementLevel": ["C-Level", "VP-Level", "Director", "Manager"],
+                        "managementLevel": ["C-Level", "VP-Level", "Director-Level", "Manager-Level"],
                         "jobTitle": CSUITE_JOB_TITLES,
-                        "outputFields": OUTPUT_FIELDS,
-                        "pageSize": 25,
+                        "rpp": 25,
                     }}},
                     {
                         "contacts_found": len(contacts),
@@ -2771,8 +2770,7 @@ async def debug_zoominfo_raw(domain: str):
             ENDPOINTS["contact_search"],
             {"data": {"type": "ContactSearch", "attributes": {
                 "companyWebsite": website_candidates,
-                "outputFields": OUTPUT_FIELDS,
-                "pageSize": 5,
+                "rpp": 5,
             }}}
         )
         results["contact_search_multi_url_raw"] = contact_raw
@@ -2787,8 +2785,7 @@ async def debug_zoominfo_raw(domain: str):
             ENDPOINTS["contact_search"],
             {"data": {"type": "ContactSearch", "attributes": {
                 "companyName": company_name,
-                "outputFields": OUTPUT_FIELDS,
-                "pageSize": 5,
+                "rpp": 5,
             }}}
         )
         results["contact_search_by_name_raw"] = contact_name_raw
@@ -3620,7 +3617,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "status_code": 200,
                 "status_text": "OK",
                 "headers": {"content-type": "application/vnd.api+json"},
-                "request_body": {"data": {"type": "ContactSearch", "attributes": {"companyWebsite": domain, "managementLevel": ["C-Level", "VP-Level", "Director", "Manager"], "jobTitle": ["Chief Executive Officer", "CEO", "Chief Technology Officer", "CTO", "Chief Information Officer", "CIO", "Chief Financial Officer", "CFO", "Chief Operating Officer", "COO", "...38 more titles"], "outputFields": ["personId", "firstName", "lastName", "email", "jobTitle", "phone", "directPhone", "mobilePhone", "companyPhone", "contactAccuracyScore", "...3 more"]}}},
+                "request_body": {"data": {"type": "ContactSearch", "attributes": {"companyWebsite": domain, "managementLevel": ["C-Level", "VP-Level", "Director-Level", "Manager-Level"], "jobTitle": ["Chief Executive Officer", "CEO", "Chief Technology Officer", "CTO", "Chief Information Officer", "CIO", "Chief Financial Officer", "CFO", "Chief Operating Officer", "COO", "...38 more titles"], "rpp": 25}}},
                 "response_body": {
                     "data": zi_contacts[:5] if zi_contacts else [
                         {"firstName": zoominfo_extracted["ceo"].split()[0] if zoominfo_extracted["ceo"] != "N/A" and " " in str(zoominfo_extracted["ceo"]) else "N/A",

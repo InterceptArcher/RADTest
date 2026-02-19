@@ -794,17 +794,15 @@ class TestZoomInfoNotConfiguredDiagnostics:
 
 class TestSearchContactsOutputFields:
     """
-    TDD: search_contacts must include outputFields in every payload so ZoomInfo
-    returns phone data (directPhone, mobilePhone, companyPhone) directly from
-    the search step — not only from the separate enrich step.
-
-    Currently failing: search payloads have no outputFields → phones are null
-    even when ZoomInfo has the data.
+    outputFields is intentionally excluded from all contact search payloads.
+    ZoomInfo GTM contact search returns HTTP 400 when outputFields is included
+    in the request body. Phone data is retrieved via the separate contact
+    enrich step instead.
     """
 
     @pytest.mark.asyncio
-    async def test_search_payload_includes_output_fields(self):
-        """Every management-level search payload must include an outputFields list."""
+    async def test_search_payload_excludes_output_fields(self):
+        """No search payload should include outputFields — it causes HTTP 400."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
 
@@ -817,56 +815,66 @@ class TestSearchContactsOutputFields:
         with patch.object(client, "_make_request", side_effect=capture):
             await client.search_contacts(domain="example.com")
 
-        # At least one payload must include outputFields
         payloads_with_output = [
             p for p in captured_payloads
             if p.get("data", {}).get("attributes", {}).get("outputFields") is not None
         ]
-        assert payloads_with_output, (
-            "search_contacts must include outputFields in at least one payload. "
-            "Got payloads: " + str([list(p.get("data", {}).get("attributes", {}).keys()) for p in captured_payloads])
+        assert not payloads_with_output, (
+            "search_contacts must NOT include outputFields — it causes HTTP 400 on ZoomInfo GTM. "
+            "Found it in payloads: " + str([list(p.get("data", {}).get("attributes", {}).keys()) for p in payloads_with_output])
         )
 
     @pytest.mark.asyncio
-    async def test_output_fields_include_phone_data(self):
-        """outputFields must request directPhone, mobilePhone, and companyPhone."""
-        from zoominfo_client import ZoomInfoClient, OUTPUT_FIELDS
-        # ZoomInfo GTM API uses "id" (not "personId") as the contact identifier field
-        required = {"directPhone", "mobilePhone", "companyPhone", "email", "id"}
-        for field in required:
-            assert field in OUTPUT_FIELDS, (
-                f"OUTPUT_FIELDS must include '{field}' so phones are returned from search. "
-                f"Current OUTPUT_FIELDS: {OUTPUT_FIELDS}"
-            )
-
-    @pytest.mark.asyncio
-    async def test_flat_format_payload_also_includes_output_fields(self):
-        """Flat-format (fallback) payloads must also include outputFields."""
+    async def test_search_payload_uses_rpp_not_pagesize(self):
+        """Search payloads must use 'rpp' for page size, not 'pageSize'."""
         from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
 
-        # Force all JSON:API attempts to fail so the flat fallback is used
-        call_count = [0]
+        captured_payloads = []
 
-        async def fail_jsonapi_pass_flat(endpoint, payload):
-            call_count[0] += 1
-            # First format (JSON:API wrapper) raises HTTP 400
-            if "data" in payload and "type" in payload.get("data", {}):
-                import httpx
-                mock_resp = MagicMock()
-                mock_resp.status_code = 400
-                mock_resp.is_success = False
-                mock_resp.reason_phrase = "Bad Request"
-                raise httpx.HTTPStatusError("400", request=MagicMock(), response=mock_resp)
-            # Flat format — capture it and return empty
-            return {"contacts": []}
+        async def capture(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": []}
 
-        with patch.object(client := ZoomInfoClient(access_token="test-token"),
-                          "_make_request", side_effect=fail_jsonapi_pass_flat):
+        with patch.object(client, "_make_request", side_effect=capture):
             await client.search_contacts(domain="example.com")
 
-        # We just verify it ran without crashing; flat fallback does not use outputFields
-        # (ZoomInfo's flat endpoint doesn't support it) — so this test just confirms no crash
-        assert call_count[0] > 0
+        jsonapi_payloads = [
+            p for p in captured_payloads
+            if p.get("data", {}).get("attributes") is not None
+        ]
+        for p in jsonapi_payloads:
+            attrs = p["data"]["attributes"]
+            assert "pageSize" not in attrs, "Use 'rpp' not 'pageSize' — ZoomInfo GTM parameter name"
+            if "rpp" in attrs:
+                assert isinstance(attrs["rpp"], int), "'rpp' must be an integer"
+
+    @pytest.mark.asyncio
+    async def test_management_level_enum_values(self):
+        """managementLevel values must use ZoomInfo's hyphenated -Level suffix."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+
+        async def capture(endpoint, payload):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.search_contacts(domain="example.com")
+
+        invalid = {"VP Level", "Director", "Manager"}
+        all_levels_used = set()
+        for p in captured_payloads:
+            levels = p.get("data", {}).get("attributes", {}).get("managementLevel", [])
+            all_levels_used.update(levels)
+
+        bad = all_levels_used & invalid
+        assert not bad, (
+            f"Invalid managementLevel values used: {bad}. "
+            "ZoomInfo requires hyphenated form: VP-Level, Director-Level, Manager-Level"
+        )
 
 
 class TestExpandedCSuiteSearch:
