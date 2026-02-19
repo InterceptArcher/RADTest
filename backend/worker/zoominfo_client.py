@@ -180,8 +180,11 @@ class ZoomInfoClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json"
+            # ZoomInfo GTM API is JSON:API compliant — responses are sent as
+            # application/vnd.api+json. Sending Accept: application/json causes
+            # HTTP 406 Not Acceptable because the server can't satisfy that type.
+            "Content-Type": "application/vnd.api+json",
+            "Accept": "application/vnd.api+json, application/json",
         }
         if self.access_token:
             self.headers["Authorization"] = f"Bearer {self.access_token}"
