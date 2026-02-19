@@ -525,7 +525,19 @@ class ZoomInfoClient:
 
         rpp = min(max_results, 10)
 
-        # --- Strategy 1: CTO, CFO, CMO, CIO (Intercept primary targets) ---
+        # --- Strategy 1: C-Level by managementLevel (most reliable ZoomInfo filter) ---
+        # This is the backbone — ZoomInfo's own classification catches all C-Suite
+        # regardless of exact title wording (avoids jobTitle exact-match misses on
+        # large companies like Amazon where titles vary widely).
+        if len(all_people) < max_results:
+            await _search_na_first(
+                {"companyWebsite": website_candidates, "managementLevel": ["C-Level"], "rpp": rpp},
+                "C-Level"
+            )
+
+        # --- Strategy 2: Explicit priority C-Suite by jobTitle (CTO, CFO, CMO, CIO) ---
+        # Supplementary pass to catch any priority titles missed by managementLevel.
+        # Uses the caller's job_titles override if provided, otherwise PRIORITY_CSUITE_TITLES.
         if len(all_people) < max_results:
             titles = job_titles if job_titles else PRIORITY_CSUITE_TITLES
             await _search_na_first(
@@ -533,19 +545,11 @@ class ZoomInfoClient:
                 "priority-csuite"
             )
 
-        # --- Strategy 2: Other C-Suite (CEO, COO, CRO, CPO, etc.) ---
-        # Only run when no custom job_titles override is in effect.
+        # --- Strategy 3: Other C-Suite by jobTitle (CEO, COO, CRO, CPO, etc.) ---
         if len(all_people) < max_results and job_titles is None:
             await _search_na_first(
                 {"companyWebsite": website_candidates, "jobTitle": OTHER_CSUITE_TITLES, "rpp": rpp},
                 "other-csuite"
-            )
-
-        # --- Strategy 3: C-Level management level (broader net) ---
-        if len(all_people) < max_results:
-            await _search_na_first(
-                {"companyWebsite": website_candidates, "managementLevel": ["C-Level"], "rpp": rpp},
-                "C-Level"
             )
 
         # --- Strategy 4: VP-Level ---
@@ -580,7 +584,9 @@ class ZoomInfoClient:
                     f"companyName={company_name} fallback"
                 )
 
-        # Sort results: CTO/CFO/CMO/CIO → other C-Suite → VP → Director → other
+        # Sort: CTO/CFO/CMO/CIO first → other C-Suite → VP → Director → other.
+        # This sorting is the primary mechanism for surfacing priority contacts —
+        # it works regardless of which search strategy actually found them.
         all_people.sort(key=self._contact_priority)
 
         logger.info("ZoomInfo total contacts: %d for domain=%s", len(all_people), domain)
