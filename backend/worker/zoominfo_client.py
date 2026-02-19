@@ -148,15 +148,20 @@ class ZoomInfoClient:
     ):
         self._client_id = client_id or os.getenv("ZOOMINFO_CLIENT_ID")
         self._client_secret = client_secret or os.getenv("ZOOMINFO_CLIENT_SECRET")
+        # Static token is stored as a fallback even in auto-auth mode so that
+        # if OAuth2 fails (e.g. wrong scope or expired credentials) we still
+        # have a working token instead of silently returning empty results.
+        self._static_token = access_token or os.getenv("ZOOMINFO_ACCESS_TOKEN")
         self._auto_auth = bool(self._client_id and self._client_secret)
         self._token_expires_at = 0.0
 
         if self._auto_auth:
-            # Auto-auth mode: token will be fetched on first request
+            # Auto-auth mode: token will be fetched on first request via OAuth2.
+            # If OAuth2 fails, _authenticate() falls back to the static token.
             self.access_token = None
         else:
             # Static token mode
-            self.access_token = access_token or os.getenv("ZOOMINFO_ACCESS_TOKEN")
+            self.access_token = self._static_token
             if not self.access_token:
                 raise ValueError(
                     "ZoomInfo credentials required. Provide either "
@@ -176,37 +181,75 @@ class ZoomInfoClient:
         self.rate_limiter = ZoomInfoRateLimiter()
 
     async def _authenticate(self) -> None:
-        """Fetch a fresh access token using client_credentials grant."""
+        """
+        Fetch a fresh access token via OAuth2 client_credentials grant.
+
+        ZoomInfo's Okta endpoint is tested with multiple scope variants to
+        handle differences between ZoomInfo account types. If OAuth2 fails
+        AND a static ZOOMINFO_ACCESS_TOKEN is available, falls back to the
+        static token rather than leaving the client unauthenticated.
+        """
         credentials = f"{self._client_id}:{self._client_secret}"
         basic_auth = base64.b64encode(credentials.encode()).decode()
 
-        try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                response = await client.post(
-                    ZOOMINFO_TOKEN_URL,
-                    headers={
-                        "Authorization": f"Basic {basic_auth}",
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                    data="grant_type=client_credentials&scope=openid",
-                )
-                response.raise_for_status()
-                token_data = response.json()
+        # Try multiple scope variants — ZoomInfo account type determines which works.
+        # "openid" is the Okta default; some accounts use no scope or "api".
+        scope_variants = ["openid", "", "api"]
+        last_oauth_error: Optional[str] = None
 
-            self.access_token = token_data["access_token"]
-            expires_in = token_data.get("expires_in", 3600)
-            # Refresh 5 minutes early to avoid edge-case expiry
-            self._token_expires_at = time.time() + expires_in - 300
-            self.headers["Authorization"] = f"Bearer {self.access_token}"
-            logger.info("ZoomInfo token refreshed, expires in %ds", expires_in)
+        for scope in scope_variants:
+            body = "grant_type=client_credentials"
+            if scope:
+                body += f"&scope={scope}"
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(
+                        ZOOMINFO_TOKEN_URL,
+                        headers={
+                            "Authorization": f"Basic {basic_auth}",
+                            "Content-Type": "application/x-www-form-urlencoded",
+                        },
+                        data=body,
+                    )
+                    response.raise_for_status()
+                    token_data = response.json()
 
-        except httpx.HTTPStatusError as e:
-            raise ValueError(
-                f"ZoomInfo authentication failed: HTTP {e.response.status_code}. "
-                "Check client_id and client_secret."
+                self.access_token = token_data["access_token"]
+                expires_in = token_data.get("expires_in", 3600)
+                # Refresh 5 minutes early to avoid edge-case expiry
+                self._token_expires_at = time.time() + expires_in - 300
+                self.headers["Authorization"] = f"Bearer {self.access_token}"
+                logger.info("ZoomInfo token refreshed (scope=%r), expires in %ds", scope, expires_in)
+                return  # Success — no need to try other scopes
+
+            except httpx.HTTPStatusError as e:
+                last_oauth_error = f"HTTP {e.response.status_code} (scope={scope!r})"
+                logger.warning(f"ZoomInfo OAuth2 failed with scope={scope!r}: {e.response.status_code}")
+                continue
+            except Exception as e:
+                last_oauth_error = str(e)
+                logger.warning(f"ZoomInfo OAuth2 exception: {e}")
+                continue
+
+        # All OAuth2 scope variants failed — fall back to static token if available.
+        if self._static_token:
+            logger.warning(
+                f"ZoomInfo OAuth2 failed ({last_oauth_error}); "
+                "falling back to static ZOOMINFO_ACCESS_TOKEN. "
+                "Set valid ZOOMINFO_CLIENT_ID/SECRET for auto-refresh."
             )
-        except Exception as e:
-            raise ValueError(f"ZoomInfo authentication failed: {e}")
+            self.access_token = self._static_token
+            # Static tokens don't have a known expiry — set a long future time
+            # so we don't keep retrying OAuth2 on every request
+            self._token_expires_at = time.time() + 86400  # 24h
+            self.headers["Authorization"] = f"Bearer {self.access_token}"
+            return
+
+        raise ValueError(
+            f"ZoomInfo authentication failed: {last_oauth_error}. "
+            "Check ZOOMINFO_CLIENT_ID and ZOOMINFO_CLIENT_SECRET, or provide "
+            "ZOOMINFO_ACCESS_TOKEN as a fallback."
+        )
 
     async def _ensure_valid_token(self) -> None:
         """Re-authenticate if the current token is expired or missing."""
