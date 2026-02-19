@@ -40,20 +40,20 @@ jobs_store: Dict[str, dict] = {}
 
 # ============================================================================
 # Stakeholder Role Configuration
-# CTO, CIO, COO, CFO are primary targets; all others are secondary fallbacks.
+# CTO, CIO, CFO, CMO are primary targets; all others are secondary fallbacks.
 # ============================================================================
-PRIMARY_STAKEHOLDER_ROLES = {"CTO", "CIO", "CFO", "COO"}
+PRIMARY_STAKEHOLDER_ROLES = {"CTO", "CIO", "CFO", "CMO"}
 
 ROLE_PRIORITY = {
     "cto": 0,   # Primary target #1
     "cio": 1,   # Primary target #2
     "cfo": 2,   # Primary target #3
-    "coo": 3,   # Primary target #4
+    "cmo": 3,   # Primary target #4
     # Secondary — only shown when primary roles unavailable
-    "ciso": 4,
-    "cpo": 5,
-    "ceo": 6,
-    "cmo": 7,
+    "coo": 4,
+    "ciso": 5,
+    "cpo": 6,
+    "ceo": 7,
     "vp": 8,
     "director": 9,
     "manager": 10,
@@ -167,7 +167,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "csuite-priority-na-filter",
+        "deploy_version": "cto-cio-cfo-cmo-primary",
     }
 
 
@@ -2015,7 +2015,7 @@ def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
 
     logger.info(f"Hunter.io: Extracted {len(stakeholders)} stakeholders from contacts")
 
-    # Sort stakeholders for deterministic output (CTO > CIO > COO > CFO > others)
+    # Sort stakeholders for deterministic output (CTO > CIO > CFO > CMO > others)
     stakeholders.sort(key=lambda x: (
         ROLE_PRIORITY.get(x.get("role_type", "other").lower(), 99),
         x.get("name", "").lower()
@@ -2133,7 +2133,7 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Apollo stakeholder search error: {str(e)}")
 
-    # Sort stakeholders for deterministic output (CTO > CIO > COO > CFO > others)
+    # Sort stakeholders for deterministic output (CTO > CIO > CFO > CMO > others)
     stakeholders.sort(key=lambda x: (
         ROLE_PRIORITY.get(x.get("role_type", "other").lower(), 99),
         x.get("name", "").lower()
