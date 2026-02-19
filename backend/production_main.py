@@ -164,7 +164,8 @@ async def health_check():
         "service": "RADTest Backend Production",
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
-        "timestamp": datetime.utcnow().isoformat()
+        "timestamp": datetime.utcnow().isoformat(),
+        "deploy_version": "zoominfo-companyWebsite-https-fix",
     }
 
 
@@ -208,6 +209,9 @@ async def debug_env():
             "SUPABASE_URL": mask(SUPABASE_URL),
             "SUPABASE_KEY": mask(SUPABASE_KEY),
             "GAMMA_API_KEY": mask(GAMMA_API_KEY),
+            "ZOOMINFO_CLIENT_ID": mask(ZOOMINFO_CLIENT_ID),
+            "ZOOMINFO_CLIENT_SECRET": mask(ZOOMINFO_CLIENT_SECRET),
+            "ZOOMINFO_ACCESS_TOKEN": mask(ZOOMINFO_ACCESS_TOKEN),
         },
         "runtime_getenv": {
             "APOLLO_API_KEY": mask(os.getenv("APOLLO_API_KEY")),
@@ -218,6 +222,9 @@ async def debug_env():
             "SUPABASE_URL": mask(os.getenv("SUPABASE_URL")),
             "SUPABASE_KEY": mask(os.getenv("SUPABASE_KEY")),
             "GAMMA_API_KEY": mask(os.getenv("GAMMA_API_KEY")),
+            "ZOOMINFO_CLIENT_ID": mask(os.getenv("ZOOMINFO_CLIENT_ID")),
+            "ZOOMINFO_CLIENT_SECRET": mask(os.getenv("ZOOMINFO_CLIENT_SECRET")),
+            "ZOOMINFO_ACCESS_TOKEN": mask(os.getenv("ZOOMINFO_ACCESS_TOKEN")),
         },
         "note": "global_vars set at module load, runtime_getenv checks at request time"
     }

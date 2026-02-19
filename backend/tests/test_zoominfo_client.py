@@ -831,7 +831,8 @@ class TestSearchContactsOutputFields:
     async def test_output_fields_include_phone_data(self):
         """outputFields must request directPhone, mobilePhone, and companyPhone."""
         from zoominfo_client import ZoomInfoClient, OUTPUT_FIELDS
-        required = {"directPhone", "mobilePhone", "companyPhone", "email", "personId"}
+        # ZoomInfo GTM API uses "id" (not "personId") as the contact identifier field
+        required = {"directPhone", "mobilePhone", "companyPhone", "email", "id"}
         for field in required:
             assert field in OUTPUT_FIELDS, (
                 f"OUTPUT_FIELDS must include '{field}' so phones are returned from search. "
