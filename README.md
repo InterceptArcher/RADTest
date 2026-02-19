@@ -21,7 +21,49 @@
 
 ---
 
-## Latest Features (2026-02-19)
+## Latest Features (2026-02-19) — ZoomInfo Auth Fix + Multi-URL Search
+
+### ZoomInfo Authentication — Root Cause & Fix
+
+#### Root Cause Identified
+Through a new `/debug-zoominfo/{domain}` diagnostic endpoint, the real reason ZoomInfo was returning 0 results was identified: **authentication failures silently swallowed by retry loops**.
+
+There were two compounding auth issues:
+
+1. **`client_credentials` OAuth2 grant not supported** — `ZOOMINFO_CLIENT_ID/SECRET` are credentials for a ZoomInfo Okta app configured with `[authorization_code, refresh_token]` grants only. Every auto-auth attempt failed with `"unauthorized_client"`, and the error was silently caught in `search_contacts` retry loops, returning empty results instead of raising an error.
+
+2. **Static `ZOOMINFO_ACCESS_TOKEN` expired** — The JWT token (obtained from a one-time user login) is short-lived (~1 hour). After expiry, it returns `401 Unauthorized`. This was also being silently swallowed.
+
+#### Fixes Applied
+- `_authenticate()` now tries `refresh_token` grant (correct for ZoomInfo's Okta app) instead of `client_credentials`
+- Falls back to static `ZOOMINFO_ACCESS_TOKEN` with a clear warning in logs rather than silently returning empty results
+- Added `ZOOMINFO_REFRESH_TOKEN` environment variable support — setting this enables automatic token refresh without user intervention
+- `_get_zoominfo_client()` passes all available credentials so the best auth method is chosen automatically
+
+#### User Action Required
+ZoomInfo data will not return until credentials are updated in Render environment variables. Two options:
+- **Quick fix**: Set a fresh `ZOOMINFO_ACCESS_TOKEN` (expires ~1 hour)
+- **Permanent fix**: Set `ZOOMINFO_REFRESH_TOKEN` obtained from ZoomInfo's OAuth2 authorization_code flow
+
+#### Rationale
+Silent auth failure → empty results is the worst failure mode: the system appears healthy but returns no data. The fix surfaces auth errors clearly in logs and via the diagnostic endpoint, and supports the `refresh_token` grant which is ZoomInfo's actual long-term auth mechanism.
+
+---
+
+### ZoomInfo Contact Search — Multi-URL Format & Company Name Fallback
+
+#### `_website_candidates()` — All URL Formats in One Request
+ZoomInfo's `companyWebsite` field accepts a comma-separated list of URLs. The new `_website_candidates(domain)` method generates all URL format variants (`https://www.`, `https://`, `http://www.`, bare domain) and sends them in a single request. This maximises match probability regardless of how ZoomInfo has stored each company's website URL.
+
+#### Strategy 4: Company Name Fallback
+If all website-based searches return 0 contacts, the pipeline now derives a company name from the domain (`microsoft.com` → `Microsoft`) and searches by `companyName`. This catches cases where ZoomInfo's website index doesn't match the URL format but the company name does.
+
+#### Diagnostic Endpoint `/debug-zoominfo/{domain}`
+A new debug endpoint returns raw ZoomInfo API responses for all search strategies (company enrich, contact search by URL, contact search by name, flat format), plus full OAuth2 token attempt results including error bodies. This makes ZoomInfo issues fully diagnosable without needing server log access.
+
+---
+
+## Latest Features (2026-02-19) — Earlier
 
 ### Frontend: Explicit Phone Number Display on Every Stakeholder Card
 
