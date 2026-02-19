@@ -1339,7 +1339,9 @@ async def process_company_profile(job_id: str, company_data: dict):
                     "factCheckNotes": s.get("fact_check_notes"),
                     "strategicPriorities": ai_profile.get("strategic_priorities", []),
                     "communicationPreference": ai_profile.get("communication_preference", ""),
-                    "recommendedPlay": ai_profile.get("recommended_play", "")
+                    "recommendedPlay": ai_profile.get("recommended_play", ""),
+                    "conversationStarters": ai_profile.get("conversation_starters", ""),
+                    "recommendedNextSteps": ai_profile.get("recommended_next_steps", []),
                 }
 
                 if role_type in PRIMARY_STAKEHOLDER_ROLES:
@@ -1417,10 +1419,10 @@ async def process_company_profile(job_id: str, company_data: dict):
             "stakeholder_profiles": validated_data.get("stakeholder_profiles", {}),
             "supporting_assets": validated_data.get("supporting_assets", {}),
             "sales_program": {
-                "intentLevel": validated_data.get("sales_program", {}).get("intent_level", "Medium"),
-                "intentScore": _normalize_intent_score(validated_data.get("sales_program", {}).get("intent_score", 50)),
-                "strategyText": validated_data.get("sales_program", {}).get("strategy_text", "")
-            } if validated_data.get("sales_program") else None,
+                "intentLevel": (validated_data.get("sales_program") or {}).get("intent_level") or "Medium",
+                "intentScore": _normalize_intent_score((validated_data.get("sales_program") or {}).get("intent_score") or 50),
+                "strategyText": (validated_data.get("sales_program") or {}).get("strategy_text") or "",
+            },
             # News intelligence section (NEW - does not replace anything)
             "news_intelligence": _build_news_intelligence_section(validated_data, news_data)
         }

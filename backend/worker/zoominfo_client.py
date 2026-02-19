@@ -509,7 +509,8 @@ class ZoomInfoClient:
     async def lookup_contacts_by_identity(
         self,
         contacts: List[Dict[str, Any]],
-        domain: str
+        domain: str,
+        max_contacts: int = 10,
     ) -> Dict[str, Any]:
         """
         Search ZoomInfo GTM contact search endpoint for specific contacts by
@@ -522,9 +523,13 @@ class ZoomInfoClient:
         /contacts/enrich endpoint) because the enrich endpoint requires a valid
         ZoomInfo personId which Apollo/Hunter contacts do not have.
 
+        Lookups are run concurrently (up to max_contacts at a time) to keep
+        pipeline latency low.
+
         Args:
-            contacts: List of dicts with any of: name, first_name, last_name, email
-            domain:   Company domain to scope the search
+            contacts:     List of dicts with any of: name, first_name, last_name, email
+            domain:       Company domain to scope the search
+            max_contacts: Cap on how many contacts to look up (default 10)
 
         Returns:
             Dict with success, people (list of normalized contacts with phones), error
@@ -532,10 +537,10 @@ class ZoomInfoClient:
         if not contacts:
             return {"success": True, "people": [], "error": None}
 
-        found: List[Dict[str, Any]] = []
-        seen_ids: set = set()
+        # Cap the number of contacts to avoid excessive API calls
+        contacts_to_lookup = contacts[:max_contacts]
 
-        for contact in contacts:
+        async def _lookup_one(contact: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             email = (contact.get("email") or "").strip()
             name = (contact.get("name") or "").strip()
             first_name = (contact.get("first_name") or "").strip()
@@ -579,24 +584,15 @@ class ZoomInfoClient:
                 })
 
             if not payloads_to_try:
-                logger.debug(f"ZoomInfo identity lookup: skipping contact with no email/name")
-                continue
+                logger.debug("ZoomInfo identity lookup: skipping contact with no email/name")
+                return None
 
             for payload in payloads_to_try:
                 try:
                     response = await self._make_request(ENDPOINTS["contact_search"], payload)
                     data_list = self._extract_data_list(response)
                     if data_list:
-                        person = self._normalize_contact(data_list[0])
-                        pid = (
-                            person.get("person_id")
-                            or person.get("email")
-                            or person.get("name")
-                        )
-                        if pid and pid not in seen_ids:
-                            seen_ids.add(pid)
-                            found.append(person)
-                        break  # Found this contact — stop trying further payloads
+                        return self._normalize_contact(data_list[0])
                 except httpx.HTTPStatusError as e:
                     logger.warning(
                         f"ZoomInfo identity lookup HTTP {e.response.status_code} "
@@ -607,8 +603,27 @@ class ZoomInfoClient:
                     logger.warning(f"ZoomInfo identity lookup failed for {email or name}: {e}")
                     break
 
+            return None
+
+        # Run all lookups concurrently
+        results = await asyncio.gather(
+            *[_lookup_one(c) for c in contacts_to_lookup],
+            return_exceptions=False,
+        )
+
+        # De-duplicate by person_id / email / name
+        found: List[Dict[str, Any]] = []
+        seen_ids: set = set()
+        for person in results:
+            if person is None:
+                continue
+            pid = person.get("person_id") or person.get("email") or person.get("name")
+            if pid and pid not in seen_ids:
+                seen_ids.add(pid)
+                found.append(person)
+
         logger.info(
-            f"ZoomInfo identity lookup: {len(found)}/{len(contacts)} contacts "
+            f"ZoomInfo identity lookup: {len(found)}/{len(contacts_to_lookup)} contacts "
             f"found for domain={domain}"
         )
         return {"success": True, "people": found, "error": None}
