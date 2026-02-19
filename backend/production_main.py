@@ -167,7 +167,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-vnd-api-json-headers",
+        "deploy_version": "zoominfo-rpp-mgmt-level-fix",
     }
 
 

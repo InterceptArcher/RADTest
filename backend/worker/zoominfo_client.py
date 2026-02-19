@@ -442,7 +442,8 @@ class ZoomInfoClient:
         # ZoomInfo requires managementLevel as an array, not a string.
         # outputFields explicitly requests phone data so it's returned from the
         # search step itself — no separate enrich call needed for ZoomInfo contacts.
-        management_levels = ["C-Level", "VP-Level", "VP Level", "Director", "Manager"]
+        # Valid ZoomInfo GTM managementLevel enum values (hyphenated -Level suffix required)
+        management_levels = ["C-Level", "VP-Level", "Director-Level", "Manager-Level"]
         for level in management_levels:
             # Try JSON:API wrapper format first, then flat format as fallback
             payloads_to_try = [
@@ -454,7 +455,7 @@ class ZoomInfoClient:
                             "companyWebsite": website_candidates,
                             "managementLevel": [level],
                             "outputFields": OUTPUT_FIELDS,
-                            "pageSize": min(max_results, 10)
+                            "rpp": min(max_results, 10)
                         }
                     }
                 },
@@ -511,7 +512,7 @@ class ZoomInfoClient:
                             "companyWebsite": website_candidates,
                             "jobTitle": job_titles,
                             "outputFields": OUTPUT_FIELDS,
-                            "pageSize": max_results
+                            "rpp": max_results
                         }
                     }
                 },
@@ -559,7 +560,7 @@ class ZoomInfoClient:
                     {"data": {"type": "ContactSearch", "attributes": {
                         "companyWebsite": website_candidates,
                         "outputFields": OUTPUT_FIELDS,
-                        "pageSize": max_results,
+                        "rpp": max_results,
                     }}}
                 )
                 data_list = self._extract_data_list(response)
@@ -591,7 +592,7 @@ class ZoomInfoClient:
                         {"data": {"type": "ContactSearch", "attributes": {
                             "companyName": company_name,
                             "outputFields": OUTPUT_FIELDS,
-                            "pageSize": max_results,
+                            "rpp": max_results,
                         }}}
                     )
                     data_list = self._extract_data_list(response)
@@ -757,7 +758,7 @@ class ZoomInfoClient:
                             "companyWebsite": website_candidates,
                             "email": email,
                             "outputFields": OUTPUT_FIELDS,
-                            "pageSize": 1,
+                            "rpp": 1,
                         }
                     }
                 })
@@ -772,7 +773,7 @@ class ZoomInfoClient:
                             "firstName": first_name,
                             "lastName": last_name,
                             "outputFields": OUTPUT_FIELDS,
-                            "pageSize": 1,
+                            "rpp": 1,
                         }
                     }
                 })
