@@ -125,6 +125,7 @@ GNEWS_API_KEY = os.getenv("GNEWS_API_KEY")
 ZOOMINFO_CLIENT_ID = os.getenv("ZOOMINFO_CLIENT_ID")
 ZOOMINFO_CLIENT_SECRET = os.getenv("ZOOMINFO_CLIENT_SECRET")
 ZOOMINFO_ACCESS_TOKEN = os.getenv("ZOOMINFO_ACCESS_TOKEN")
+ZOOMINFO_REFRESH_TOKEN = os.getenv("ZOOMINFO_REFRESH_TOKEN")
 
 # Debug: Log env var status at startup
 logger.info("=" * 50)
@@ -137,6 +138,7 @@ logger.info(f"  GNEWS_API_KEY: {'SET' if GNEWS_API_KEY else 'MISSING'}")
 logger.info(f"  ZOOMINFO_CLIENT_ID: {'SET' if ZOOMINFO_CLIENT_ID else 'MISSING'}")
 logger.info(f"  ZOOMINFO_CLIENT_SECRET: {'SET' if ZOOMINFO_CLIENT_SECRET else 'MISSING'}")
 logger.info(f"  ZOOMINFO_ACCESS_TOKEN: {'SET' if ZOOMINFO_ACCESS_TOKEN else 'MISSING'}")
+logger.info(f"  ZOOMINFO_REFRESH_TOKEN: {'SET' if ZOOMINFO_REFRESH_TOKEN else 'MISSING'}")
 logger.info(f"  SUPABASE_URL: {'SET' if SUPABASE_URL else 'MISSING'}")
 logger.info(f"  SUPABASE_KEY: {'SET' if SUPABASE_KEY else 'MISSING'}")
 logger.info(f"  GAMMA_API_KEY: {'SET' if GAMMA_API_KEY else 'MISSING'}")
@@ -165,7 +167,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-auth-diagnostics-v2",
+        "deploy_version": "zoominfo-refresh-token-auth",
     }
 
 
@@ -804,16 +806,26 @@ def _normalize_intent_score(score) -> int:
 
 
 def _get_zoominfo_client():
-    """Create ZoomInfo client from environment variables, or return None."""
+    """
+    Create ZoomInfo client from environment variables, or return None.
+
+    Auth priority:
+    1. ZOOMINFO_REFRESH_TOKEN — enables automatic token refresh (preferred)
+    2. ZOOMINFO_CLIENT_ID + CLIENT_SECRET — kept for compat, but ZoomInfo's
+       Okta app uses authorization_code/refresh_token grants, not client_credentials;
+       these credentials alone cannot refresh the token automatically
+    3. ZOOMINFO_ACCESS_TOKEN — static token, expires ~1 hour after issue
+    """
     try:
         from worker.zoominfo_client import ZoomInfoClient
-        if ZOOMINFO_CLIENT_ID and ZOOMINFO_CLIENT_SECRET:
+        # Always pass all available credentials so the client can try the best
+        # available auth method (refresh_token → static token fallback).
+        if ZOOMINFO_REFRESH_TOKEN or ZOOMINFO_CLIENT_ID or ZOOMINFO_ACCESS_TOKEN:
             return ZoomInfoClient(
+                access_token=ZOOMINFO_ACCESS_TOKEN,
                 client_id=ZOOMINFO_CLIENT_ID,
-                client_secret=ZOOMINFO_CLIENT_SECRET
+                client_secret=ZOOMINFO_CLIENT_SECRET,
             )
-        elif ZOOMINFO_ACCESS_TOKEN:
-            return ZoomInfoClient(access_token=ZOOMINFO_ACCESS_TOKEN)
         else:
             logger.info("ZoomInfo credentials not configured, skipping")
             return None
