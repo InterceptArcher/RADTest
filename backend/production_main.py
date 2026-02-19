@@ -165,7 +165,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-companyWebsite-https-fix",
+        "deploy_version": "zoominfo-multi-url-companyname-fallback",
     }
 
 
@@ -2700,49 +2700,43 @@ async def debug_zoominfo_raw(domain: str):
 
     from worker.zoominfo_client import ENDPOINTS, OUTPUT_FIELDS
 
-    normalized = zi_client._normalize_website(domain)
-    results: dict = {"domain_input": domain, "domain_normalized": normalized}
+    website_candidates = zi_client._website_candidates(domain)
+    company_name = zi_client._company_name_from_domain(domain)
+    results: dict = {
+        "domain_input": domain,
+        "website_candidates": website_candidates,
+        "company_name_guess": company_name,
+    }
 
-    # 1. Company enrich — raw
+    # 1. Company enrich — all URL variants
     try:
         company_raw = await zi_client._make_request(
             ENDPOINTS["company_enrich"],
-            {"data": {"type": "CompanyEnrich", "attributes": {"companyWebsite": normalized}}}
+            {"data": {"type": "CompanyEnrich", "attributes": {"companyWebsite": website_candidates}}}
         )
         results["company_enrich_raw"] = company_raw
         results["company_enrich_keys"] = list(company_raw.keys())
+        results["company_enrich_data_len"] = len(company_raw.get("data", [])) if isinstance(company_raw.get("data"), list) else ("dict" if isinstance(company_raw.get("data"), dict) else 0)
     except Exception as e:
         results["company_enrich_error"] = str(e)
 
-    # 2. Contact search — bare domain only (no filters), raw
+    # 2. Contact search — all URL variants, no filters
     try:
         contact_raw = await zi_client._make_request(
             ENDPOINTS["contact_search"],
             {"data": {"type": "ContactSearch", "attributes": {
-                "companyWebsite": normalized,
+                "companyWebsite": website_candidates,
                 "outputFields": OUTPUT_FIELDS,
                 "pageSize": 5,
             }}}
         )
-        results["contact_search_raw"] = contact_raw
-        results["contact_search_keys"] = list(contact_raw.keys())
-        results["contact_search_data_len"] = len(contact_raw.get("data", []))
+        results["contact_search_multi_url_raw"] = contact_raw
+        results["contact_search_multi_url_keys"] = list(contact_raw.keys())
+        results["contact_search_multi_url_data_len"] = len(contact_raw.get("data", [])) if isinstance(contact_raw.get("data"), list) else 0
     except Exception as e:
-        results["contact_search_error"] = str(e)
+        results["contact_search_multi_url_error"] = str(e)
 
-    # 3. Contact search — flat format (no JSON:API wrapper)
-    try:
-        contact_flat_raw = await zi_client._make_request(
-            ENDPOINTS["contact_search"],
-            {"companyWebsite": normalized, "maxResults": 5}
-        )
-        results["contact_search_flat_raw"] = contact_flat_raw
-        results["contact_search_flat_keys"] = list(contact_flat_raw.keys())
-    except Exception as e:
-        results["contact_search_flat_error"] = str(e)
-
-    # 4. Contact search — try companyName instead of companyWebsite
-    company_name = domain.split(".")[0].title()
+    # 3. Contact search — companyName fallback
     try:
         contact_name_raw = await zi_client._make_request(
             ENDPOINTS["contact_search"],
@@ -2754,9 +2748,20 @@ async def debug_zoominfo_raw(domain: str):
         )
         results["contact_search_by_name_raw"] = contact_name_raw
         results["contact_search_by_name_keys"] = list(contact_name_raw.keys())
-        results["contact_search_by_name_data_len"] = len(contact_name_raw.get("data", []))
+        results["contact_search_by_name_data_len"] = len(contact_name_raw.get("data", [])) if isinstance(contact_name_raw.get("data"), list) else 0
     except Exception as e:
         results["contact_search_by_name_error"] = str(e)
+
+    # 4. Contact search — flat format (no JSON:API wrapper)
+    try:
+        contact_flat_raw = await zi_client._make_request(
+            ENDPOINTS["contact_search"],
+            {"companyWebsite": website_candidates, "maxResults": 5}
+        )
+        results["contact_search_flat_raw"] = contact_flat_raw
+        results["contact_search_flat_keys"] = list(contact_flat_raw.keys())
+    except Exception as e:
+        results["contact_search_flat_error"] = str(e)
 
     return results
 

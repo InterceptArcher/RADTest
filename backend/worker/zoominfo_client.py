@@ -279,6 +279,41 @@ class ZoomInfoClient:
             domain = f"https://{domain}"
         return domain
 
+    @staticmethod
+    def _website_candidates(domain: str) -> str:
+        """
+        Build a comma-separated list of all URL format variants for a domain.
+        ZoomInfo's companyWebsite field accepts a comma-separated list, so passing
+        multiple variants maximises the chance of matching however ZoomInfo stores
+        the company's website (with/without www, http/https, bare domain).
+        """
+        # Strip any existing scheme and www prefix to get the bare hostname
+        bare = domain.strip().rstrip("/")
+        for prefix in ("https://www.", "http://www.", "https://", "http://", "www."):
+            if bare.startswith(prefix):
+                bare = bare[len(prefix):]
+                break
+
+        candidates = [
+            f"https://www.{bare}",   # ZoomInfo-documented format
+            f"https://{bare}",
+            f"http://www.{bare}",
+            bare,                    # Some legacy records may use bare domain
+        ]
+        return ",".join(candidates)
+
+    @staticmethod
+    def _company_name_from_domain(domain: str) -> str:
+        """Derive a best-guess company name from a domain (e.g. 'microsoft.com' → 'Microsoft')."""
+        bare = domain.strip().rstrip("/")
+        for prefix in ("https://www.", "http://www.", "https://", "http://", "www."):
+            if bare.startswith(prefix):
+                bare = bare[len(prefix):]
+                break
+        # Use the part before the first dot and capitalise it
+        name = bare.split(".")[0]
+        return name.capitalize() if name else ""
+
     async def enrich_company(
         self,
         domain: Optional[str] = None,
@@ -292,7 +327,7 @@ class ZoomInfoClient:
         """
         payload: Dict[str, Any] = {"data": {"type": "CompanyEnrich", "attributes": {}}}
         if domain:
-            payload["data"]["attributes"]["companyWebsite"] = self._normalize_website(domain)
+            payload["data"]["attributes"]["companyWebsite"] = self._website_candidates(domain)
         if company_name:
             payload["data"]["attributes"]["companyName"] = company_name
 
@@ -338,11 +373,17 @@ class ZoomInfoClient:
         seen_ids = set()
         last_error: Optional[str] = None
 
+        # Build URL candidates once — comma-separated list covers all ZoomInfo URL formats.
+        # ZoomInfo companyWebsite accepts comma-separated lists so we pass all variants
+        # (https://www., https://, http://www., bare domain) in a single request to
+        # maximise the chance of matching however ZoomInfo stores the company's website.
+        website_candidates = self._website_candidates(domain)
+
         # Strategy 1: Search by management level.
         # ZoomInfo requires managementLevel as an array, not a string.
         # outputFields explicitly requests phone data so it's returned from the
         # search step itself — no separate enrich call needed for ZoomInfo contacts.
-        management_levels = ["C-Level", "VP-Level", "Director", "Manager"]
+        management_levels = ["C-Level", "VP-Level", "VP Level", "Director", "Manager"]
         for level in management_levels:
             # Try JSON:API wrapper format first, then flat format as fallback
             payloads_to_try = [
@@ -351,7 +392,7 @@ class ZoomInfoClient:
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
-                            "companyWebsite": self._normalize_website(domain),
+                            "companyWebsite": website_candidates,
                             "managementLevel": [level],
                             "outputFields": OUTPUT_FIELDS,
                             "pageSize": min(max_results, 10)
@@ -360,7 +401,7 @@ class ZoomInfoClient:
                 },
                 # Format B: flat JSON fallback (tries without wrapper if A fails)
                 {
-                    "companyWebsite": self._normalize_website(domain),
+                    "companyWebsite": website_candidates,
                     "managementLevel": [level],
                     "maxResults": min(max_results, 10)
                 },
@@ -408,7 +449,7 @@ class ZoomInfoClient:
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
-                            "companyWebsite": self._normalize_website(domain),
+                            "companyWebsite": website_candidates,
                             "jobTitle": job_titles,
                             "outputFields": OUTPUT_FIELDS,
                             "pageSize": max_results
@@ -416,7 +457,7 @@ class ZoomInfoClient:
                     }
                 },
                 {
-                    "companyWebsite": self._normalize_website(domain),
+                    "companyWebsite": website_candidates,
                     "jobTitle": job_titles,
                     "maxResults": max_results
                 },
@@ -450,14 +491,14 @@ class ZoomInfoClient:
                     logger.error(f"ZoomInfo jobTitle search failed: {e}")
                     continue  # Try flat format fallback
 
-        # Strategy 3: Bare-domain fallback — no management-level or title filter.
-        # Ensures we get contacts even when strategy 1 and 2 return nothing.
+        # Strategy 3: All URL variants, no filter — ensures we always try the broadest
+        # possible companyWebsite query with all URL format candidates.
         if not all_people:
             try:
                 response = await self._make_request(
                     ENDPOINTS["contact_search"],
                     {"data": {"type": "ContactSearch", "attributes": {
-                        "companyWebsite": self._normalize_website(domain),
+                        "companyWebsite": website_candidates,
                         "outputFields": OUTPUT_FIELDS,
                         "pageSize": max_results,
                     }}}
@@ -470,11 +511,43 @@ class ZoomInfoClient:
                         seen_ids.add(pid)
                         all_people.append(person)
                 if all_people:
-                    logger.info(f"ZoomInfo bare-domain fallback: found {len(all_people)} contacts")
+                    logger.info(f"ZoomInfo multi-URL fallback: found {len(all_people)} contacts for domain={domain}")
                 else:
-                    logger.warning(f"ZoomInfo bare-domain fallback also returned 0 contacts for domain={domain}")
+                    logger.warning(
+                        f"ZoomInfo multi-URL fallback returned 0 contacts for domain={domain}. "
+                        f"website_candidates={website_candidates}"
+                    )
             except Exception as e:
-                logger.warning(f"ZoomInfo bare-domain fallback failed: {e}")
+                logger.warning(f"ZoomInfo multi-URL fallback failed: {e}")
+
+        # Strategy 4: Company name fallback — derive company name from domain and search by
+        # companyName. ZoomInfo stores company names separately from website URLs, so this
+        # may match when the website-based search fails.
+        if not all_people:
+            company_name = self._company_name_from_domain(domain)
+            if company_name:
+                try:
+                    response = await self._make_request(
+                        ENDPOINTS["contact_search"],
+                        {"data": {"type": "ContactSearch", "attributes": {
+                            "companyName": company_name,
+                            "outputFields": OUTPUT_FIELDS,
+                            "pageSize": max_results,
+                        }}}
+                    )
+                    data_list = self._extract_data_list(response)
+                    for c in data_list:
+                        person = self._normalize_contact(c)
+                        pid = person.get("person_id") or person.get("email") or person.get("name")
+                        if pid and pid not in seen_ids:
+                            seen_ids.add(pid)
+                            all_people.append(person)
+                    if all_people:
+                        logger.info(f"ZoomInfo companyName fallback: found {len(all_people)} contacts for name={company_name}")
+                    else:
+                        logger.warning(f"ZoomInfo companyName fallback also returned 0 contacts for name={company_name}")
+                except Exception as e:
+                    logger.warning(f"ZoomInfo companyName fallback failed: {e}")
 
         logger.info(f"ZoomInfo total contacts found: {len(all_people)} for domain={domain}")
         if all_people:
@@ -614,7 +687,7 @@ class ZoomInfoClient:
 
             payloads_to_try = []
 
-            normalized_site = ZoomInfoClient._normalize_website(domain)
+            website_candidates = ZoomInfoClient._website_candidates(domain)
 
             # Email-based lookup is most precise — try first
             if email:
@@ -622,7 +695,7 @@ class ZoomInfoClient:
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
-                            "companyWebsite": normalized_site,
+                            "companyWebsite": website_candidates,
                             "email": email,
                             "outputFields": OUTPUT_FIELDS,
                             "pageSize": 1,
@@ -636,7 +709,7 @@ class ZoomInfoClient:
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
-                            "companyWebsite": normalized_site,
+                            "companyWebsite": website_candidates,
                             "firstName": first_name,
                             "lastName": last_name,
                             "outputFields": OUTPUT_FIELDS,
@@ -704,7 +777,7 @@ class ZoomInfoClient:
             "data": {
                 "type": "IntentEnrich",
                 "attributes": {
-                    "companyWebsite": self._normalize_website(domain),
+                    "companyWebsite": self._website_candidates(domain),
                     "topic": DEFAULT_INTENT_TOPICS,
                 }
             }
@@ -745,7 +818,7 @@ class ZoomInfoClient:
             "data": {
                 "type": "ScoopSearch",
                 "attributes": {
-                    "companyWebsite": self._normalize_website(domain)
+                    "companyWebsite": self._website_candidates(domain)
                 }
             }
         }
@@ -823,7 +896,7 @@ class ZoomInfoClient:
             "data": {
                 "type": "TechnologyEnrich",
                 "attributes": {
-                    "companyWebsite": self._normalize_website(domain)
+                    "companyWebsite": self._website_candidates(domain)
                 }
             }
         }
