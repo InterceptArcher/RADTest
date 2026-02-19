@@ -75,6 +75,24 @@ CSUITE_JOB_TITLES = [
     "Director", "Senior Director",
 ]
 
+# Broad B2B intent topics used when querying ZoomInfo Intent Enrich.
+# ZoomInfo requires at least 1 topic; this set covers the domains most
+# relevant to enterprise technology buying decisions.
+DEFAULT_INTENT_TOPICS = [
+    "Cybersecurity",
+    "Cloud Computing",
+    "Artificial Intelligence",
+    "Machine Learning",
+    "Digital Transformation",
+    "Data Analytics",
+    "Enterprise Software",
+    "Business Intelligence",
+    "Network Security",
+    "IT Security",
+    "Cloud Migration",
+    "Data Management",
+]
+
 
 class ZoomInfoRateLimiter:
     """Token-bucket rate limiter for ZoomInfo's 25 req/sec limit."""
@@ -259,7 +277,7 @@ class ZoomInfoClient:
         """
         payload: Dict[str, Any] = {"data": {"type": "CompanyEnrich", "attributes": {}}}
         if domain:
-            payload["data"]["attributes"]["companyDomain"] = domain
+            payload["data"]["attributes"]["companyWebsite"] = domain
         if company_name:
             payload["data"]["attributes"]["companyName"] = company_name
 
@@ -312,21 +330,21 @@ class ZoomInfoClient:
         for level in management_levels:
             # Try JSON:API wrapper format first, then flat format as fallback
             payloads_to_try = [
-                # Format A: JSON:API wrapper (current ZoomInfo GTM format)
+                # Format A: JSON:API wrapper (ZoomInfo GTM API format)
                 {
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
-                            "companyDomain": domain,
+                            "companyWebsite": domain,
                             "managementLevel": [level],
                             "outputFields": OUTPUT_FIELDS,
                             "pageSize": min(max_results, 10)
                         }
                     }
                 },
-                # Format B: flat JSON (ZoomInfo Enrich API / legacy format)
+                # Format B: flat JSON fallback
                 {
-                    "companyDomain": domain,
+                    "companyWebsite": domain,
                     "managementLevel": [level],
                     "maxResults": min(max_results, 10)
                 },
@@ -374,7 +392,7 @@ class ZoomInfoClient:
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
-                            "companyDomain": domain,
+                            "companyWebsite": domain,
                             "jobTitle": job_titles,
                             "outputFields": OUTPUT_FIELDS,
                             "pageSize": max_results
@@ -382,7 +400,7 @@ class ZoomInfoClient:
                     }
                 },
                 {
-                    "companyDomain": domain,
+                    "companyWebsite": domain,
                     "jobTitle": job_titles,
                     "maxResults": max_results
                 },
@@ -560,7 +578,7 @@ class ZoomInfoClient:
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
-                            "companyDomain": domain,
+                            "companyWebsite": domain,
                             "email": email,
                             "outputFields": OUTPUT_FIELDS,
                             "pageSize": 1,
@@ -574,7 +592,7 @@ class ZoomInfoClient:
                     "data": {
                         "type": "ContactSearch",
                         "attributes": {
-                            "companyDomain": domain,
+                            "companyWebsite": domain,
                             "firstName": first_name,
                             "lastName": last_name,
                             "outputFields": OUTPUT_FIELDS,
@@ -598,10 +616,10 @@ class ZoomInfoClient:
                         f"ZoomInfo identity lookup HTTP {e.response.status_code} "
                         f"for {email or name}: {e}"
                     )
-                    break
+                    continue  # Try next payload format before giving up
                 except Exception as e:
                     logger.warning(f"ZoomInfo identity lookup failed for {email or name}: {e}")
-                    break
+                    continue  # Try next payload format before giving up
 
             return None
 
@@ -635,11 +653,15 @@ class ZoomInfoClient:
         Returns:
             Dict with success, intent_signals (normalized list), raw_data, error
         """
+        # ZoomInfo Intent Enrich requires: company identifier + at least 1 topic.
+        # We use DEFAULT_INTENT_TOPICS (broad B2B topics) so we capture all
+        # relevant intent signals regardless of the company's specific focus.
         payload: Dict[str, Any] = {
             "data": {
                 "type": "IntentEnrich",
                 "attributes": {
-                    "companyDomain": domain
+                    "companyWebsite": domain,
+                    "topic": DEFAULT_INTENT_TOPICS,
                 }
             }
         }
@@ -679,7 +701,7 @@ class ZoomInfoClient:
             "data": {
                 "type": "ScoopSearch",
                 "attributes": {
-                    "companyDomain": domain
+                    "companyWebsite": domain
                 }
             }
         }
@@ -757,7 +779,7 @@ class ZoomInfoClient:
             "data": {
                 "type": "TechnologyEnrich",
                 "attributes": {
-                    "companyDomain": domain
+                    "companyWebsite": domain
                 }
             }
         }

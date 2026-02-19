@@ -946,7 +946,7 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                 _log_api_call(
                     job_data, "ZoomInfo Company Enrichment",
                     "https://api.zoominfo.com/gtm/data/v1/companies/enrich", "POST",
-                    {"data": {"type": "CompanyEnrich", "attributes": {"companyDomain": domain, "companyName": company_name}}},
+                    {"data": {"type": "CompanyEnrich", "attributes": {"companyWebsite": domain, "companyName": company_name}}},
                     company_result.get("data") if isinstance(company_result, dict) else {"error": str(company_result)},
                     200 if isinstance(company_result, dict) and company_result.get("success") else 500,
                     0, is_sensitive=True, masked_fields=["authorization"],
@@ -954,7 +954,7 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                 _log_api_call(
                     job_data, "ZoomInfo Intent Enrichment",
                     "https://api.zoominfo.com/gtm/data/v1/intent/enrich", "POST",
-                    {"data": {"type": "IntentEnrich", "attributes": {"companyDomain": domain}}},
+                    {"data": {"type": "IntentEnrich", "attributes": {"companyWebsite": domain}}},
                     {"intent_signals": intent_result.get("intent_signals", [])} if isinstance(intent_result, dict) else {"error": str(intent_result)},
                     200 if isinstance(intent_result, dict) and intent_result.get("success") else 500,
                     0, is_sensitive=True, masked_fields=["authorization"],
@@ -962,7 +962,7 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                 _log_api_call(
                     job_data, "ZoomInfo Scoops Search",
                     "https://api.zoominfo.com/gtm/data/v1/scoops/search", "POST",
-                    {"data": {"type": "ScoopSearch", "attributes": {"companyDomain": domain}}},
+                    {"data": {"type": "ScoopSearch", "attributes": {"companyWebsite": domain}}},
                     {"scoops": scoops_result.get("scoops", [])} if isinstance(scoops_result, dict) else {"error": str(scoops_result)},
                     200 if isinstance(scoops_result, dict) and scoops_result.get("success") else 500,
                     0, is_sensitive=True, masked_fields=["authorization"],
@@ -978,7 +978,7 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                 _log_api_call(
                     job_data, "ZoomInfo Technologies Enrichment",
                     "https://api.zoominfo.com/gtm/data/v1/technologies/enrich", "POST",
-                    {"data": {"type": "TechEnrich", "attributes": {"companyDomain": domain}}},
+                    {"data": {"type": "TechEnrich", "attributes": {"companyWebsite": domain}}},
                     {"technologies_count": len(tech_result.get("technologies", []))} if isinstance(tech_result, dict) else {"error": str(tech_result)},
                     200 if isinstance(tech_result, dict) and tech_result.get("success") else 500,
                     0, is_sensitive=True, masked_fields=["authorization"],
@@ -990,7 +990,7 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                     job_data, "ZoomInfo Contact Search (Management Level + C-Suite Titles)",
                     "https://api.zoominfo.com/gtm/data/v1/contacts/search", "POST",
                     {"data": {"type": "ContactSearch", "attributes": {
-                        "companyDomain": domain,
+                        "companyWebsite": domain,
                         "managementLevel": ["C-Level", "VP-Level", "Director", "Manager"],
                         "jobTitle": CSUITE_JOB_TITLES,
                         "outputFields": OUTPUT_FIELDS,
@@ -3418,7 +3418,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "status_code": 200,
                 "status_text": "OK",
                 "headers": {"content-type": "application/vnd.api+json", "x-ratelimit-remaining": "23"},
-                "request_body": {"data": {"type": "CompanyEnrich", "attributes": {"companyDomain": domain}}},
+                "request_body": {"data": {"type": "CompanyEnrich", "attributes": {"companyWebsite": domain}}},
                 "response_body": {
                     "data": [{
                         "companyName": zoominfo_extracted["company_name"],
@@ -3445,7 +3445,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "status_code": 200,
                 "status_text": "OK",
                 "headers": {"content-type": "application/vnd.api+json"},
-                "request_body": {"data": {"type": "IntentEnrich", "attributes": {"companyDomain": domain}}},
+                "request_body": {"data": {"type": "IntentEnrich", "attributes": {"companyWebsite": domain}}},
                 "response_body": {
                     "data": zi_intent if zi_intent else [
                         {"topic": "Cloud Migration", "score": 85, "audienceStrength": "high", "lastSeen": "2025-01-15"},
@@ -3466,7 +3466,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "status_code": 200,
                 "status_text": "OK",
                 "headers": {"content-type": "application/vnd.api+json"},
-                "request_body": {"data": {"type": "ScoopSearch", "attributes": {"companyDomain": domain}}},
+                "request_body": {"data": {"type": "ScoopSearch", "attributes": {"companyWebsite": domain}}},
                 "response_body": {
                     "data": zi_scoops if zi_scoops else [
                         {"scoopType": "executive_hire", "title": f"New CTO Appointed at {company_name}", "date": "2025-01-08"},
@@ -3486,7 +3486,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "status_code": 200,
                 "status_text": "OK",
                 "headers": {"content-type": "application/vnd.api+json"},
-                "request_body": {"data": {"type": "ContactSearch", "attributes": {"companyDomain": domain, "managementLevel": ["C-Level", "VP-Level", "Director", "Manager"], "jobTitle": ["Chief Executive Officer", "CEO", "Chief Technology Officer", "CTO", "Chief Information Officer", "CIO", "Chief Financial Officer", "CFO", "Chief Operating Officer", "COO", "...38 more titles"], "outputFields": ["personId", "firstName", "lastName", "email", "jobTitle", "phone", "directPhone", "mobilePhone", "companyPhone", "contactAccuracyScore", "...3 more"]}}},
+                "request_body": {"data": {"type": "ContactSearch", "attributes": {"companyWebsite": domain, "managementLevel": ["C-Level", "VP-Level", "Director", "Manager"], "jobTitle": ["Chief Executive Officer", "CEO", "Chief Technology Officer", "CTO", "Chief Information Officer", "CIO", "Chief Financial Officer", "CFO", "Chief Operating Officer", "COO", "...38 more titles"], "outputFields": ["personId", "firstName", "lastName", "email", "jobTitle", "phone", "directPhone", "mobilePhone", "companyPhone", "contactAccuracyScore", "...3 more"]}}},
                 "response_body": {
                     "data": zi_contacts[:5] if zi_contacts else [
                         {"firstName": zoominfo_extracted["ceo"].split()[0] if zoominfo_extracted["ceo"] != "N/A" and " " in str(zoominfo_extracted["ceo"]) else "N/A",
