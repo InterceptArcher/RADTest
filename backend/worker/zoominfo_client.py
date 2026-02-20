@@ -21,17 +21,20 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-ZOOMINFO_BASE_URL = "https://api.zoominfo.com/gtm"
+ZOOMINFO_BASE_URL = "https://api.zoominfo.com"
 ZOOMINFO_TOKEN_URL = "https://okta-login.zoominfo.com/oauth2/default/v1/token"
 
+# ZoomInfo standard API endpoint paths (verified live — these return HTTP 401 without
+# auth, confirming the endpoints exist).  The old /gtm/data/v1/ prefix paths were
+# retired by ZoomInfo and now return 404 for all endpoints.
 ENDPOINTS = {
-    "company_enrich": "/data/v1/companies/enrich",
-    "contact_search": "/data/v1/contacts/search",
-    "contact_enrich": "/data/v1/contacts/enrich",
-    "intent_enrich": "/data/v1/intent/enrich",
-    "scoops_search": "/data/v1/scoops/search",
-    "news_search": "/data/v1/news/search",
-    "tech_enrich": "/data/v1/technologies/enrich",
+    "company_enrich": "/enrich/company",
+    "contact_search": "/search/contact",
+    "contact_enrich": "/enrich/contact",
+    "intent_enrich": "/enrich/intent",
+    "scoops_search": "/search/scoop",
+    "news_search": "/search/news",
+    "tech_enrich": "/enrich/technology",
 }
 
 # Fields explicitly requested from ZoomInfo contact search so that phone data
@@ -816,7 +819,7 @@ class ZoomInfoClient:
                 "type": "IntentEnrich",
                 "attributes": {
                     "companyWebsite": self._website_candidates(domain),
-                    "topic": DEFAULT_INTENT_TOPICS,
+                    "topics": DEFAULT_INTENT_TOPICS,
                 }
             }
         }

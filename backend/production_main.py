@@ -167,7 +167,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "cto-cio-cfo-cmo-primary",
+        "deploy_version": "zoominfo-url-fix-standard-api",
     }
 
 
