@@ -167,7 +167,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-url-fix-standard-api",
+        "deploy_version": "zoominfo-flat-json-fallback",
     }
 
 
@@ -202,19 +202,6 @@ async def debug_env():
         return f"{val[:4]}...{val[-4:]} ({len(val)} chars)"
 
     return {
-        "global_vars": {
-            "APOLLO_API_KEY": mask(APOLLO_API_KEY),
-            "PEOPLEDATALABS_API_KEY": mask(PEOPLEDATALABS_API_KEY),
-            "HUNTER_API_KEY": mask(HUNTER_API_KEY),
-            "OPENAI_API_KEY": mask(OPENAI_API_KEY),
-            "GNEWS_API_KEY": mask(GNEWS_API_KEY),
-            "SUPABASE_URL": mask(SUPABASE_URL),
-            "SUPABASE_KEY": mask(SUPABASE_KEY),
-            "GAMMA_API_KEY": mask(GAMMA_API_KEY),
-            "ZOOMINFO_CLIENT_ID": mask(ZOOMINFO_CLIENT_ID),
-            "ZOOMINFO_CLIENT_SECRET": mask(ZOOMINFO_CLIENT_SECRET),
-            "ZOOMINFO_ACCESS_TOKEN": mask(ZOOMINFO_ACCESS_TOKEN),
-        },
         "runtime_getenv": {
             "APOLLO_API_KEY": mask(os.getenv("APOLLO_API_KEY")),
             "PEOPLEDATALABS_API_KEY": mask(os.getenv("PEOPLEDATALABS_API_KEY")),
@@ -227,8 +214,9 @@ async def debug_env():
             "ZOOMINFO_CLIENT_ID": mask(os.getenv("ZOOMINFO_CLIENT_ID")),
             "ZOOMINFO_CLIENT_SECRET": mask(os.getenv("ZOOMINFO_CLIENT_SECRET")),
             "ZOOMINFO_ACCESS_TOKEN": mask(os.getenv("ZOOMINFO_ACCESS_TOKEN")),
+            "ZOOMINFO_REFRESH_TOKEN": mask(os.getenv("ZOOMINFO_REFRESH_TOKEN")),
         },
-        "note": "global_vars set at module load, runtime_getenv checks at request time"
+        "note": "All values shown at request time (runtime_getenv). NOT SET means the variable is missing from Render env vars."
     }
 
 

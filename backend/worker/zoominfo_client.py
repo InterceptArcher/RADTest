@@ -322,6 +322,39 @@ class ZoomInfoClient:
                 return {}
             return response.json()
 
+    async def _request_with_fallback(
+        self,
+        endpoint: str,
+        flat_payload: Dict[str, Any],
+        jsonapi_type: str,
+    ) -> Dict[str, Any]:
+        """
+        Try flat JSON format first, then JSON:API wrapper as fallback.
+
+        The ZoomInfo standard API (https://api.zoominfo.com) uses flat JSON.
+        JSON:API ({"data": {"type": "...", "attributes": {...}}}) is tried as
+        fallback for backward compatibility in case the endpoint still accepts it.
+
+        Format errors (HTTP 400, 415, 422) trigger the fallback.
+        Auth errors (401, 403) and not-found (404) are raised immediately.
+        """
+        jsonapi_payload = {"data": {"type": jsonapi_type, "attributes": flat_payload}}
+        last_error: Optional[Exception] = None
+        for payload in (flat_payload, jsonapi_payload):
+            try:
+                return await self._make_request(endpoint, payload)
+            except httpx.HTTPStatusError as e:
+                last_error = e
+                if e.response.status_code in (400, 415, 422):
+                    logger.debug(
+                        "ZoomInfo %s: HTTP %s (likely wrong format), trying alternate",
+                        endpoint, e.response.status_code
+                    )
+                    continue
+                raise  # Auth errors, 404s — propagate immediately
+        # Both formats failed with format errors
+        raise last_error  # type: ignore[misc]
+
     def _extract_data_list(self, response: Dict[str, Any]) -> list:
         """
         Extract the data list from a ZoomInfo API response.
@@ -404,15 +437,15 @@ class ZoomInfoClient:
         Returns:
             Dict with success, data (raw), normalized (standard fields), error
         """
-        payload: Dict[str, Any] = {"data": {"type": "CompanyEnrich", "attributes": {}}}
+        flat_payload: Dict[str, Any] = {}
         if domain:
-            payload["data"]["attributes"]["companyWebsite"] = self._website_candidates(domain)
+            flat_payload["companyWebsite"] = self._website_candidates(domain)
         if company_name:
-            payload["data"]["attributes"]["companyName"] = company_name
+            flat_payload["companyName"] = company_name
 
         try:
-            response = await self._make_request(
-                ENDPOINTS["company_enrich"], payload
+            response = await self._request_with_fallback(
+                ENDPOINTS["company_enrich"], flat_payload, "CompanyEnrich"
             )
             # Use _extract_data_list to handle all ZoomInfo response formats
             data_list = self._extract_data_list(response)
@@ -479,15 +512,14 @@ class ZoomInfoClient:
 
         async def _search(attrs: Dict[str, Any], label: str) -> int:
             """
-            POST contact_search with JSON:API format, flat format as fallback.
+            POST contact_search with flat JSON first, JSON:API wrapper as fallback.
+            The standard ZoomInfo API uses flat JSON; JSON:API is kept as fallback.
             Returns count of new contacts added.
             """
             nonlocal last_error
-            # Flat fallback payload: rename rpp → maxResults for older endpoint format
-            flat_attrs = {("maxResults" if k == "rpp" else k): v for k, v in attrs.items()}
             payloads = [
-                {"data": {"type": "ContactSearch", "attributes": attrs}},
-                flat_attrs,
+                attrs,  # flat JSON — primary format for standard ZoomInfo API
+                {"data": {"type": "ContactSearch", "attributes": attrs}},  # JSON:API fallback
             ]
             for payload in payloads:
                 try:
@@ -616,18 +648,11 @@ class ZoomInfoClient:
         if not person_ids:
             return {"success": True, "people": [], "error": None}
 
-        payload: Dict[str, Any] = {
-            "data": {
-                "type": "ContactEnrich",
-                "attributes": {
-                    "personId": person_ids
-                }
-            }
-        }
+        flat_payload: Dict[str, Any] = {"personId": person_ids}
 
         try:
-            response = await self._make_request(
-                ENDPOINTS["contact_enrich"], payload
+            response = await self._request_with_fallback(
+                ENDPOINTS["contact_enrich"], flat_payload, "ContactEnrich"
             )
             data_list = response.get("data", [])
             people = [self._normalize_contact(c) for c in data_list]
@@ -814,19 +839,14 @@ class ZoomInfoClient:
         # ZoomInfo Intent Enrich requires: company identifier + at least 1 topic.
         # We use DEFAULT_INTENT_TOPICS (broad B2B topics) so we capture all
         # relevant intent signals regardless of the company's specific focus.
-        payload: Dict[str, Any] = {
-            "data": {
-                "type": "IntentEnrich",
-                "attributes": {
-                    "companyWebsite": self._website_candidates(domain),
-                    "topics": DEFAULT_INTENT_TOPICS,
-                }
-            }
+        flat_payload: Dict[str, Any] = {
+            "companyWebsite": self._website_candidates(domain),
+            "topics": DEFAULT_INTENT_TOPICS,
         }
 
         try:
-            response = await self._make_request(
-                ENDPOINTS["intent_enrich"], payload
+            response = await self._request_with_fallback(
+                ENDPOINTS["intent_enrich"], flat_payload, "IntentEnrich"
             )
             raw_signals = response.get("data", [])
             # Normalize each intent signal to extract all fields
@@ -855,20 +875,15 @@ class ZoomInfoClient:
         Returns:
             Dict with success, scoops (normalized list), raw_data, error
         """
-        payload: Dict[str, Any] = {
-            "data": {
-                "type": "ScoopSearch",
-                "attributes": {
-                    "companyWebsite": self._website_candidates(domain)
-                }
-            }
+        flat_payload: Dict[str, Any] = {
+            "companyWebsite": self._website_candidates(domain)
         }
         if scoop_types:
-            payload["data"]["attributes"]["scoopTypes"] = scoop_types
+            flat_payload["scoopTypes"] = scoop_types
 
         try:
-            response = await self._make_request(
-                ENDPOINTS["scoops_search"], payload
+            response = await self._request_with_fallback(
+                ENDPOINTS["scoops_search"], flat_payload, "ScoopSearch"
             )
             raw_scoops = response.get("data", [])
             # Normalize each scoop to extract all fields
@@ -895,18 +910,11 @@ class ZoomInfoClient:
         Returns:
             Dict with success, articles (normalized list), raw_data, error
         """
-        payload: Dict[str, Any] = {
-            "data": {
-                "type": "NewsSearch",
-                "attributes": {
-                    "companyName": company_name
-                }
-            }
-        }
+        flat_payload: Dict[str, Any] = {"companyName": company_name}
 
         try:
-            response = await self._make_request(
-                ENDPOINTS["news_search"], payload
+            response = await self._request_with_fallback(
+                ENDPOINTS["news_search"], flat_payload, "NewsSearch"
             )
             raw_articles = response.get("data", [])
             # Normalize each article to extract all fields
@@ -933,18 +941,13 @@ class ZoomInfoClient:
         Returns:
             Dict with success, technologies (normalized list), raw_data, error
         """
-        payload: Dict[str, Any] = {
-            "data": {
-                "type": "TechnologyEnrich",
-                "attributes": {
-                    "companyWebsite": self._website_candidates(domain)
-                }
-            }
+        flat_payload: Dict[str, Any] = {
+            "companyWebsite": self._website_candidates(domain)
         }
 
         try:
-            response = await self._make_request(
-                ENDPOINTS["tech_enrich"], payload
+            response = await self._request_with_fallback(
+                ENDPOINTS["tech_enrich"], flat_payload, "TechnologyEnrich"
             )
             raw_technologies = response.get("data", [])
             # Normalize each technology to extract all fields
