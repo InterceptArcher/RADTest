@@ -365,7 +365,7 @@ class ZoomInfoClient:
                 return await self._make_request(endpoint, payload, _is_retry=True)
 
             if not response.is_success:
-                # Log full response body so the root cause is visible in logs
+                # Capture and log the full response body so the root cause is visible
                 try:
                     body = response.json()
                 except Exception:
@@ -374,11 +374,35 @@ class ZoomInfoClient:
                     f"ZoomInfo API error: {response.status_code} {response.reason_phrase} "
                     f"for {url} — body: {body}"
                 )
+                # Store error body on the response object so callers can surface it
+                # in debug logs without re-reading the (already consumed) stream.
+                try:
+                    response._zi_error_body = body  # type: ignore[attr-defined]
+                except Exception:
+                    pass
                 response.raise_for_status()
             # Handle 204 No Content (valid empty response)
             if response.status_code == 204 or not response.content:
                 return {}
             return response.json()
+
+    @staticmethod
+    def _http_error_detail(e: "httpx.HTTPStatusError") -> str:
+        """
+        Extract a human-readable error detail from an httpx.HTTPStatusError.
+        Includes the status code plus the response body ZoomInfo sent back,
+        so callers can surface the exact reason (plan restriction, bad field,
+        wrong endpoint, etc.) in debug logs without re-reading the stream.
+        """
+        code = e.response.status_code
+        # Try the pre-captured body first (set by _make_request above)
+        body = getattr(e.response, "_zi_error_body", None)
+        if body is None:
+            try:
+                body = e.response.json()
+            except Exception:
+                body = e.response.text[:400]
+        return f"HTTP {code}: {body}"
 
     async def _request_with_fallback(
         self,
@@ -605,8 +629,8 @@ class ZoomInfoClient:
                 logger.warning("ZoomInfo company enrich timed out")
                 return {"success": False, "data": {}, "normalized": {}, "error": "Request timeout"}
             except httpx.HTTPStatusError as e:
-                last_error = f"HTTP {e.response.status_code}"
-                logger.warning("ZoomInfo company enrich HTTP %s for payload=%s", e.response.status_code, list(flat_payload.keys()))
+                last_error = self._http_error_detail(e)
+                logger.warning("ZoomInfo company enrich %s for payload=%s", last_error, list(flat_payload.keys()))
                 # On 4xx format errors try next payload; on auth/server errors stop
                 if e.response.status_code not in (400, 404, 422):
                     return {"success": False, "data": {}, "normalized": {}, "error": last_error}
@@ -1015,7 +1039,9 @@ class ZoomInfoClient:
         except httpx.TimeoutException:
             return {"success": False, "intent_signals": [], "raw_data": [], "error": "Request timeout"}
         except httpx.HTTPStatusError as e:
-            return {"success": False, "intent_signals": [], "raw_data": [], "error": f"HTTP {e.response.status_code}"}
+            detail = self._http_error_detail(e)
+            logger.warning("ZoomInfo intent enrich %s", detail)
+            return {"success": False, "intent_signals": [], "raw_data": [], "error": detail}
         except Exception as e:
             logger.error(f"ZoomInfo intent enrich failed: {e}")
             return {"success": False, "intent_signals": [], "raw_data": [], "error": str(e)}
@@ -1061,7 +1087,9 @@ class ZoomInfoClient:
         except httpx.TimeoutException:
             return {"success": False, "scoops": [], "raw_data": [], "error": "Request timeout"}
         except httpx.HTTPStatusError as e:
-            return {"success": False, "scoops": [], "raw_data": [], "error": f"HTTP {e.response.status_code}"}
+            detail = self._http_error_detail(e)
+            logger.warning("ZoomInfo scoops search %s", detail)
+            return {"success": False, "scoops": [], "raw_data": [], "error": detail}
         except Exception as e:
             logger.error(f"ZoomInfo scoops search failed: {e}")
             return {"success": False, "scoops": [], "raw_data": [], "error": str(e)}
@@ -1097,7 +1125,9 @@ class ZoomInfoClient:
         except httpx.TimeoutException:
             return {"success": False, "articles": [], "raw_data": [], "error": "Request timeout"}
         except httpx.HTTPStatusError as e:
-            return {"success": False, "articles": [], "raw_data": [], "error": f"HTTP {e.response.status_code}"}
+            detail = self._http_error_detail(e)
+            logger.warning("ZoomInfo news search %s", detail)
+            return {"success": False, "articles": [], "raw_data": [], "error": detail}
         except Exception as e:
             logger.error(f"ZoomInfo news search failed: {e}")
             return {"success": False, "articles": [], "raw_data": [], "error": str(e)}
@@ -1135,7 +1165,9 @@ class ZoomInfoClient:
         except httpx.TimeoutException:
             return {"success": False, "technologies": [], "raw_data": [], "error": "Request timeout"}
         except httpx.HTTPStatusError as e:
-            return {"success": False, "technologies": [], "raw_data": [], "error": f"HTTP {e.response.status_code}"}
+            detail = self._http_error_detail(e)
+            logger.warning("ZoomInfo tech enrich %s", detail)
+            return {"success": False, "technologies": [], "raw_data": [], "error": detail}
         except Exception as e:
             logger.error(f"ZoomInfo tech enrich failed: {e}")
             return {"success": False, "technologies": [], "raw_data": [], "error": str(e)}

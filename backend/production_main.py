@@ -169,7 +169,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-raw-debug-matchcompanyinput-v4",
+        "deploy_version": "zoominfo-error-detail-debug-v5",
     }
 
 
@@ -979,46 +979,64 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
 
         # Log all ZoomInfo sub-calls — wrapped in its own try/except so that ANY
         # logging failure is non-fatal and never corrupts combined_data/contacts.
+        # Each call now logs the ACTUAL error reason from ZoomInfo (not just {})
+        # so the debug panel shows HTTP status + ZoomInfo message on failure.
+        def _zi_log_resp(result, success_body):
+            """Return response body for _log_api_call: data on success, full error on failure."""
+            if isinstance(result, dict) and result.get("success"):
+                return success_body
+            err = result.get("error", "unknown") if isinstance(result, dict) else str(result)
+            return {"error": err, "success": False}
+
+        def _zi_status(result):
+            """Extract HTTP status from error string or return 200/500."""
+            if isinstance(result, dict) and result.get("success"):
+                return 200
+            err = result.get("error", "") if isinstance(result, dict) else ""
+            import re as _re
+            m = _re.search(r"HTTP (\d+)", str(err))
+            return int(m.group(1)) if m else 500
+
         if job_data is not None:
             try:
                 _log_api_call(
                     job_data, "ZoomInfo Company Enrichment",
-                    "https://api.zoominfo.com/gtm/data/v1/companies/enrich", "POST",
-                    {"data": {"type": "CompanyEnrich", "attributes": {"companyWebsite": domain, "companyName": company_name}}},
-                    company_result.get("data") if isinstance(company_result, dict) else {"error": str(company_result)},
-                    200 if isinstance(company_result, dict) and company_result.get("success") else 500,
+                    "https://api.zoominfo.com/enrich/company", "POST",
+                    {"companyWebsite": f"https://www.{domain}", "companyName": company_name},
+                    _zi_log_resp(company_result, company_result.get("data", {}) if isinstance(company_result, dict) else {}),
+                    _zi_status(company_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
                 _log_api_call(
                     job_data, "ZoomInfo Intent Enrichment",
-                    "https://api.zoominfo.com/gtm/data/v1/intent/enrich", "POST",
-                    {"data": {"type": "IntentEnrich", "attributes": {"companyWebsite": domain}}},
-                    {"intent_signals": intent_result.get("intent_signals", [])} if isinstance(intent_result, dict) else {"error": str(intent_result)},
-                    200 if isinstance(intent_result, dict) and intent_result.get("success") else 500,
+                    "https://api.zoominfo.com/enrich/intent", "POST",
+                    {"companyWebsite": f"https://www.{domain}", "topics": ["Cybersecurity", "Cloud Computing", "AI"]},
+                    _zi_log_resp(intent_result, {"intent_signals_count": len(intent_result.get("intent_signals", [])), "signals": intent_result.get("intent_signals", [])[:3]} if isinstance(intent_result, dict) else {}),
+                    _zi_status(intent_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
                 _log_api_call(
                     job_data, "ZoomInfo Scoops Search",
-                    "https://api.zoominfo.com/gtm/data/v1/scoops/search", "POST",
-                    {"data": {"type": "ScoopSearch", "attributes": {"companyWebsite": domain}}},
-                    {"scoops": scoops_result.get("scoops", [])} if isinstance(scoops_result, dict) else {"error": str(scoops_result)},
-                    200 if isinstance(scoops_result, dict) and scoops_result.get("success") else 500,
+                    "https://api.zoominfo.com/search/scoop", "POST",
+                    {"companyWebsite": f"https://www.{domain}"},
+                    _zi_log_resp(scoops_result, {"scoops_count": len(scoops_result.get("scoops", [])), "scoops": scoops_result.get("scoops", [])[:3]} if isinstance(scoops_result, dict) else {}),
+                    _zi_status(scoops_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
                 _log_api_call(
                     job_data, "ZoomInfo News Search",
-                    "https://api.zoominfo.com/gtm/data/v1/news/search", "POST",
-                    {"data": {"type": "NewsSearch", "attributes": {"companyName": company_name}}},
-                    {"articles_count": len(news_result.get("articles", []))} if isinstance(news_result, dict) else {"error": str(news_result)},
-                    200 if isinstance(news_result, dict) and news_result.get("success") else 500,
+                    "https://api.zoominfo.com/search/news", "POST",
+                    {"companyName": company_name},
+                    _zi_log_resp(news_result, {"articles_count": len(news_result.get("articles", [])), "articles": news_result.get("articles", [])[:3]} if isinstance(news_result, dict) else {}),
+                    _zi_status(news_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
                 _log_api_call(
                     job_data, "ZoomInfo Technologies Enrichment",
-                    "https://api.zoominfo.com/gtm/data/v1/technologies/enrich", "POST",
-                    {"data": {"type": "TechEnrich", "attributes": {"companyWebsite": domain}}},
-                    {"technologies_count": len(tech_result.get("technologies", []))} if isinstance(tech_result, dict) else {"error": str(tech_result)},
-                    200 if isinstance(tech_result, dict) and tech_result.get("success") else 500,
+                    "https://api.zoominfo.com/enrich/technology", "POST",
+                    {"companyWebsite": f"https://www.{domain}"},
+                    _zi_log_resp(tech_result, {"technologies_count": len(tech_result.get("technologies", [])), "technologies": tech_result.get("technologies", [])[:5]} if isinstance(tech_result, dict) else {}),
+                    _zi_status(tech_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
                 # Contact Search — actual management-level + C-suite titles strategy
