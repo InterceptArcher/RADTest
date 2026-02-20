@@ -484,13 +484,31 @@ class ZoomInfoClient:
         return ",".join(candidates)
 
     @staticmethod
-    def _company_name_from_domain(domain: str) -> str:
-        """Derive a best-guess company name from a domain (e.g. 'microsoft.com' → 'Microsoft')."""
+    def _bare_domain(domain: str) -> str:
+        """Strip scheme and www prefix to return a bare hostname (e.g. 'microsoft.com')."""
         bare = domain.strip().rstrip("/")
         for prefix in ("https://www.", "http://www.", "https://", "http://", "www."):
             if bare.startswith(prefix):
                 bare = bare[len(prefix):]
                 break
+        return bare
+
+    @staticmethod
+    def _primary_website(domain: str) -> str:
+        """
+        Return the single canonical URL for a domain in ZoomInfo's preferred format.
+        ZoomInfo enrich endpoints do EXACT URL matching — they do NOT accept
+        comma-separated lists.  Always use this for enrich (not search) payloads.
+        """
+        if not domain:
+            return domain
+        bare = ZoomInfoClient._bare_domain(domain)
+        return f"https://www.{bare}"
+
+    @staticmethod
+    def _company_name_from_domain(domain: str) -> str:
+        """Derive a best-guess company name from a domain (e.g. 'microsoft.com' → 'Microsoft')."""
+        bare = ZoomInfoClient._bare_domain(domain)
         # Use the part before the first dot and capitalise it
         name = bare.split(".")[0]
         return name.capitalize() if name else ""
@@ -503,37 +521,64 @@ class ZoomInfoClient:
         """
         Enrich company data by domain or name.
 
+        ZoomInfo enrich endpoints do EXACT URL matching — they do NOT accept
+        comma-separated lists.  We try URL formats in order:
+          1. https://www.{domain}  (ZoomInfo's documented canonical format)
+          2. https://{domain}      (no-www variant)
+          3. companyName           (name-only fallback)
+
         Returns:
             Dict with success, data (raw), normalized (standard fields), error
         """
-        flat_payload: Dict[str, Any] = {}
+        if not domain and not company_name:
+            return {"success": False, "data": {}, "normalized": {}, "error": "No domain or company name provided"}
+
+        # Build ordered list of payloads to attempt
+        payloads_to_try: List[Dict[str, Any]] = []
         if domain:
-            flat_payload["companyWebsite"] = self._website_candidates(domain)
+            bare = self._bare_domain(domain)
+            for website in (f"https://www.{bare}", f"https://{bare}"):
+                p: Dict[str, Any] = {"companyWebsite": website}
+                if company_name:
+                    p["companyName"] = company_name
+                payloads_to_try.append(p)
         if company_name:
-            flat_payload["companyName"] = company_name
+            payloads_to_try.append({"companyName": company_name})
 
-        try:
-            response = await self._request_with_fallback(
-                ENDPOINTS["company_enrich"], flat_payload, "CompanyEnrich"
-            )
-            # Use _extract_data_list to handle all ZoomInfo response formats
-            data_list = self._extract_data_list(response)
-            if not data_list:
-                return {"success": False, "data": {}, "normalized": {}, "error": "No company data found"}
+        last_error: Optional[str] = None
+        for flat_payload in payloads_to_try:
+            try:
+                response = await self._request_with_fallback(
+                    ENDPOINTS["company_enrich"], flat_payload, "CompanyEnrich"
+                )
+                data_list = self._extract_data_list(response)
+                if data_list:
+                    raw = data_list[0]
+                    normalized = self._normalize_company_data(raw)
+                    logger.info(
+                        "ZoomInfo company enrich success with payload=%s",
+                        list(flat_payload.keys())
+                    )
+                    return {"success": True, "data": raw, "normalized": normalized, "error": None}
+                # This URL variant returned empty — try next
+                logger.debug(
+                    "ZoomInfo company enrich: no data for payload=%s, trying next",
+                    flat_payload
+                )
+            except httpx.TimeoutException:
+                logger.warning("ZoomInfo company enrich timed out")
+                return {"success": False, "data": {}, "normalized": {}, "error": "Request timeout"}
+            except httpx.HTTPStatusError as e:
+                last_error = f"HTTP {e.response.status_code}"
+                logger.warning("ZoomInfo company enrich HTTP %s for payload=%s", e.response.status_code, list(flat_payload.keys()))
+                # On 4xx format errors try next payload; on auth/server errors stop
+                if e.response.status_code not in (400, 404, 422):
+                    return {"success": False, "data": {}, "normalized": {}, "error": last_error}
+            except Exception as e:
+                last_error = str(e)
+                logger.error("ZoomInfo company enrich exception: %s", e)
 
-            raw = data_list[0]
-            normalized = self._normalize_company_data(raw)
-            return {"success": True, "data": raw, "normalized": normalized, "error": None}
-
-        except httpx.TimeoutException:
-            logger.warning("ZoomInfo company enrich timed out")
-            return {"success": False, "data": {}, "normalized": {}, "error": "Request timeout"}
-        except httpx.HTTPStatusError as e:
-            logger.warning(f"ZoomInfo company enrich HTTP error: {e.response.status_code}")
-            return {"success": False, "data": {}, "normalized": {}, "error": f"HTTP {e.response.status_code}"}
-        except Exception as e:
-            logger.error(f"ZoomInfo company enrich failed: {e}")
-            return {"success": False, "data": {}, "normalized": {}, "error": str(e)}
+        return {"success": False, "data": {}, "normalized": {}, "error": last_error or "No company data found"}
 
     async def search_contacts(
         self,
@@ -898,27 +943,31 @@ class ZoomInfoClient:
         )
         return {"success": True, "people": found, "error": None}
 
-    async def enrich_intent(self, domain: str) -> Dict[str, Any]:
+    async def enrich_intent(self, domain: str, company_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get buyer intent signals for a company with full field extraction.
+
+        Args:
+            domain:     Company domain (used as fallback when company_id unavailable)
+            company_id: ZoomInfo internal company ID (preferred — most reliable lookup)
 
         Returns:
             Dict with success, intent_signals (normalized list), raw_data, error
         """
         # ZoomInfo Intent Enrich requires: company identifier + at least 1 topic.
-        # We use DEFAULT_INTENT_TOPICS (broad B2B topics) so we capture all
-        # relevant intent signals regardless of the company's specific focus.
-        flat_payload: Dict[str, Any] = {
-            "companyWebsite": self._website_candidates(domain),
-            "topics": DEFAULT_INTENT_TOPICS,
-        }
+        # companyId is the most reliable identifier; companyWebsite is the fallback.
+        # Use a SINGLE URL (not comma-separated) — enrich does exact URL matching.
+        flat_payload: Dict[str, Any] = {"topics": DEFAULT_INTENT_TOPICS}
+        if company_id:
+            flat_payload["companyId"] = company_id
+        else:
+            flat_payload["companyWebsite"] = self._primary_website(domain)
 
         try:
             response = await self._request_with_fallback(
                 ENDPOINTS["intent_enrich"], flat_payload, "IntentEnrich"
             )
-            raw_signals = response.get("data", [])
-            # Normalize each intent signal to extract all fields
+            raw_signals = self._extract_data_list(response)
             normalized_signals = [self._normalize_intent_signal(sig) for sig in raw_signals]
             return {
                 "success": True,
@@ -936,17 +985,27 @@ class ZoomInfoClient:
             return {"success": False, "intent_signals": [], "raw_data": [], "error": str(e)}
 
     async def search_scoops(
-        self, domain: str, scoop_types: Optional[List[str]] = None
+        self,
+        domain: str,
+        scoop_types: Optional[List[str]] = None,
+        company_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Search for business scoops/events at a company with full field extraction.
 
+        Args:
+            domain:      Company domain (fallback when company_id unavailable)
+            scoop_types: Optional list of scoop type filters
+            company_id:  ZoomInfo internal company ID (preferred identifier)
+
         Returns:
             Dict with success, scoops (normalized list), raw_data, error
         """
-        flat_payload: Dict[str, Any] = {
-            "companyWebsite": self._website_candidates(domain)
-        }
+        flat_payload: Dict[str, Any] = {}
+        if company_id:
+            flat_payload["companyId"] = company_id
+        else:
+            flat_payload["companyWebsite"] = self._primary_website(domain)
         if scoop_types:
             flat_payload["scoopTypes"] = scoop_types
 
@@ -954,8 +1013,7 @@ class ZoomInfoClient:
             response = await self._request_with_fallback(
                 ENDPOINTS["scoops_search"], flat_payload, "ScoopSearch"
             )
-            raw_scoops = response.get("data", [])
-            # Normalize each scoop to extract all fields
+            raw_scoops = self._extract_data_list(response)
             normalized_scoops = [self._normalize_scoop(scoop) for scoop in raw_scoops]
             return {
                 "success": True,
@@ -1003,23 +1061,28 @@ class ZoomInfoClient:
             logger.error(f"ZoomInfo news search failed: {e}")
             return {"success": False, "articles": [], "raw_data": [], "error": str(e)}
 
-    async def enrich_technologies(self, domain: str) -> Dict[str, Any]:
+    async def enrich_technologies(self, domain: str, company_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Get installed technologies for a company with full field extraction.
+
+        Args:
+            domain:     Company domain (fallback when company_id unavailable)
+            company_id: ZoomInfo internal company ID (preferred identifier)
 
         Returns:
             Dict with success, technologies (normalized list), raw_data, error
         """
-        flat_payload: Dict[str, Any] = {
-            "companyWebsite": self._website_candidates(domain)
-        }
+        flat_payload: Dict[str, Any] = {}
+        if company_id:
+            flat_payload["companyId"] = company_id
+        else:
+            flat_payload["companyWebsite"] = self._primary_website(domain)
 
         try:
             response = await self._request_with_fallback(
                 ENDPOINTS["tech_enrich"], flat_payload, "TechnologyEnrich"
             )
-            raw_technologies = response.get("data", [])
-            # Normalize each technology to extract all fields
+            raw_technologies = self._extract_data_list(response)
             normalized_technologies = [self._normalize_technology(tech) for tech in raw_technologies]
             return {
                 "success": True,

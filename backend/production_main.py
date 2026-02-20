@@ -169,7 +169,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-auth-fix-username-password",
+        "deploy_version": "zoominfo-enrich-single-url-companyid-chain",
     }
 
 
@@ -883,20 +883,33 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
     company_name = company_data.get("company_name", "")
 
     try:
-        # Run all ZoomInfo endpoints in parallel
-        company_task = zi_client.enrich_company(domain=domain, company_name=company_name)
-        intent_task = zi_client.enrich_intent(domain=domain)
-        scoops_task = zi_client.search_scoops(domain=domain)
+        # Step 1: Company enrich first — the companyId it returns is the most
+        # reliable identifier for the subsequent enrichment calls.
+        # Running it ahead of the others adds ~1 extra RTT but dramatically
+        # improves match rates for intent/scoops/tech/news lookups.
+        company_result = await zi_client.enrich_company(domain=domain, company_name=company_name)
+
+        # Extract ZoomInfo's internal companyId from the enrichment result.
+        # This ID is used as the primary lookup key for all subsequent calls.
+        company_id: Optional[str] = None
+        if isinstance(company_result, dict) and company_result.get("success"):
+            company_id = company_result.get("normalized", {}).get("company_id") or None
+            logger.info("ZoomInfo company enrich succeeded, companyId=%s", company_id)
+
+        # Step 2: Run remaining endpoints in parallel, using companyId when available.
+        # intent/scoops/tech accept company_id; news uses companyName (per API docs).
+        intent_task = zi_client.enrich_intent(domain=domain, company_id=company_id)
+        scoops_task = zi_client.search_scoops(domain=domain, company_id=company_id)
         news_task = zi_client.search_news(company_name=company_name)
-        tech_task = zi_client.enrich_technologies(domain=domain)
+        tech_task = zi_client.enrich_technologies(domain=domain, company_id=company_id)
         contacts_task = zi_client.search_and_enrich_contacts(domain=domain)
 
         results = await asyncio.gather(
-            company_task, intent_task, scoops_task, news_task, tech_task, contacts_task,
+            intent_task, scoops_task, news_task, tech_task, contacts_task,
             return_exceptions=True
         )
 
-        company_result, intent_result, scoops_result, news_result, tech_result, contacts_result = results
+        intent_result, scoops_result, news_result, tech_result, contacts_result = results
 
         combined_data = {}
         contacts = []
@@ -2719,10 +2732,13 @@ async def debug_zoominfo_raw(domain: str):
     import httpx as _httpx
     from worker.zoominfo_client import ENDPOINTS, OUTPUT_FIELDS, ZOOMINFO_TOKEN_URL
 
+    # Use primary single URL for enrich endpoints; comma-separated for search endpoints
+    primary_website = zi_client._primary_website(domain)
     website_candidates = zi_client._website_candidates(domain)
     company_name = zi_client._company_name_from_domain(domain)
     results: dict = {
         "domain_input": domain,
+        "primary_website": primary_website,
         "website_candidates": website_candidates,
         "company_name_guess": company_name,
         "auto_auth_mode": zi_client._auto_auth,
@@ -2758,22 +2774,23 @@ async def debug_zoominfo_raw(domain: str):
                 oauth_results[f"scope_{scope or 'empty'}"] = {"error": str(e)}
         results["oauth2_token_attempts"] = oauth_results
 
-    # 1. Company enrich (flat JSON — primary format for standard ZoomInfo API)
+    from worker.zoominfo_client import DEFAULT_INTENT_TOPICS
+
+    # 1. Company enrich — uses single URL (not comma-separated), tries www then no-www
+    company_id_found = None
     try:
-        company_raw = await zi_client._request_with_fallback(
-            ENDPOINTS["company_enrich"],
-            {"companyWebsite": website_candidates},
-            "CompanyEnrich",
-        )
-        results["company_enrich_raw"] = company_raw
-        results["company_enrich_keys"] = list(company_raw.keys())
-        data = company_raw.get("data")
-        results["company_enrich_data_type"] = type(data).__name__
-        results["company_enrich_data_len"] = len(data) if isinstance(data, list) else (1 if isinstance(data, dict) else 0)
+        company_result = await zi_client.enrich_company(domain=domain, company_name=company_name)
+        results["company_enrich_success"] = company_result.get("success")
+        results["company_enrich_error"] = company_result.get("error")
+        results["company_enrich_raw"] = company_result.get("data", {})
+        normalized = company_result.get("normalized", {})
+        company_id_found = normalized.get("company_id") or None
+        results["company_id"] = company_id_found
+        results["company_enrich_fields"] = list(k for k, v in normalized.items() if v)
     except Exception as e:
         results["company_enrich_error"] = str(e)
 
-    # 2. Contact search (flat JSON, rpp=5)
+    # 2. Contact search (comma-separated website — search endpoints support this)
     try:
         contact_raw = await zi_client._request_with_fallback(
             ENDPOINTS["contact_search"],
@@ -2781,7 +2798,6 @@ async def debug_zoominfo_raw(domain: str):
             "ContactSearch",
         )
         results["contact_search_raw"] = contact_raw
-        results["contact_search_keys"] = list(contact_raw.keys())
         results["contact_search_data_len"] = len(contact_raw.get("data", [])) if isinstance(contact_raw.get("data"), list) else 0
     except Exception as e:
         results["contact_search_error"] = str(e)
@@ -2793,45 +2809,56 @@ async def debug_zoominfo_raw(domain: str):
             {"companyName": company_name, "rpp": 5},
             "ContactSearch",
         )
-        results["contact_search_by_name_raw"] = contact_name_raw
         results["contact_search_by_name_data_len"] = len(contact_name_raw.get("data", [])) if isinstance(contact_name_raw.get("data"), list) else 0
     except Exception as e:
         results["contact_search_by_name_error"] = str(e)
 
-    # 4. Intent enrich
+    # 4. Intent enrich — uses companyId (preferred) or single primary URL
     try:
-        from worker.zoominfo_client import DEFAULT_INTENT_TOPICS
+        intent_payload: dict = {"topics": DEFAULT_INTENT_TOPICS[:3]}
+        if company_id_found:
+            intent_payload["companyId"] = company_id_found
+        else:
+            intent_payload["companyWebsite"] = primary_website
+        results["intent_payload_used"] = intent_payload
         intent_raw = await zi_client._request_with_fallback(
-            ENDPOINTS["intent_enrich"],
-            {"companyWebsite": website_candidates, "topics": DEFAULT_INTENT_TOPICS[:3]},
-            "IntentEnrich",
+            ENDPOINTS["intent_enrich"], intent_payload, "IntentEnrich",
         )
         results["intent_enrich_raw"] = intent_raw
-        results["intent_enrich_data_len"] = len(intent_raw.get("data", [])) if isinstance(intent_raw.get("data"), list) else 0
+        data = zi_client._extract_data_list(intent_raw)
+        results["intent_enrich_data_len"] = len(data)
     except Exception as e:
         results["intent_enrich_error"] = str(e)
 
-    # 5. Scoops search
+    # 5. Scoops search — uses companyId (preferred) or single primary URL
     try:
+        scoops_payload: dict = {}
+        if company_id_found:
+            scoops_payload["companyId"] = company_id_found
+        else:
+            scoops_payload["companyWebsite"] = primary_website
+        results["scoops_payload_used"] = scoops_payload
         scoops_raw = await zi_client._request_with_fallback(
-            ENDPOINTS["scoops_search"],
-            {"companyWebsite": website_candidates},
-            "ScoopSearch",
+            ENDPOINTS["scoops_search"], scoops_payload, "ScoopSearch",
         )
         results["scoops_raw"] = scoops_raw
-        results["scoops_data_len"] = len(scoops_raw.get("data", [])) if isinstance(scoops_raw.get("data"), list) else 0
+        results["scoops_data_len"] = len(zi_client._extract_data_list(scoops_raw))
     except Exception as e:
         results["scoops_error"] = str(e)
 
-    # 6. Technology enrich
+    # 6. Technology enrich — uses companyId (preferred) or single primary URL
     try:
+        tech_payload: dict = {}
+        if company_id_found:
+            tech_payload["companyId"] = company_id_found
+        else:
+            tech_payload["companyWebsite"] = primary_website
+        results["tech_payload_used"] = tech_payload
         tech_raw = await zi_client._request_with_fallback(
-            ENDPOINTS["tech_enrich"],
-            {"companyWebsite": website_candidates},
-            "TechnologyEnrich",
+            ENDPOINTS["tech_enrich"], tech_payload, "TechnologyEnrich",
         )
         results["tech_enrich_raw"] = tech_raw
-        results["tech_enrich_data_len"] = len(tech_raw.get("data", [])) if isinstance(tech_raw.get("data"), list) else 0
+        results["tech_enrich_data_len"] = len(zi_client._extract_data_list(tech_raw))
     except Exception as e:
         results["tech_enrich_error"] = str(e)
 
