@@ -9,6 +9,11 @@ interface StakeholderMapCardProps {
   onGenerateOutreach?: (roleType: StakeholderRoleType, stakeholderName?: string) => void;
 }
 
+/** Returns true only when a phone string is a real number (non-empty and not ZoomInfo-masked `***`). */
+function isRealPhone(phone: string | undefined): boolean {
+  return !!phone && !/^\*+$/.test(phone);
+}
+
 const roleTypeConfig: Record<StakeholderRoleType, { color: string; bgColor: string; description: string }> = {
   CIO: { color: 'text-blue-700', bgColor: 'bg-blue-100', description: 'Chief Information Officer' },
   CTO: { color: 'text-purple-700', bgColor: 'bg-purple-100', description: 'Chief Technology Officer' },
@@ -298,7 +303,7 @@ function ZoomInfoBadge() {
 function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
   if (!contact) return null;
 
-  const hasPhones = contact.directPhone || contact.mobilePhone || contact.companyPhone || contact.phone;
+  const hasPhones = isRealPhone(contact.directPhone) || isRealPhone(contact.mobilePhone) || isRealPhone(contact.companyPhone) || isRealPhone(contact.phone);
   const isZoomInfoSource = contact.phoneSource === 'zoominfo';
 
   return (
@@ -325,7 +330,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
 
         {/* Phone section — always rendered, shows unavailable when missing */}
         <div className="flex flex-col gap-1">
-          {contact.directPhone && (
+          {isRealPhone(contact.directPhone) && (
             <a href={`tel:${contact.directPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
               <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -333,7 +338,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
               <span className="text-slate-400 mr-1">Direct:</span>{contact.directPhone}
             </a>
           )}
-          {contact.mobilePhone && (
+          {isRealPhone(contact.mobilePhone) && (
             <a href={`tel:${contact.mobilePhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
               <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
@@ -341,7 +346,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
               <span className="text-slate-400 mr-1">Mobile:</span>{contact.mobilePhone}
             </a>
           )}
-          {contact.companyPhone && (
+          {isRealPhone(contact.companyPhone) && (
             <a href={`tel:${contact.companyPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
               <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -349,7 +354,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
               <span className="text-slate-400 mr-1">Company:</span>{contact.companyPhone}
             </a>
           )}
-          {!contact.directPhone && !contact.mobilePhone && !contact.companyPhone && contact.phone && (
+          {!isRealPhone(contact.directPhone) && !isRealPhone(contact.mobilePhone) && !isRealPhone(contact.companyPhone) && isRealPhone(contact.phone) && (
             <a href={`tel:${contact.phone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
               <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
@@ -422,7 +427,7 @@ function CompactContactRow({ stakeholder }: { stakeholder: Stakeholder }) {
           </a>
         )}
         {/* Phone — always shown: clickable link if available, "No phone" label if not */}
-        {(contact.directPhone || contact.mobilePhone || contact.companyPhone || contact.phone) ? (
+        {(isRealPhone(contact.directPhone) || isRealPhone(contact.mobilePhone) || isRealPhone(contact.companyPhone) || isRealPhone(contact.phone)) ? (
           <a
             href={`tel:${contact.directPhone || contact.mobilePhone || contact.companyPhone || contact.phone}`}
             className="flex items-center text-primary-600 hover:text-primary-700"
