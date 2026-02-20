@@ -169,7 +169,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-extract-fix-health-news-v2",
+        "deploy_version": "zoominfo-inject-signals-into-result-v3",
     }
 
 
@@ -1665,6 +1665,98 @@ async def process_company_profile(job_id: str, company_data: dict):
                         validated_data[_field] = _src[_field]
                         break
 
+        # Inject ZoomInfo buyer intelligence into validated_data BEFORE building the result.
+        # ZoomInfo's intent_signals, scoops, technology_installs, and news_articles are
+        # stored in zoominfo_data but were never flowing into validated_data — this block
+        # bridges that gap so build_buying_signals, technologies, and news_intelligence
+        # all benefit from ZoomInfo's primary-source data.
+        if zoominfo_data:
+            _bs = validated_data.setdefault("buying_signals", {})
+
+            # 1. Intent signals → buying_signals.intent_topics (drives BuyingSignalsCard)
+            zi_intent = zoominfo_data.get("intent_signals", [])
+            if zi_intent:
+                if not _bs.get("intent_topics"):
+                    _bs["intent_topics"] = [s.get("topic", "") for s in zi_intent if s.get("topic")]
+                if not _bs.get("intent_topics_detailed"):
+                    _bs["intent_topics_detailed"] = [
+                        {
+                            "topic": s.get("topic", ""),
+                            "description": (
+                                f"Audience strength: {s.get('audience_strength') or 'N/A'}. "
+                                f"Intent score: {s.get('intent_score') or 'N/A'}."
+                            )
+                        }
+                        for s in zi_intent if s.get("topic")
+                    ]
+                logger.info("Injected %d ZoomInfo intent signals into buying_signals", len(zi_intent))
+
+            # 2. Scoops → buying_signals.scoops (drives scoops tab in BuyingSignalsCard)
+            zi_scoops = zoominfo_data.get("scoops", [])
+            if zi_scoops and not _bs.get("scoops"):
+                _bs["scoops"] = [
+                    {
+                        "type": s.get("scoop_type") or "other",
+                        "title": s.get("title", ""),
+                        "date": s.get("date") or s.get("published_date", ""),
+                        "description": s.get("description", ""),
+                    }
+                    for s in zi_scoops
+                ]
+                logger.info("Injected %d ZoomInfo scoops into buying_signals", len(zi_scoops))
+
+            # 3. Technology installs → technologies (list of name strings for BadgeList)
+            zi_tech = zoominfo_data.get("technology_installs", [])
+            if zi_tech and not validated_data.get("technologies"):
+                tech_names = [t.get("tech_name", "") for t in zi_tech if t.get("tech_name")]
+                if tech_names:
+                    validated_data["technologies"] = tech_names
+                    logger.info("Injected %d ZoomInfo tech installs into technologies", len(tech_names))
+
+            # 4. News articles → news_intelligence + news_data
+            # _build_news_intelligence_section reads validated_data["news_intelligence"] and
+            # news_data["articles_count"].  Inject ZoomInfo news as fallback when the LLM
+            # council didn't produce news_intelligence.
+            zi_news = zoominfo_data.get("news_articles", [])
+            if zi_news and not validated_data.get("news_intelligence"):
+                article_titles = [a.get("title", "") for a in zi_news[:5] if a.get("title")]
+                validated_data["news_intelligence"] = {
+                    "recent_news": ". ".join(article_titles[:3]),
+                    "funding_news": next(
+                        (a.get("title", "") for a in zi_news
+                         if any(kw in (a.get("title", "") + a.get("description", "")).lower()
+                                for kw in ("fund", "invest", "raise", "capital"))),
+                        ""
+                    ),
+                    "strategic_changes": next(
+                        (a.get("title", "") for a in zi_news
+                         if any(kw in (a.get("title", "") + a.get("description", "")).lower()
+                                for kw in ("appoint", "hire", "ceo", "cto", "chief", "executive"))),
+                        ""
+                    ),
+                    "partnership_news": next(
+                        (a.get("title", "") for a in zi_news
+                         if any(kw in (a.get("title", "") + a.get("description", "")).lower()
+                                for kw in ("partner", "acqui", "merger"))),
+                        ""
+                    ),
+                    "expansion_news": next(
+                        (a.get("title", "") for a in zi_news
+                         if any(kw in (a.get("title", "") + a.get("description", "")).lower()
+                                for kw in ("expand", "launch", "open", "growth", "new market"))),
+                        ""
+                    ),
+                    "key_insights": article_titles[:5],
+                    "sales_implications": "",
+                    "articles_analyzed": len(zi_news),
+                }
+                # Update news_data so _build_news_intelligence_section sees a real source
+                if not news_data:
+                    news_data = {}
+                news_data["success"] = True
+                news_data["articles_count"] = len(zi_news)
+                logger.info("Injected %d ZoomInfo news articles into news_intelligence", len(zi_news))
+
         # Log what slideshow data we're including in the result
         slideshow_url_to_return = slideshow_result.get("slideshow_url")
         logger.info(f"📊 Final result will include slideshow_url: {slideshow_url_to_return or 'NONE (generation failed)'}")
@@ -1709,7 +1801,12 @@ async def process_company_profile(job_id: str, company_data: dict):
                 "strategyText": (validated_data.get("sales_program") or {}).get("strategy_text") or "",
             },
             # News intelligence section (NEW - does not replace anything)
-            "news_intelligence": _build_news_intelligence_section(validated_data, news_data)
+            "news_intelligence": _build_news_intelligence_section(validated_data, news_data),
+            # Raw ZoomInfo arrays — available for direct frontend consumption
+            "intent_signals": zoominfo_data.get("intent_signals", []),
+            "scoops": zoominfo_data.get("scoops", []),
+            "technology_installs": zoominfo_data.get("technology_installs", []),
+            "zoominfo_news": zoominfo_data.get("news_articles", []),
         }
         # Store raw API data for debug mode
         jobs_store[job_id]["apollo_data"] = apollo_data
