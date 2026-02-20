@@ -126,6 +126,8 @@ ZOOMINFO_CLIENT_ID = os.getenv("ZOOMINFO_CLIENT_ID")
 ZOOMINFO_CLIENT_SECRET = os.getenv("ZOOMINFO_CLIENT_SECRET")
 ZOOMINFO_ACCESS_TOKEN = os.getenv("ZOOMINFO_ACCESS_TOKEN")
 ZOOMINFO_REFRESH_TOKEN = os.getenv("ZOOMINFO_REFRESH_TOKEN")
+ZOOMINFO_USERNAME = os.getenv("ZOOMINFO_USERNAME")
+ZOOMINFO_PASSWORD = os.getenv("ZOOMINFO_PASSWORD")
 
 # Debug: Log env var status at startup
 logger.info("=" * 50)
@@ -167,7 +169,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-flat-json-fallback",
+        "deploy_version": "zoominfo-auth-fix-username-password",
     }
 
 
@@ -201,6 +203,14 @@ async def debug_env():
             return f"SET ({len(val)} chars)"
         return f"{val[:4]}...{val[-4:]} ({len(val)} chars)"
 
+    zi_auth_method = "none"
+    if os.getenv("ZOOMINFO_USERNAME") and os.getenv("ZOOMINFO_PASSWORD"):
+        zi_auth_method = "username+password (auto-refresh)"
+    elif os.getenv("ZOOMINFO_REFRESH_TOKEN"):
+        zi_auth_method = "refresh_token (Okta OAuth)"
+    elif os.getenv("ZOOMINFO_ACCESS_TOKEN"):
+        zi_auth_method = "static token (expires ~1h — set USERNAME+PASSWORD for auto-refresh)"
+
     return {
         "runtime_getenv": {
             "APOLLO_API_KEY": mask(os.getenv("APOLLO_API_KEY")),
@@ -211,12 +221,15 @@ async def debug_env():
             "SUPABASE_URL": mask(os.getenv("SUPABASE_URL")),
             "SUPABASE_KEY": mask(os.getenv("SUPABASE_KEY")),
             "GAMMA_API_KEY": mask(os.getenv("GAMMA_API_KEY")),
-            "ZOOMINFO_CLIENT_ID": mask(os.getenv("ZOOMINFO_CLIENT_ID")),
-            "ZOOMINFO_CLIENT_SECRET": mask(os.getenv("ZOOMINFO_CLIENT_SECRET")),
+            "ZOOMINFO_USERNAME": mask(os.getenv("ZOOMINFO_USERNAME")),
+            "ZOOMINFO_PASSWORD": mask(os.getenv("ZOOMINFO_PASSWORD")),
             "ZOOMINFO_ACCESS_TOKEN": mask(os.getenv("ZOOMINFO_ACCESS_TOKEN")),
             "ZOOMINFO_REFRESH_TOKEN": mask(os.getenv("ZOOMINFO_REFRESH_TOKEN")),
+            "ZOOMINFO_CLIENT_ID": mask(os.getenv("ZOOMINFO_CLIENT_ID")),
+            "ZOOMINFO_CLIENT_SECRET": mask(os.getenv("ZOOMINFO_CLIENT_SECRET")),
         },
-        "note": "All values shown at request time (runtime_getenv). NOT SET means the variable is missing from Render env vars."
+        "zoominfo_auth_method": zi_auth_method,
+        "note": "All values checked at request time. NOT SET = missing from Render environment variables."
     }
 
 
@@ -797,26 +810,31 @@ def _get_zoominfo_client():
     """
     Create ZoomInfo client from environment variables, or return None.
 
-    Auth priority:
-    1. ZOOMINFO_REFRESH_TOKEN — enables automatic token refresh (preferred)
-    2. ZOOMINFO_CLIENT_ID + CLIENT_SECRET — kept for compat, but ZoomInfo's
-       Okta app uses authorization_code/refresh_token grants, not client_credentials;
-       these credentials alone cannot refresh the token automatically
-    3. ZOOMINFO_ACCESS_TOKEN — static token, expires ~1 hour after issue
+    Auth priority (highest → lowest):
+    1. ZOOMINFO_USERNAME + ZOOMINFO_PASSWORD — standard API /authenticate endpoint;
+       always gets a fresh token; recommended for production.
+    2. ZOOMINFO_REFRESH_TOKEN — Okta OAuth2 refresh_token grant.
+    3. ZOOMINFO_ACCESS_TOKEN — static short-lived token (~1 hour); client will
+       retry on 401 but cannot auto-refresh without credentials above.
     """
     try:
         from worker.zoominfo_client import ZoomInfoClient
-        # Always pass all available credentials so the client can try the best
-        # available auth method (refresh_token → static token fallback).
-        if ZOOMINFO_REFRESH_TOKEN or ZOOMINFO_CLIENT_ID or ZOOMINFO_ACCESS_TOKEN:
-            return ZoomInfoClient(
-                access_token=ZOOMINFO_ACCESS_TOKEN,
-                client_id=ZOOMINFO_CLIENT_ID,
-                client_secret=ZOOMINFO_CLIENT_SECRET,
-            )
-        else:
+        has_credentials = (
+            (ZOOMINFO_USERNAME and ZOOMINFO_PASSWORD)
+            or ZOOMINFO_REFRESH_TOKEN
+            or ZOOMINFO_CLIENT_ID
+            or ZOOMINFO_ACCESS_TOKEN
+        )
+        if not has_credentials:
             logger.info("ZoomInfo credentials not configured, skipping")
             return None
+        return ZoomInfoClient(
+            access_token=ZOOMINFO_ACCESS_TOKEN,
+            client_id=ZOOMINFO_CLIENT_ID,
+            client_secret=ZOOMINFO_CLIENT_SECRET,
+            username=ZOOMINFO_USERNAME,
+            password=ZOOMINFO_PASSWORD,
+        )
     except Exception as e:
         logger.warning(f"Failed to create ZoomInfo client: {e}")
         return None
@@ -2740,58 +2758,82 @@ async def debug_zoominfo_raw(domain: str):
                 oauth_results[f"scope_{scope or 'empty'}"] = {"error": str(e)}
         results["oauth2_token_attempts"] = oauth_results
 
-    # 1. Company enrich — all URL variants
+    # 1. Company enrich (flat JSON — primary format for standard ZoomInfo API)
     try:
-        company_raw = await zi_client._make_request(
+        company_raw = await zi_client._request_with_fallback(
             ENDPOINTS["company_enrich"],
-            {"data": {"type": "CompanyEnrich", "attributes": {"companyWebsite": website_candidates}}}
+            {"companyWebsite": website_candidates},
+            "CompanyEnrich",
         )
         results["company_enrich_raw"] = company_raw
         results["company_enrich_keys"] = list(company_raw.keys())
-        results["company_enrich_data_len"] = len(company_raw.get("data", [])) if isinstance(company_raw.get("data"), list) else ("dict" if isinstance(company_raw.get("data"), dict) else 0)
+        data = company_raw.get("data")
+        results["company_enrich_data_type"] = type(data).__name__
+        results["company_enrich_data_len"] = len(data) if isinstance(data, list) else (1 if isinstance(data, dict) else 0)
     except Exception as e:
         results["company_enrich_error"] = str(e)
 
-    # 2. Contact search — all URL variants, no filters
+    # 2. Contact search (flat JSON, rpp=5)
     try:
-        contact_raw = await zi_client._make_request(
+        contact_raw = await zi_client._request_with_fallback(
             ENDPOINTS["contact_search"],
-            {"data": {"type": "ContactSearch", "attributes": {
-                "companyWebsite": website_candidates,
-                "rpp": 5,
-            }}}
+            {"companyWebsite": website_candidates, "rpp": 5},
+            "ContactSearch",
         )
-        results["contact_search_multi_url_raw"] = contact_raw
-        results["contact_search_multi_url_keys"] = list(contact_raw.keys())
-        results["contact_search_multi_url_data_len"] = len(contact_raw.get("data", [])) if isinstance(contact_raw.get("data"), list) else 0
+        results["contact_search_raw"] = contact_raw
+        results["contact_search_keys"] = list(contact_raw.keys())
+        results["contact_search_data_len"] = len(contact_raw.get("data", [])) if isinstance(contact_raw.get("data"), list) else 0
     except Exception as e:
-        results["contact_search_multi_url_error"] = str(e)
+        results["contact_search_error"] = str(e)
 
     # 3. Contact search — companyName fallback
     try:
-        contact_name_raw = await zi_client._make_request(
+        contact_name_raw = await zi_client._request_with_fallback(
             ENDPOINTS["contact_search"],
-            {"data": {"type": "ContactSearch", "attributes": {
-                "companyName": company_name,
-                "rpp": 5,
-            }}}
+            {"companyName": company_name, "rpp": 5},
+            "ContactSearch",
         )
         results["contact_search_by_name_raw"] = contact_name_raw
-        results["contact_search_by_name_keys"] = list(contact_name_raw.keys())
         results["contact_search_by_name_data_len"] = len(contact_name_raw.get("data", [])) if isinstance(contact_name_raw.get("data"), list) else 0
     except Exception as e:
         results["contact_search_by_name_error"] = str(e)
 
-    # 4. Contact search — flat format (no JSON:API wrapper)
+    # 4. Intent enrich
     try:
-        contact_flat_raw = await zi_client._make_request(
-            ENDPOINTS["contact_search"],
-            {"companyWebsite": website_candidates, "maxResults": 5}
+        from worker.zoominfo_client import DEFAULT_INTENT_TOPICS
+        intent_raw = await zi_client._request_with_fallback(
+            ENDPOINTS["intent_enrich"],
+            {"companyWebsite": website_candidates, "topics": DEFAULT_INTENT_TOPICS[:3]},
+            "IntentEnrich",
         )
-        results["contact_search_flat_raw"] = contact_flat_raw
-        results["contact_search_flat_keys"] = list(contact_flat_raw.keys())
+        results["intent_enrich_raw"] = intent_raw
+        results["intent_enrich_data_len"] = len(intent_raw.get("data", [])) if isinstance(intent_raw.get("data"), list) else 0
     except Exception as e:
-        results["contact_search_flat_error"] = str(e)
+        results["intent_enrich_error"] = str(e)
+
+    # 5. Scoops search
+    try:
+        scoops_raw = await zi_client._request_with_fallback(
+            ENDPOINTS["scoops_search"],
+            {"companyWebsite": website_candidates},
+            "ScoopSearch",
+        )
+        results["scoops_raw"] = scoops_raw
+        results["scoops_data_len"] = len(scoops_raw.get("data", [])) if isinstance(scoops_raw.get("data"), list) else 0
+    except Exception as e:
+        results["scoops_error"] = str(e)
+
+    # 6. Technology enrich
+    try:
+        tech_raw = await zi_client._request_with_fallback(
+            ENDPOINTS["tech_enrich"],
+            {"companyWebsite": website_candidates},
+            "TechnologyEnrich",
+        )
+        results["tech_enrich_raw"] = tech_raw
+        results["tech_enrich_data_len"] = len(tech_raw.get("data", [])) if isinstance(tech_raw.get("data"), list) else 0
+    except Exception as e:
+        results["tech_enrich_error"] = str(e)
 
     return results
 

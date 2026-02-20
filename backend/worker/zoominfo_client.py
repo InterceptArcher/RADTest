@@ -161,36 +161,41 @@ class ZoomInfoClient:
         access_token: Optional[str] = None,
         client_id: Optional[str] = None,
         client_secret: Optional[str] = None,
+        username: Optional[str] = None,
+        password: Optional[str] = None,
         timeout: int = 30,
         max_retries: int = 3
     ):
         self._client_id = client_id or os.getenv("ZOOMINFO_CLIENT_ID")
         self._client_secret = client_secret or os.getenv("ZOOMINFO_CLIENT_SECRET")
-        # Static token is stored as a fallback even in auto-auth mode so that
-        # if OAuth2 fails we still have a working token instead of returning
-        # empty results silently.
+        # Username/password for ZoomInfo standard API /authenticate endpoint.
+        # This is the most reliable auto-refresh method — no Okta OAuth required.
+        self._username = username or os.getenv("ZOOMINFO_USERNAME")
+        self._password = password or os.getenv("ZOOMINFO_PASSWORD")
+        # Static token fallback — expires ~1 hour after issue.
         self._static_token = access_token or os.getenv("ZOOMINFO_ACCESS_TOKEN")
-        # Refresh token allows getting a new access token without a user login.
-        # ZoomInfo's Okta app supports [authorization_code, refresh_token] grants —
-        # client_credentials is NOT supported. A refresh token is obtained during
-        # the initial authorization_code login flow and should be stored in
-        # ZOOMINFO_REFRESH_TOKEN environment variable.
+        # Okta refresh_token for OAuth2 refresh_token grant.
         self._refresh_token = os.getenv("ZOOMINFO_REFRESH_TOKEN")
-        # Use token auto-refresh if either refresh_token or client credentials are set.
-        self._auto_auth = bool(self._refresh_token or (self._client_id and self._client_secret))
+        # Auto-auth: any credential that can get a fresh token automatically.
+        # Priority: username/password > refresh_token > static token (no auto-refresh).
+        self._auto_auth = bool(
+            (self._username and self._password)
+            or self._refresh_token
+            or (self._client_id and self._client_secret)
+        )
         self._token_expires_at = 0.0
 
         if self._auto_auth:
-            # Auto-auth mode: token will be refreshed on first request.
-            # If auto-auth fails, falls back to the static token.
+            # Token will be fetched on first request via _authenticate().
             self.access_token = None
         else:
-            # Static token mode — use it directly
+            # Static token only — use it directly; cannot auto-refresh.
             self.access_token = self._static_token
             if not self.access_token:
                 raise ValueError(
-                    "ZoomInfo credentials required. Provide either "
-                    "ZOOMINFO_REFRESH_TOKEN (recommended) or ZOOMINFO_ACCESS_TOKEN. "
+                    "ZoomInfo credentials required. Set one of: "
+                    "ZOOMINFO_USERNAME + ZOOMINFO_PASSWORD (recommended), "
+                    "ZOOMINFO_REFRESH_TOKEN, or ZOOMINFO_ACCESS_TOKEN. "
                     "These values must be provided via environment variables."
                 )
 
@@ -212,26 +217,69 @@ class ZoomInfoClient:
 
     async def _authenticate(self) -> None:
         """
-        Fetch a fresh access token from ZoomInfo's Okta endpoint.
+        Fetch a fresh ZoomInfo access token.  Three strategies attempted in order:
 
-        ZoomInfo's Okta application uses the authorization_code flow (user login)
-        not client_credentials (machine-to-machine). Supported grant types are:
-          [authorization_code, refresh_token]
+        1. Username/password  →  POST https://api.zoominfo.com/authenticate
+           The standard ZoomInfo data API authentication endpoint.  Gives a fresh
+           JWT on every call.  Set ZOOMINFO_USERNAME + ZOOMINFO_PASSWORD.
 
-        This method tries, in order:
-          1. refresh_token grant (ZOOMINFO_REFRESH_TOKEN) — preferred for auto-refresh
-          2. Falls back to static ZOOMINFO_ACCESS_TOKEN if refresh fails or is absent
+        2. Okta refresh_token →  POST Okta /token with grant_type=refresh_token
+           Long-lived refresh token from the initial OAuth2 authorization_code
+           flow.  Set ZOOMINFO_REFRESH_TOKEN.  NOTE: ZoomInfo's Okta app only
+           supports [authorization_code, refresh_token] — NOT client_credentials.
 
-        The client_credentials grant is NOT supported by ZoomInfo's Okta app,
-        so ZOOMINFO_CLIENT_ID/SECRET alone cannot refresh the token automatically.
+        3. Static token fallback  →  ZOOMINFO_ACCESS_TOKEN (~1 hour lifespan)
+           Used as last resort.  If expired → all calls will 401.  The only
+           permanent fix is to set credentials for strategy 1 or 2.
         """
-        credentials = f"{self._client_id}:{self._client_secret}"
-        basic_auth = base64.b64encode(credentials.encode()).decode()
         last_error: Optional[str] = None
 
-        # Strategy 1: refresh_token grant — works when ZOOMINFO_REFRESH_TOKEN is set.
-        # This is the correct long-term auto-refresh flow for ZoomInfo.
+        # ------------------------------------------------------------------ #
+        # Strategy 1: username/password — always works, no Okta dependency   #
+        # ------------------------------------------------------------------ #
+        if self._username and self._password:
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(
+                        f"{self.base_url}/authenticate",
+                        json={"username": self._username, "password": self._password},
+                        headers={"Content-Type": "application/json"},
+                    )
+                    response.raise_for_status()
+                    token_data = response.json()
+
+                # ZoomInfo /authenticate returns {"jwt": "...", "expiresAt": ...}
+                jwt = token_data.get("jwt") or token_data.get("access_token")
+                if not jwt:
+                    raise ValueError(f"No jwt in response: {list(token_data.keys())}")
+
+                self.access_token = jwt
+                # expiresAt may be epoch seconds or milliseconds
+                expires_at = token_data.get("expiresAt")
+                if expires_at:
+                    # If it's ms (>year 3000 in seconds), convert to seconds
+                    if expires_at > 9_999_999_999:
+                        expires_at = expires_at / 1000
+                    self._token_expires_at = expires_at - 300
+                else:
+                    self._token_expires_at = time.time() + 3600 - 300
+                self.headers["Authorization"] = f"Bearer {self.access_token}"
+                logger.info("ZoomInfo token obtained via username/password auth")
+                return
+
+            except httpx.HTTPStatusError as e:
+                last_error = f"username/password auth failed: HTTP {e.response.status_code}"
+                logger.warning("ZoomInfo username/password auth failed: %s", e.response.status_code)
+            except Exception as e:
+                last_error = f"username/password auth exception: {e}"
+                logger.warning("ZoomInfo username/password auth exception: %s", e)
+
+        # ------------------------------------------------------------------ #
+        # Strategy 2: Okta refresh_token grant                               #
+        # ------------------------------------------------------------------ #
         if self._refresh_token:
+            credentials = f"{self._client_id}:{self._client_secret}"
+            basic_auth = base64.b64encode(credentials.encode()).decode()
             try:
                 async with httpx.AsyncClient(timeout=self.timeout) as client:
                     response = await client.post(
@@ -246,7 +294,6 @@ class ZoomInfoClient:
                     token_data = response.json()
 
                 self.access_token = token_data["access_token"]
-                # Store the new refresh token if one was returned (rotation)
                 if "refresh_token" in token_data:
                     self._refresh_token = token_data["refresh_token"]
                 expires_in = token_data.get("expires_in", 3600)
@@ -257,33 +304,31 @@ class ZoomInfoClient:
 
             except httpx.HTTPStatusError as e:
                 last_error = f"refresh_token grant failed: HTTP {e.response.status_code}"
-                logger.warning(f"ZoomInfo refresh_token grant failed: {e.response.status_code}")
+                logger.warning("ZoomInfo refresh_token grant failed: %s", e.response.status_code)
             except Exception as e:
                 last_error = f"refresh_token grant exception: {e}"
-                logger.warning(f"ZoomInfo refresh_token exception: {e}")
+                logger.warning("ZoomInfo refresh_token exception: %s", e)
 
-        # Strategy 2: Fall back to static token if available.
-        # The static ZOOMINFO_ACCESS_TOKEN was obtained via the authorization_code
-        # flow (user login). It expires (~1 hour) and must be manually refreshed
-        # by the user if no ZOOMINFO_REFRESH_TOKEN is configured.
+        # ------------------------------------------------------------------ #
+        # Strategy 3: static ZOOMINFO_ACCESS_TOKEN fallback                  #
+        # ------------------------------------------------------------------ #
         if self._static_token:
             logger.warning(
                 "ZoomInfo auto-refresh unavailable (%s). "
-                "Using static ZOOMINFO_ACCESS_TOKEN — if this is expired, "
-                "set ZOOMINFO_REFRESH_TOKEN in environment variables for automatic refresh.",
-                last_error or "no refresh token configured"
+                "Using static ZOOMINFO_ACCESS_TOKEN — expires ~1 hour after issue. "
+                "Set ZOOMINFO_USERNAME+ZOOMINFO_PASSWORD for permanent auto-refresh.",
+                last_error or "no auto-auth credentials configured"
             )
             self.access_token = self._static_token
-            # We don't know when the static token expires — set a 24h window so
-            # we don't retry auto-refresh on every request after the first failure.
-            self._token_expires_at = time.time() + 86400
+            # Mark as short-lived so we don't suppress re-auth attempts indefinitely
+            self._token_expires_at = time.time() + 3300  # 55 min
             self.headers["Authorization"] = f"Bearer {self.access_token}"
             return
 
         raise ValueError(
-            "ZoomInfo token refresh failed. "
-            "Set ZOOMINFO_REFRESH_TOKEN for automatic token refresh, or "
-            "set ZOOMINFO_ACCESS_TOKEN with a fresh token from the ZoomInfo platform. "
+            "ZoomInfo token refresh failed — no valid credentials. "
+            "Set ZOOMINFO_USERNAME + ZOOMINFO_PASSWORD (recommended), "
+            "ZOOMINFO_REFRESH_TOKEN, or a fresh ZOOMINFO_ACCESS_TOKEN. "
             f"Last error: {last_error}"
         )
 
@@ -295,9 +340,12 @@ class ZoomInfoClient:
             await self._authenticate()
 
     async def _make_request(
-        self, endpoint: str, payload: Dict[str, Any]
+        self, endpoint: str, payload: Dict[str, Any], _is_retry: bool = False
     ) -> Dict[str, Any]:
-        """Make an authenticated POST request to ZoomInfo API."""
+        """
+        Make an authenticated POST request to ZoomInfo API.
+        On HTTP 401 (expired token), re-authenticates once and retries.
+        """
         await self._ensure_valid_token()
         await self.rate_limiter.acquire()
         url = f"{self.base_url}{endpoint}"
@@ -306,6 +354,16 @@ class ZoomInfoClient:
             response = await client.post(
                 url, json=payload, headers=self.headers
             )
+            # On first 401, force token refresh and retry once
+            if response.status_code == 401 and not _is_retry and self._auto_auth:
+                logger.warning(
+                    "ZoomInfo 401 on %s — token likely expired, re-authenticating and retrying",
+                    endpoint
+                )
+                self._token_expires_at = 0  # Force re-auth
+                await self._authenticate()
+                return await self._make_request(endpoint, payload, _is_retry=True)
+
             if not response.is_success:
                 # Log full response body so the root cause is visible in logs
                 try:
@@ -359,17 +417,28 @@ class ZoomInfoClient:
         """
         Extract the data list from a ZoomInfo API response.
         Handles multiple response formats:
-          - {"data": [...]}              (JSON:API)
+          - {"data": [...]}              (JSON:API list)
+          - {"data": {...}}              (single-object response — wrapped in list)
           - {"result": {"data": [...]}}  (legacy)
           - {"contacts": [...]}          (flat)
           - {"people": [...]}            (flat)
         """
         if "data" in response:
-            return response["data"] if isinstance(response["data"], list) else []
+            d = response["data"]
+            if isinstance(d, list):
+                return d
+            if isinstance(d, dict) and d:
+                # Single-object response (e.g. /enrich/company) — normalise to list
+                return [d]
+            return []
         if "result" in response and isinstance(response["result"], dict):
             inner = response["result"]
             if "data" in inner:
-                return inner["data"] if isinstance(inner["data"], list) else []
+                d = inner["data"]
+                if isinstance(d, list):
+                    return d
+                if isinstance(d, dict) and d:
+                    return [d]
         for key in ("contacts", "people", "persons", "results", "items"):
             if key in response and isinstance(response[key], list):
                 return response[key]
