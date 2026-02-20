@@ -417,12 +417,19 @@ class ZoomInfoClient:
         """
         Extract the data list from a ZoomInfo API response.
         Handles multiple response formats:
-          - {"data": [...]}              (JSON:API list)
-          - {"data": {...}}              (single-object response — wrapped in list)
-          - {"result": {"data": [...]}}  (legacy)
-          - {"contacts": [...]}          (flat)
-          - {"people": [...]}            (flat)
+          - {"data": [...]}                 (standard list)
+          - {"data": {...}}                 (single-object — wrapped in list)
+          - {"result": {"data": [...]}}     (nested legacy)
+          - {"result": [...]}               (result IS the list)
+          - {"result": {...}}               (result IS a single object)
+          - {"articles": [...]}             (news search)
+          - {"scoops": [...]}               (scoops search)
+          - {"technologies": [...]}         (tech enrich)
+          - {"signals": [...]}              (intent enrich)
+          - {"contacts": [...]}             (contact search flat)
+          - {"people": [...]}               (flat variant)
         """
+        # Primary key: "data"
         if "data" in response:
             d = response["data"]
             if isinstance(d, list):
@@ -431,17 +438,35 @@ class ZoomInfoClient:
                 # Single-object response (e.g. /enrich/company) — normalise to list
                 return [d]
             return []
-        if "result" in response and isinstance(response["result"], dict):
+
+        # "result" key — may be dict-with-data, a list, or a bare object
+        if "result" in response:
             inner = response["result"]
-            if "data" in inner:
-                d = inner["data"]
-                if isinstance(d, list):
-                    return d
-                if isinstance(d, dict) and d:
-                    return [d]
-        for key in ("contacts", "people", "persons", "results", "items"):
+            if isinstance(inner, list):
+                return inner
+            if isinstance(inner, dict):
+                if "data" in inner:
+                    d = inner["data"]
+                    if isinstance(d, list):
+                        return d
+                    if isinstance(d, dict) and d:
+                        return [d]
+                elif inner:
+                    # result IS the data object (no nested "data" key)
+                    return [inner]
+
+        # Domain-specific list keys used by ZoomInfo endpoint responses
+        for key in (
+            "articles", "news",                     # /search/news
+            "scoops", "scoop",                       # /search/scoop
+            "technologies", "technology",            # /enrich/technology
+            "signals", "intent", "intentSignals",    # /enrich/intent
+            "contacts", "people", "persons",         # contact endpoints
+            "results", "items",                      # generic fallbacks
+        ):
             if key in response and isinstance(response[key], list):
                 return response[key]
+
         # Log unexpected format to aid debugging
         logger.warning(f"ZoomInfo: unrecognised response format — keys: {list(response.keys())}")
         return []
@@ -768,7 +793,7 @@ class ZoomInfoClient:
             response = await self._request_with_fallback(
                 ENDPOINTS["contact_enrich"], flat_payload, "ContactEnrich"
             )
-            data_list = response.get("data", [])
+            data_list = self._extract_data_list(response)
             people = [self._normalize_contact(c) for c in data_list]
             return {"success": True, "people": people, "error": None}
 
@@ -1030,21 +1055,26 @@ class ZoomInfoClient:
             logger.error(f"ZoomInfo scoops search failed: {e}")
             return {"success": False, "scoops": [], "raw_data": [], "error": str(e)}
 
-    async def search_news(self, company_name: str) -> Dict[str, Any]:
+    async def search_news(self, company_name: str, company_id: Optional[str] = None) -> Dict[str, Any]:
         """
         Search for company news articles with full field extraction.
+
+        Args:
+            company_name: Company name string
+            company_id:   ZoomInfo internal company ID (preferred — more reliable lookup)
 
         Returns:
             Dict with success, articles (normalized list), raw_data, error
         """
         flat_payload: Dict[str, Any] = {"companyName": company_name}
+        if company_id:
+            flat_payload["companyId"] = company_id
 
         try:
             response = await self._request_with_fallback(
                 ENDPOINTS["news_search"], flat_payload, "NewsSearch"
             )
-            raw_articles = response.get("data", [])
-            # Normalize each article to extract all fields
+            raw_articles = self._extract_data_list(response)
             normalized_articles = [self._normalize_news_article(article) for article in raw_articles]
             return {
                 "success": True,

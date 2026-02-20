@@ -158,7 +158,7 @@ async def health_check():
         "openai": "configured" if OPENAI_API_KEY else "missing",
         "supabase": "configured" if SUPABASE_URL and SUPABASE_KEY else "missing",
         "gamma": "configured" if GAMMA_API_KEY else "missing",
-        "zoominfo": "configured" if (ZOOMINFO_CLIENT_ID and ZOOMINFO_CLIENT_SECRET) or ZOOMINFO_ACCESS_TOKEN else "missing",
+        "zoominfo": "configured" if (ZOOMINFO_USERNAME and ZOOMINFO_PASSWORD) or ZOOMINFO_REFRESH_TOKEN or (ZOOMINFO_CLIENT_ID and ZOOMINFO_CLIENT_SECRET) or ZOOMINFO_ACCESS_TOKEN else "missing",
     }
 
     all_configured = all(v == "configured" for v in api_status.values())
@@ -169,7 +169,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-enrich-single-url-companyid-chain",
+        "deploy_version": "zoominfo-extract-fix-health-news-v2",
     }
 
 
@@ -900,7 +900,7 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
         # intent/scoops/tech accept company_id; news uses companyName (per API docs).
         intent_task = zi_client.enrich_intent(domain=domain, company_id=company_id)
         scoops_task = zi_client.search_scoops(domain=domain, company_id=company_id)
-        news_task = zi_client.search_news(company_name=company_name)
+        news_task = zi_client.search_news(company_name=company_name, company_id=company_id)
         tech_task = zi_client.enrich_technologies(domain=domain, company_id=company_id)
         contacts_task = zi_client.search_and_enrich_contacts(domain=domain)
 
