@@ -317,7 +317,7 @@ const generateDemoData = (): DebugData => ({
       timestamp: new Date(Date.now() - 298000).toISOString(),
       duration: 800,
       isSensitive: true,
-      maskedFields: ['authorization', 'email', 'phone'],
+      maskedFields: ['authorization'],
     },
     {
       id: 'api-1',
