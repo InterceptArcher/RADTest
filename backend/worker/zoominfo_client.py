@@ -558,7 +558,13 @@ class ZoomInfoClient:
         if not domain and not company_name:
             return {"success": False, "data": {}, "normalized": {}, "error": "No domain or company name provided"}
 
-        # Build ordered list of payloads to attempt
+        # Build ordered list of payloads to attempt.
+        # ZoomInfo's enrich API accepts multiple formats — we try them all in order:
+        # 1. companyWebsite with full https://www. URL (standard enrich format)
+        # 2. companyWebsite with no-www variant
+        # 3. website with bare domain only (some API versions use "website" not "companyWebsite")
+        # 4. matchCompanyInput array (ZoomInfo data API v2 format)
+        # 5. companyName only as last resort
         payloads_to_try: List[Dict[str, Any]] = []
         if domain:
             bare = self._bare_domain(domain)
@@ -567,8 +573,13 @@ class ZoomInfoClient:
                 if company_name:
                     p["companyName"] = company_name
                 payloads_to_try.append(p)
+            # "website" field variant (no scheme, bare domain)
+            payloads_to_try.append({"website": bare})
+            # matchCompanyInput array format (ZoomInfo data API v2)
+            payloads_to_try.append({"matchCompanyInput": [{"website": bare}]})
         if company_name:
             payloads_to_try.append({"companyName": company_name})
+            payloads_to_try.append({"matchCompanyInput": [{"companyName": company_name}]})
 
         last_error: Optional[str] = None
         for flat_payload in payloads_to_try:

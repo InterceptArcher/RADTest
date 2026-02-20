@@ -169,7 +169,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-inject-signals-into-result-v3",
+        "deploy_version": "zoominfo-raw-debug-matchcompanyinput-v4",
     }
 
 
@@ -2818,146 +2818,163 @@ async def get_job_status(job_id: str):
 @app.get("/debug-zoominfo/{domain}", tags=["Debug"])
 async def debug_zoominfo_raw(domain: str):
     """
-    Diagnostic endpoint: make a raw ZoomInfo API call and return the full
-    response body so we can see exactly what ZoomInfo returns.
+    Diagnostic endpoint: makes raw HTTP calls to every ZoomInfo endpoint and
+    returns the EXACT status code + response body for each payload variant.
+    This bypasses all client-side error handling so you can see what ZoomInfo
+    actually returns — 400 bad request, 403 plan restriction, 404 wrong path,
+    or 200 with empty/populated data.
     """
+    import httpx as _httpx
+    from worker.zoominfo_client import ENDPOINTS, DEFAULT_INTENT_TOPICS
+
     zi_client = _get_zoominfo_client()
     if not zi_client:
-        return {"error": "ZoomInfo not configured"}
+        return {"error": "ZoomInfo not configured — set ZOOMINFO_USERNAME+PASSWORD or ZOOMINFO_ACCESS_TOKEN"}
 
-    import base64
-    import httpx as _httpx
-    from worker.zoominfo_client import ENDPOINTS, OUTPUT_FIELDS, ZOOMINFO_TOKEN_URL
+    # Ensure a valid auth token is loaded before probing
+    try:
+        await zi_client._ensure_valid_token()
+    except Exception as e:
+        return {"error": f"ZoomInfo auth failed: {e}"}
 
-    # Use primary single URL for enrich endpoints; comma-separated for search endpoints
-    primary_website = zi_client._primary_website(domain)
-    website_candidates = zi_client._website_candidates(domain)
+    bare = zi_client._bare_domain(domain)
+    primary_website = f"https://www.{bare}"
     company_name = zi_client._company_name_from_domain(domain)
+
     results: dict = {
         "domain_input": domain,
+        "bare_domain": bare,
         "primary_website": primary_website,
-        "website_candidates": website_candidates,
         "company_name_guess": company_name,
-        "auto_auth_mode": zi_client._auto_auth,
-        "has_static_token": bool(zi_client._static_token),
-        "current_token_set": bool(zi_client.access_token),
+        "token_present": bool(zi_client.access_token),
     }
 
-    # 0. OAuth2 token attempt — test each scope variant and return raw response body
-    if zi_client._auto_auth:
-        creds = f"{zi_client._client_id}:{zi_client._client_secret}"
-        basic = base64.b64encode(creds.encode()).decode()
-        oauth_results = {}
-        for scope in ["openid", "", "api"]:
-            body = "grant_type=client_credentials"
-            if scope:
-                body += f"&scope={scope}"
+    # ------------------------------------------------------------------ #
+    # Helper: POST one payload to one endpoint and capture everything     #
+    # Returns a dict with: endpoint, payload, http_status, response_body, #
+    # data_len (how many records _extract_data_list found), error         #
+    # ------------------------------------------------------------------ #
+    async def _probe(endpoint: str, payload: dict) -> dict:
+        url = f"{zi_client.base_url}{endpoint}"
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/vnd.api+json, application/json",
+            "Authorization": f"Bearer {zi_client.access_token}",
+        }
+        try:
+            async with _httpx.AsyncClient(timeout=20) as hc:
+                r = await hc.post(url, json=payload, headers=headers)
             try:
-                async with _httpx.AsyncClient(timeout=10) as hc:
-                    r = await hc.post(
-                        ZOOMINFO_TOKEN_URL,
-                        headers={"Authorization": f"Basic {basic}", "Content-Type": "application/x-www-form-urlencoded"},
-                        data=body,
-                    )
-                    try:
-                        resp_body = r.json()
-                    except Exception:
-                        resp_body = r.text[:500]
-                    oauth_results[f"scope_{scope or 'empty'}"] = {
-                        "status": r.status_code,
-                        "body": resp_body,
-                    }
-            except Exception as e:
-                oauth_results[f"scope_{scope or 'empty'}"] = {"error": str(e)}
-        results["oauth2_token_attempts"] = oauth_results
+                body = r.json()
+            except Exception:
+                body = r.text[:1000]
+            data_list = zi_client._extract_data_list(body) if isinstance(body, dict) else []
+            return {
+                "endpoint": endpoint,
+                "payload": payload,
+                "http_status": r.status_code,
+                "response_body": body,
+                "data_len": len(data_list),
+            }
+        except Exception as exc:
+            return {
+                "endpoint": endpoint,
+                "payload": payload,
+                "http_status": None,
+                "response_body": None,
+                "error": str(exc),
+            }
 
-    from worker.zoominfo_client import DEFAULT_INTENT_TOPICS
-
-    # 1. Company enrich — uses single URL (not comma-separated), tries www then no-www
+    # ------------------------------------------------------------------ #
+    # 1. Company enrich — try every payload variant in order             #
+    # ------------------------------------------------------------------ #
+    company_payloads = [
+        {"companyWebsite": primary_website},
+        {"companyWebsite": f"https://{bare}"},
+        {"website": bare},
+        {"website": primary_website},
+        {"matchCompanyInput": [{"website": bare}]},
+        {"matchCompanyInput": [{"companyName": company_name}]},
+        {"companyName": company_name},
+    ]
+    company_probes = []
     company_id_found = None
-    try:
-        company_result = await zi_client.enrich_company(domain=domain, company_name=company_name)
-        results["company_enrich_success"] = company_result.get("success")
-        results["company_enrich_error"] = company_result.get("error")
-        results["company_enrich_raw"] = company_result.get("data", {})
-        normalized = company_result.get("normalized", {})
-        company_id_found = normalized.get("company_id") or None
-        results["company_id"] = company_id_found
-        results["company_enrich_fields"] = list(k for k, v in normalized.items() if v)
-    except Exception as e:
-        results["company_enrich_error"] = str(e)
+    for p in company_payloads:
+        probe = await _probe(ENDPOINTS["company_enrich"], p)
+        company_probes.append(probe)
+        if probe["http_status"] == 200 and probe["data_len"] > 0:
+            # Extract companyId from first successful result
+            body = probe["response_body"]
+            data_list = zi_client._extract_data_list(body) if isinstance(body, dict) else []
+            if data_list:
+                raw = data_list[0]
+                attrs = raw.get("attributes", raw)
+                company_id_found = (
+                    attrs.get("companyId") or attrs.get("id") or
+                    raw.get("id") or str(attrs.get("objectId", "")) or None
+                )
+            break  # stop once we have a hit
+    results["company_enrich"] = company_probes
+    results["company_id_found"] = company_id_found
 
-    # 2. Contact search (comma-separated website — search endpoints support this)
-    try:
-        contact_raw = await zi_client._request_with_fallback(
-            ENDPOINTS["contact_search"],
-            {"companyWebsite": website_candidates, "rpp": 5},
-            "ContactSearch",
-        )
-        results["contact_search_raw"] = contact_raw
-        results["contact_search_data_len"] = len(contact_raw.get("data", [])) if isinstance(contact_raw.get("data"), list) else 0
-    except Exception as e:
-        results["contact_search_error"] = str(e)
+    # ------------------------------------------------------------------ #
+    # 2. Scoops search (known working — baseline reference)              #
+    # ------------------------------------------------------------------ #
+    scoops_p = {"companyId": company_id_found} if company_id_found else {"companyWebsite": primary_website}
+    results["scoops_search"] = [await _probe(ENDPOINTS["scoops_search"], scoops_p)]
 
-    # 3. Contact search — companyName fallback
-    try:
-        contact_name_raw = await zi_client._request_with_fallback(
-            ENDPOINTS["contact_search"],
-            {"companyName": company_name, "rpp": 5},
-            "ContactSearch",
-        )
-        results["contact_search_by_name_data_len"] = len(contact_name_raw.get("data", [])) if isinstance(contact_name_raw.get("data"), list) else 0
-    except Exception as e:
-        results["contact_search_by_name_error"] = str(e)
+    # ------------------------------------------------------------------ #
+    # 3. Intent — try /enrich/intent and /search/intent, with/without    #
+    #    companyId, with/without topics                                   #
+    # ------------------------------------------------------------------ #
+    intent_payloads = []
+    if company_id_found:
+        intent_payloads += [
+            ("/enrich/intent",  {"companyId": company_id_found, "topics": DEFAULT_INTENT_TOPICS[:3]}),
+            ("/enrich/intent",  {"companyId": company_id_found}),
+            ("/search/intent",  {"companyId": company_id_found}),
+        ]
+    intent_payloads += [
+        ("/enrich/intent",  {"companyWebsite": primary_website, "topics": DEFAULT_INTENT_TOPICS[:3]}),
+        ("/enrich/intent",  {"companyWebsite": primary_website}),
+        ("/search/intent",  {"companyWebsite": primary_website}),
+    ]
+    results["intent_enrich"] = [await _probe(ep, p) for ep, p in intent_payloads]
 
-    # 4. Intent enrich — uses companyId (preferred) or single primary URL
-    try:
-        intent_payload: dict = {"topics": DEFAULT_INTENT_TOPICS[:3]}
-        if company_id_found:
-            intent_payload["companyId"] = company_id_found
-        else:
-            intent_payload["companyWebsite"] = primary_website
-        results["intent_payload_used"] = intent_payload
-        intent_raw = await zi_client._request_with_fallback(
-            ENDPOINTS["intent_enrich"], intent_payload, "IntentEnrich",
-        )
-        results["intent_enrich_raw"] = intent_raw
-        data = zi_client._extract_data_list(intent_raw)
-        results["intent_enrich_data_len"] = len(data)
-    except Exception as e:
-        results["intent_enrich_error"] = str(e)
+    # ------------------------------------------------------------------ #
+    # 4. News — try /search/news with multiple identifier types          #
+    # ------------------------------------------------------------------ #
+    news_payloads = [
+        ("/search/news", {"companyName": company_name}),
+        ("/search/news", {"companyWebsite": primary_website}),
+    ]
+    if company_id_found:
+        news_payloads.insert(0, ("/search/news", {"companyId": company_id_found}))
+    results["news_search"] = [await _probe(ep, p) for ep, p in news_payloads]
 
-    # 5. Scoops search — uses companyId (preferred) or single primary URL
-    try:
-        scoops_payload: dict = {}
-        if company_id_found:
-            scoops_payload["companyId"] = company_id_found
-        else:
-            scoops_payload["companyWebsite"] = primary_website
-        results["scoops_payload_used"] = scoops_payload
-        scoops_raw = await zi_client._request_with_fallback(
-            ENDPOINTS["scoops_search"], scoops_payload, "ScoopSearch",
-        )
-        results["scoops_raw"] = scoops_raw
-        results["scoops_data_len"] = len(zi_client._extract_data_list(scoops_raw))
-    except Exception as e:
-        results["scoops_error"] = str(e)
+    # ------------------------------------------------------------------ #
+    # 5. Technology — try /enrich/technology and /search/technology      #
+    # ------------------------------------------------------------------ #
+    tech_payloads = []
+    if company_id_found:
+        tech_payloads += [
+            ("/enrich/technology",  {"companyId": company_id_found}),
+            ("/search/technology",  {"companyId": company_id_found}),
+        ]
+    tech_payloads += [
+        ("/enrich/technology",  {"companyWebsite": primary_website}),
+        ("/search/technology",  {"companyWebsite": primary_website}),
+        ("/enrich/technology",  {"website": bare}),
+    ]
+    results["tech_enrich"] = [await _probe(ep, p) for ep, p in tech_payloads]
 
-    # 6. Technology enrich — uses companyId (preferred) or single primary URL
-    try:
-        tech_payload: dict = {}
-        if company_id_found:
-            tech_payload["companyId"] = company_id_found
-        else:
-            tech_payload["companyWebsite"] = primary_website
-        results["tech_payload_used"] = tech_payload
-        tech_raw = await zi_client._request_with_fallback(
-            ENDPOINTS["tech_enrich"], tech_payload, "TechnologyEnrich",
-        )
-        results["tech_enrich_raw"] = tech_raw
-        results["tech_enrich_data_len"] = len(zi_client._extract_data_list(tech_raw))
-    except Exception as e:
-        results["tech_enrich_error"] = str(e)
+    # ------------------------------------------------------------------ #
+    # 6. Contact search (reference — should be working)                  #
+    # ------------------------------------------------------------------ #
+    results["contact_search"] = [
+        await _probe(ENDPOINTS["contact_search"],
+                     {"companyWebsite": zi_client._website_candidates(domain), "rpp": 3})
+    ]
 
     return results
 
