@@ -669,9 +669,19 @@ class ZoomInfoClient:
                 if data_list:
                     raw = data_list[0]
                     normalized = self._normalize_company_data(raw)
+                    # ZoomInfo batch format puts the company ID on the result-item wrapper
+                    # (result[0].id), NOT inside the data record.  If normalization
+                    # didn't find an id in the record, pull it from the wrapper now.
+                    if not normalized.get("company_id"):
+                        for batch_item in (response.get("result") or []):
+                            if isinstance(batch_item, dict) and batch_item.get("matchStatus") in ("MATCH", "PARTIAL_MATCH"):
+                                cid = batch_item.get("id") or batch_item.get("companyId")
+                                if cid:
+                                    normalized["company_id"] = str(cid)
+                                    break
                     logger.info(
-                        "ZoomInfo company enrich success with payload=%s",
-                        list(flat_payload.keys())
+                        "ZoomInfo company enrich success with payload=%s company_id=%s",
+                        list(flat_payload.keys()), normalized.get("company_id")
                     )
                     return {"success": True, "data": raw, "normalized": normalized, "error": None}
                 # This URL variant returned empty — try next

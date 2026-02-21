@@ -274,10 +274,8 @@ export default function JobDetailPage() {
               <InfoItem label="Founded" value={data.founded_year} />
               <InfoItem label="CEO" value={data.ceo} />
               <InfoItem label="Company Type" value={(data as any).company_type || (data as any).ownership_type} />
-              <InfoItem label="Locations" value={(data as any).num_locations} />
               <InfoItem label="Phone" value={isRealPhone((data as any).phone) ? (data as any).phone : undefined} />
               <InfoItem label="Ticker" value={(data as any).ticker} />
-              <InfoItem label="Parent Company" value={(data as any).parent_company} />
             </div>
           </div>
 
