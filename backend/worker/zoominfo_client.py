@@ -61,6 +61,11 @@ OUTPUT_FIELDS = [
 # unless at least one outputField is supplied.  Field names match the ZoomInfo standard
 # API schema (camelCase).  Fields not supported by a given subscription tier are silently
 # omitted from the response rather than causing an error.
+# Fields confirmed available on this subscription tier.
+# The following were explicitly returned as invalidOutputFields by ZoomInfo and MUST NOT
+# be requested: employeesRange, industry, subIndustry, description, linkedInUrl,
+# yearFounded, companyType, ownershipType, naicsCode, sicCode, technologies.
+# Requesting any disallowed field causes HTTP 400 for the entire request.
 COMPANY_OUTPUT_FIELDS = [
     "id",
     "name",
@@ -68,22 +73,11 @@ COMPANY_OUTPUT_FIELDS = [
     "revenue",
     "revenueRange",
     "employeeCount",
-    "employeesRange",
-    "industry",
-    "subIndustry",
-    "description",
     "city",
     "state",
     "country",
     "phone",
-    "linkedInUrl",
     "ticker",
-    "yearFounded",
-    "companyType",
-    "ownershipType",
-    "naicsCode",
-    "sicCode",
-    "technologies",
 ]
 
 # Priority C-Suite titles — CTO, CFO, CMO, CIO are searched first.
@@ -1181,17 +1175,16 @@ class ZoomInfoClient:
         We therefore use _make_request directly with ordered fallback payloads instead
         of _request_with_fallback which appends a JSON:API attempt.
         """
-        # Ordered payloads: companyId (most reliable) → companyName → companyWebsite
+        # /search/news only accepts companyId.
+        # companyName → HTTP 400 invalidInputFields: ['companyname']
+        # companyWebsite → HTTP 400 invalidInputFields: ['companywebsite']
+        # Both are confirmed invalid.  Only companyId works.
         payloads_to_try: List[Dict[str, Any]] = []
         if company_id:
             payloads_to_try.append({"companyId": company_id})
-        if company_name:
-            payloads_to_try.append({"companyName": company_name})
-        # NOTE: companyWebsite is NOT a valid field for /search/news — the API returns
-        # HTTP 400 invalidInputFields: ['companywebsite'].  Do NOT add it here.
 
         if not payloads_to_try:
-            return {"success": False, "articles": [], "raw_data": [], "error": "No company identifier provided"}
+            return {"success": False, "articles": [], "raw_data": [], "error": "companyId required for /search/news — not available until company enrich succeeds"}
 
         last_error: Optional[str] = None
         for flat_payload in payloads_to_try:
