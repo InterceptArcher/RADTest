@@ -1804,6 +1804,8 @@ async def process_company_profile(job_id: str, company_data: dict):
             "competitors": validated_data.get("competitors") or apollo_data.get("competitors") or pdl_data.get("competitors") or [],
             "company_type": validated_data.get("company_type") or apollo_data.get("company_type") or pdl_data.get("company_type") or zoominfo_data.get("company_type"),
             "linkedin_url": validated_data.get("linkedin_url") or apollo_data.get("linkedin_url") or pdl_data.get("linkedin_url") or zoominfo_data.get("linkedin_url"),
+            "phone": zoominfo_data.get("phone") or validated_data.get("phone") or apollo_data.get("phone") or pdl_data.get("phone"),
+            "ticker": zoominfo_data.get("ticker") or validated_data.get("ticker"),
             "validated_data": validated_data,
             # New intelligence sections at top level for frontend
             # Build executive_snapshot from nested or flat data
