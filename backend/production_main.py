@@ -897,10 +897,10 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
             logger.info("ZoomInfo company enrich succeeded, companyId=%s", company_id)
 
         # Step 2: Run remaining endpoints in parallel, using companyId when available.
-        # intent/scoops/tech accept company_id; news uses companyName (per API docs).
+        # All endpoints prefer companyId; domain/name are fallbacks.
         intent_task = zi_client.enrich_intent(domain=domain, company_id=company_id)
         scoops_task = zi_client.search_scoops(domain=domain, company_id=company_id)
-        news_task = zi_client.search_news(company_name=company_name, company_id=company_id)
+        news_task = zi_client.search_news(company_name=company_name, company_id=company_id, domain=domain)
         tech_task = zi_client.enrich_technologies(domain=domain, company_id=company_id)
         contacts_task = zi_client.search_and_enrich_contacts(domain=domain)
 
@@ -2976,13 +2976,12 @@ async def debug_zoominfo_raw(domain: str):
     tech_payloads = []
     if company_id_found:
         tech_payloads += [
-            ("/enrich/technology",  {"companyId": company_id_found}),
-            ("/search/technology",  {"companyId": company_id_found}),
+            ("/enrich/technologies",  {"companyId": company_id_found}),  # correct plural path
+            ("/enrich/technology",    {"companyId": company_id_found}),  # singular (404) — kept for comparison
         ]
     tech_payloads += [
-        ("/enrich/technology",  {"companyWebsite": primary_website}),
-        ("/search/technology",  {"companyWebsite": primary_website}),
-        ("/enrich/technology",  {"website": bare}),
+        ("/enrich/technologies",  {"companyWebsite": primary_website}),
+        ("/enrich/technology",    {"companyWebsite": primary_website}),
     ]
     results["tech_enrich"] = [await _probe(ep, p) for ep, p in tech_payloads]
 
