@@ -628,17 +628,17 @@ class ZoomInfoClient:
         if domain:
             bare = self._bare_domain(domain)
             for website in (f"https://www.{bare}", f"https://{bare}"):
-                p: Dict[str, Any] = {"companyWebsite": website, "outputFields": COMPANY_OUTPUT_FIELDS}
+                p: Dict[str, Any] = {"companyWebsite": website, "outputfields": COMPANY_OUTPUT_FIELDS}
                 if company_name:
                     p["companyName"] = company_name
                 payloads_to_try.append(p)
             # "website" field variant (no scheme, bare domain)
-            payloads_to_try.append({"website": bare, "outputFields": COMPANY_OUTPUT_FIELDS})
+            payloads_to_try.append({"website": bare, "outputfields": COMPANY_OUTPUT_FIELDS})
             # matchCompanyInput array format (ZoomInfo data API v2)
-            payloads_to_try.append({"matchCompanyInput": [{"website": bare}], "outputFields": COMPANY_OUTPUT_FIELDS})
+            payloads_to_try.append({"matchCompanyInput": [{"website": bare}], "outputfields": COMPANY_OUTPUT_FIELDS})
         if company_name:
-            payloads_to_try.append({"companyName": company_name, "outputFields": COMPANY_OUTPUT_FIELDS})
-            payloads_to_try.append({"matchCompanyInput": [{"companyName": company_name}], "outputFields": COMPANY_OUTPUT_FIELDS})
+            payloads_to_try.append({"companyName": company_name, "outputfields": COMPANY_OUTPUT_FIELDS})
+            payloads_to_try.append({"matchCompanyInput": [{"companyName": company_name}], "outputfields": COMPANY_OUTPUT_FIELDS})
 
         last_error: Optional[str] = None
         for flat_payload in payloads_to_try:
@@ -1057,15 +1057,13 @@ class ZoomInfoClient:
         primary_website = self._primary_website(domain)
 
         # Ordered payloads: companyId (most reliable) → companyWebsite fallback.
-        # Each variant includes topics so the API has the required signal filter.
+        # topics is MANDATORY for /enrich/intent — omitting it returns HTTP 400
+        # "Invalid number of topics requested. Add between 1 and 50 topics."
+        # Every payload variant must therefore include topics.
         payloads_to_try: List[Dict[str, Any]] = []
         if company_id:
             payloads_to_try.append({"companyId": company_id, "topics": DEFAULT_INTENT_TOPICS})
         payloads_to_try.append({"companyWebsite": primary_website, "topics": DEFAULT_INTENT_TOPICS})
-        # Topic-free fallback in case topic names are not in the subscriber's topic library
-        if company_id:
-            payloads_to_try.append({"companyId": company_id})
-        payloads_to_try.append({"companyWebsite": primary_website})
 
         last_error: Optional[str] = None
         for flat_payload in payloads_to_try:
