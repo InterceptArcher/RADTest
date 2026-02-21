@@ -491,6 +491,24 @@ class ZoomInfoClient:
         if "result" in response:
             inner = response["result"]
             if isinstance(inner, list):
+                # ZoomInfo batch enrich format:
+                #   result: [{input: {...}, data: [...], matchStatus: "MATCH"|"NO_MATCH"|"INVALID_INPUT"}]
+                # The outer list contains one wrapper per input, not the actual records.
+                # Extract the real company/entity data from inside each matched item.
+                if inner and isinstance(inner[0], dict) and "matchStatus" in inner[0]:
+                    matched: list = []
+                    for item in inner:
+                        if item.get("matchStatus") in ("MATCH", "PARTIAL_MATCH"):
+                            item_data = item.get("data", [])
+                            if isinstance(item_data, list):
+                                matched.extend(
+                                    d for d in item_data
+                                    if isinstance(d, dict) and "errorMessage" not in d
+                                )
+                            elif isinstance(item_data, dict) and "errorMessage" not in item_data and item_data:
+                                matched.append(item_data)
+                    return matched
+                # Plain list (non-batch) — return as-is
                 return inner
             if isinstance(inner, dict):
                 if "data" in inner:
@@ -618,21 +636,26 @@ class ZoomInfoClient:
         # outputFields is added to EVERY payload variant so the field is present
         # regardless of which identifier format (companyWebsite / matchCompanyInput /
         # companyName) ends up succeeding.
+        # ZoomInfo /enrich/company uses the batch format:
+        #   {"matchCompanyInput": [{"companyWebsite": "https://..."}], "outputfields": [...]}
+        # Response: {"result": [{"input": {...}, "data": [...], "matchStatus": "MATCH"}]}
+        # Valid identifier fields inside matchCompanyInput: companyWebsite, companyName, companyId.
+        # "website" (bare domain) is NOT a valid identifier and returns INVALID_INPUT.
         payloads_to_try: List[Dict[str, Any]] = []
         if domain:
             bare = self._bare_domain(domain)
+            # Batch format first — this is what the API responds in
+            for website in (f"https://www.{bare}", f"https://{bare}"):
+                payloads_to_try.append({"matchCompanyInput": [{"companyWebsite": website}], "outputfields": COMPANY_OUTPUT_FIELDS})
+            # Simple flat format as fallback (companyWebsite at top level)
             for website in (f"https://www.{bare}", f"https://{bare}"):
                 p: Dict[str, Any] = {"companyWebsite": website, "outputfields": COMPANY_OUTPUT_FIELDS}
                 if company_name:
                     p["companyName"] = company_name
                 payloads_to_try.append(p)
-            # "website" field variant (no scheme, bare domain)
-            payloads_to_try.append({"website": bare, "outputfields": COMPANY_OUTPUT_FIELDS})
-            # matchCompanyInput array format (ZoomInfo data API v2)
-            payloads_to_try.append({"matchCompanyInput": [{"website": bare}], "outputfields": COMPANY_OUTPUT_FIELDS})
         if company_name:
-            payloads_to_try.append({"companyName": company_name, "outputfields": COMPANY_OUTPUT_FIELDS})
             payloads_to_try.append({"matchCompanyInput": [{"companyName": company_name}], "outputfields": COMPANY_OUTPUT_FIELDS})
+            payloads_to_try.append({"companyName": company_name, "outputfields": COMPANY_OUTPUT_FIELDS})
 
         # Use _make_request directly (no JSON:API fallback) so 'outputfields' stays
         # at the top level of the flat JSON payload.  _request_with_fallback buries
