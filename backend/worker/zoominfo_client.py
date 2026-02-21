@@ -640,12 +640,14 @@ class ZoomInfoClient:
             payloads_to_try.append({"companyName": company_name, "outputfields": COMPANY_OUTPUT_FIELDS})
             payloads_to_try.append({"matchCompanyInput": [{"companyName": company_name}], "outputfields": COMPANY_OUTPUT_FIELDS})
 
+        # Use _make_request directly (no JSON:API fallback) so 'outputfields' stays
+        # at the top level of the flat JSON payload.  _request_with_fallback buries
+        # every key inside {"data": {"attributes": {...}}} on its second attempt,
+        # causing the API to return HTTP 400 "Missing required field 'outputfields'".
         last_error: Optional[str] = None
         for flat_payload in payloads_to_try:
             try:
-                response = await self._request_with_fallback(
-                    ENDPOINTS["company_enrich"], flat_payload, "CompanyEnrich"
-                )
+                response = await self._make_request(ENDPOINTS["company_enrich"], flat_payload)
                 data_list = self._extract_data_list(response)
                 if data_list:
                     raw = data_list[0]
@@ -1090,6 +1092,15 @@ class ZoomInfoClient:
                     "ZoomInfo intent enrich %s for payload=%s",
                     detail, list(flat_payload.keys())
                 )
+                # "Invalid topics" means the topic names/IDs are not in this account's
+                # topic library — retrying with a different company identifier won't help.
+                # This typically indicates Buyer Intent is not enabled on the subscription.
+                if "invalid topics" in detail.lower() or "invalid number of topics" in detail.lower():
+                    logger.warning(
+                        "ZoomInfo Buyer Intent topics rejected — check that Buyer Intent is "
+                        "enabled on the account and that topic names match the ZoomInfo taxonomy"
+                    )
+                    break
                 if e.response.status_code not in (400, 422):
                     # Auth/server errors — no point retrying with a different payload
                     break
@@ -1176,8 +1187,8 @@ class ZoomInfoClient:
             payloads_to_try.append({"companyId": company_id})
         if company_name:
             payloads_to_try.append({"companyName": company_name})
-        if domain:
-            payloads_to_try.append({"companyWebsite": self._primary_website(domain)})
+        # NOTE: companyWebsite is NOT a valid field for /search/news — the API returns
+        # HTTP 400 invalidInputFields: ['companywebsite'].  Do NOT add it here.
 
         if not payloads_to_try:
             return {"success": False, "articles": [], "raw_data": [], "error": "No company identifier provided"}
@@ -1234,45 +1245,52 @@ class ZoomInfoClient:
         """
         primary_website = self._primary_website(domain)
 
-        # Build ordered payloads: companyId first (required by the API),
-        # then companyWebsite as a fallback.
+        # Both /enrich/technology (singular) and /enrich/technologies (plural) return 404.
+        # Try every known candidate path; stop at the first that returns non-404.
+        # companyId is preferred per API docs; companyWebsite is tried as a fallback.
+        candidate_endpoints = [
+            "/search/technographics",   # most likely correct path for current API
+            "/enrich/technographics",
+            "/enrich/technologies",     # plural — confirmed 404 but kept for future-proofing
+        ]
         payloads_to_try: List[Dict[str, Any]] = []
         if company_id:
             payloads_to_try.append({"companyId": company_id})
         payloads_to_try.append({"companyWebsite": primary_website})
 
         last_error: Optional[str] = None
-        for flat_payload in payloads_to_try:
-            try:
-                response = await self._make_request(ENDPOINTS["tech_enrich"], flat_payload)
-                raw_technologies = self._extract_data_list(response)
-                normalized_technologies = [self._normalize_technology(tech) for tech in raw_technologies]
-                logger.info(
-                    "ZoomInfo tech enrich success: %d technologies for domain=%s (payload=%s)",
-                    len(raw_technologies), domain, list(flat_payload.keys())
-                )
-                return {
-                    "success": True,
-                    "technologies": normalized_technologies,
-                    "raw_data": raw_technologies,
-                    "error": None,
-                }
-            except httpx.TimeoutException:
-                return {"success": False, "technologies": [], "raw_data": [], "error": "Request timeout"}
-            except httpx.HTTPStatusError as e:
-                detail = self._http_error_detail(e)
-                last_error = detail
-                logger.warning(
-                    "ZoomInfo tech enrich %s for payload=%s",
-                    detail, list(flat_payload.keys())
-                )
-                if e.response.status_code not in (400, 404, 422):
-                    # Auth/server errors — stop retrying
+        for endpoint in candidate_endpoints:
+            for flat_payload in payloads_to_try:
+                try:
+                    response = await self._make_request(endpoint, flat_payload)
+                    raw_technologies = self._extract_data_list(response)
+                    normalized_technologies = [self._normalize_technology(tech) for tech in raw_technologies]
+                    logger.info(
+                        "ZoomInfo tech enrich success via %s: %d technologies for domain=%s",
+                        endpoint, len(raw_technologies), domain
+                    )
+                    # Update ENDPOINTS cache so subsequent calls skip the probing
+                    ENDPOINTS["tech_enrich"] = endpoint
+                    return {
+                        "success": True,
+                        "technologies": normalized_technologies,
+                        "raw_data": raw_technologies,
+                        "error": None,
+                    }
+                except httpx.TimeoutException:
+                    return {"success": False, "technologies": [], "raw_data": [], "error": "Request timeout"}
+                except httpx.HTTPStatusError as e:
+                    detail = self._http_error_detail(e)
+                    last_error = detail
+                    logger.warning("ZoomInfo tech enrich %s %s", endpoint, detail)
+                    if e.response.status_code == 404:
+                        break  # This endpoint doesn't exist — skip remaining payloads, try next endpoint
+                    if e.response.status_code not in (400, 422):
+                        return {"success": False, "technologies": [], "raw_data": [], "error": detail}
+                except Exception as e:
+                    last_error = str(e)
+                    logger.error("ZoomInfo tech enrich exception on %s: %s", endpoint, e)
                     break
-            except Exception as e:
-                last_error = str(e)
-                logger.error("ZoomInfo tech enrich exception: %s", e)
-                break
 
         return {"success": False, "technologies": [], "raw_data": [], "error": last_error or "No technology data found"}
 
