@@ -893,8 +893,11 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
         # This ID is used as the primary lookup key for all subsequent calls.
         company_id: Optional[str] = None
         if isinstance(company_result, dict) and company_result.get("success"):
-            company_id = company_result.get("normalized", {}).get("company_id") or None
-            logger.info("ZoomInfo company enrich succeeded, companyId=%s", company_id)
+            raw_cid = company_result.get("normalized", {}).get("company_id")
+            company_id = str(raw_cid) if raw_cid else None
+            logger.info("ZoomInfo company enrich succeeded — companyId=%s (raw=%r)", company_id, raw_cid)
+        elif isinstance(company_result, dict):
+            logger.warning("ZoomInfo company enrich failed — error=%s — company_id will be None, news/scoops/intent will fall back to domain", company_result.get("error", "unknown"))
 
         # Step 2: Run remaining endpoints in parallel, using companyId when available.
         # All endpoints prefer companyId; domain/name are fallbacks.
@@ -1806,6 +1809,7 @@ async def process_company_profile(job_id: str, company_data: dict):
             "linkedin_url": validated_data.get("linkedin_url") or apollo_data.get("linkedin_url") or pdl_data.get("linkedin_url") or zoominfo_data.get("linkedin_url"),
             "phone": zoominfo_data.get("phone") or validated_data.get("phone") or apollo_data.get("phone") or pdl_data.get("phone"),
             "ticker": zoominfo_data.get("ticker") or validated_data.get("ticker"),
+            "zoominfo_company_id": zoominfo_data.get("company_id") or None,
             "validated_data": validated_data,
             # New intelligence sections at top level for frontend
             # Build executive_snapshot from nested or flat data
@@ -2908,14 +2912,16 @@ async def debug_zoominfo_raw(domain: str):
     # ------------------------------------------------------------------ #
     # 1. Company enrich — try every payload variant in order             #
     # ------------------------------------------------------------------ #
+    from worker.zoominfo_client import COMPANY_OUTPUT_FIELDS as _CO_FIELDS
     company_payloads = [
-        {"companyWebsite": primary_website},
-        {"companyWebsite": f"https://{bare}"},
-        {"website": bare},
-        {"website": primary_website},
-        {"matchCompanyInput": [{"website": bare}]},
-        {"matchCompanyInput": [{"companyName": company_name}]},
-        {"companyName": company_name},
+        # Batch format (what the API actually responds in) — outputfields required
+        {"matchCompanyInput": [{"companyWebsite": primary_website}], "outputfields": _CO_FIELDS},
+        {"matchCompanyInput": [{"companyWebsite": f"https://{bare}"}], "outputfields": _CO_FIELDS},
+        {"matchCompanyInput": [{"companyName": company_name}], "outputfields": _CO_FIELDS},
+        # Flat format fallbacks — outputfields still required
+        {"companyWebsite": primary_website, "outputfields": _CO_FIELDS},
+        {"companyWebsite": f"https://{bare}", "outputfields": _CO_FIELDS},
+        {"companyName": company_name, "outputfields": _CO_FIELDS},
     ]
     company_probes = []
     company_id_found = None

@@ -1673,7 +1673,12 @@ class ZoomInfoClient:
             "num_locations": attrs.get("numLocations", ""),
 
             # Additional metadata
-            "company_id": attrs.get("companyId", attrs.get("id", raw.get("id", ""))),
+            # ZoomInfo may return the company ID as an integer or under several field names.
+            # Normalise to a non-empty string so downstream callers can safely do `or None`.
+            "company_id": str(
+                attrs.get("companyId") or attrs.get("id") or attrs.get("objectId") or
+                raw.get("companyId") or raw.get("id") or ""
+            ) or "",
             "logo_url": attrs.get("logoUrl", attrs.get("logo", "")),
             "last_updated": attrs.get("lastUpdated", ""),
             "data_quality_score": attrs.get("dataQualityScore", attrs.get("confidenceScore", "")),
