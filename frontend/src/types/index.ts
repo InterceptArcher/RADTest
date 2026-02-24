@@ -10,6 +10,7 @@ export interface CompanyProfileRequest {
   domain: string;
   industry?: string;
   requested_by: string;
+  salesperson_name?: string;
 }
 
 /**

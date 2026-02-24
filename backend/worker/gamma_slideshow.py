@@ -608,8 +608,8 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
         est = timezone(timedelta(hours=-5))
         current_date = datetime.now(est).strftime("%B %d, %Y")
 
-        # User email (person pulling data)
-        preparer_email = user_email or company_data.get('user_email', '[salesperson@hp.com]')
+        # Salesperson name (entered by user on the form)
+        salesperson_name = company_data.get('salesperson_name') or user_email or company_data.get('user_email', '')
 
         markdown = ""
 
@@ -653,7 +653,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         # SLIDE 1: Title Slide
         # ============================================================
         markdown += f"# Account Intelligence Report: {company_name}\n\n"
-        markdown += f"**Prepared for:** {preparer_email} by the HP RAD Intelligence Desk\n\n"
+        markdown += f"**Prepared for:** {salesperson_name} by the HP RAD Intelligence Desk\n\n"
         markdown += f"**This information was pulled on:** {current_date}\n\n"
 
         # Add warning banner if data is unavailable

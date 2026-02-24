@@ -9,12 +9,14 @@ import { sanitizeDomain } from '@/lib/validation';
 interface FormData {
   companyName: string;
   website: string;
+  salespersonName: string;
   email: string;
 }
 
 interface FormErrors {
   companyName?: string;
   website?: string;
+  salespersonName?: string;
   email?: string;
 }
 
@@ -24,6 +26,7 @@ export default function AddCompanyForm() {
   const [formData, setFormData] = useState<FormData>({
     companyName: '',
     website: '',
+    salespersonName: '',
     email: '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
@@ -68,16 +71,18 @@ export default function AddCompanyForm() {
         company_name: formData.companyName,
         domain: domain,
         requested_by: formData.email,
+        salesperson_name: formData.salespersonName || undefined,
       });
 
       addJob(response.job_id, {
         company_name: formData.companyName,
         domain: domain,
         requested_by: formData.email,
+        salesperson_name: formData.salespersonName || undefined,
       });
 
       // Reset form
-      setFormData({ companyName: '', website: '', email: '' });
+      setFormData({ companyName: '', website: '', salespersonName: '', email: '' });
 
       // Navigate to jobs
       router.push('/dashboard/jobs');
@@ -156,6 +161,26 @@ export default function AddCompanyForm() {
             {errors.website}
           </p>
         )}
+      </div>
+
+      {/* Salesperson */}
+      <div>
+        <label
+          htmlFor="salespersonName"
+          className="block text-sm font-medium text-slate-700 mb-2"
+        >
+          Salesperson
+        </label>
+        <input
+          type="text"
+          id="salespersonName"
+          value={formData.salespersonName}
+          onChange={(e) =>
+            setFormData({ ...formData, salespersonName: e.target.value })
+          }
+          placeholder="e.g., Jane Smith"
+          className="input-field"
+        />
       </div>
 
       {/* Email */}

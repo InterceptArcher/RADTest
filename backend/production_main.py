@@ -83,6 +83,7 @@ class CompanyProfileRequest(BaseModel):
     domain: str = Field(..., min_length=1, max_length=255)
     industry: Optional[str] = Field(None, max_length=200)
     requested_by: str = Field(..., description="Email of requester")
+    salesperson_name: Optional[str] = Field(None, max_length=200, description="Name of the salesperson")
 
 
 class ProfileRequestResponse(BaseModel):
@@ -1574,6 +1575,8 @@ async def process_company_profile(job_id: str, company_data: dict):
 
         # CRITICAL: Wrap in try-except so job continues even if slideshow fails
         try:
+            # Inject salesperson_name so it reaches the gamma slideshow
+            validated_data["salesperson_name"] = company_data.get("salesperson_name", "")
             slideshow_result = await generate_slideshow(company_data["company_name"], validated_data)
 
             # Log slideshow result for debugging
@@ -2602,7 +2605,8 @@ async def generate_slideshow(company_name: str, validated_data: dict) -> Dict[st
         company_data = {
             "company_name": company_name,
             "validated_data": validated_data,
-            "confidence_score": validated_data.get("confidence_score", 0.85)
+            "confidence_score": validated_data.get("confidence_score", 0.85),
+            "salesperson_name": validated_data.get("salesperson_name", ""),
         }
 
         # Generate slideshow - gamma_slideshow handles template automatically
@@ -2775,7 +2779,8 @@ async def create_profile_request(
         "company_name": profile_request.company_name,
         "domain": profile_request.domain,
         "industry": profile_request.industry or "Unknown",
-        "requested_by": profile_request.requested_by
+        "requested_by": profile_request.requested_by,
+        "salesperson_name": profile_request.salesperson_name or "",
     }
 
     jobs_store[job_id] = {
