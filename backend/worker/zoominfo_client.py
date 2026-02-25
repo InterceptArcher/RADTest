@@ -210,6 +210,7 @@ class ZoomInfoClient:
         access_token: Optional[str] = None,
         client_id: Optional[str] = None,
         client_secret: Optional[str] = None,
+        refresh_token: Optional[str] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
         timeout: int = 30,
@@ -225,7 +226,7 @@ class ZoomInfoClient:
         # Static token — can be an OAuth2 bearer token from ZoomInfo docs page (24h).
         self._static_token = access_token or os.getenv("ZOOMINFO_ACCESS_TOKEN")
         # Okta refresh_token for OAuth2 refresh_token grant (GTM API compatible).
-        self._refresh_token = os.getenv("ZOOMINFO_REFRESH_TOKEN")
+        self._refresh_token = refresh_token or os.getenv("ZOOMINFO_REFRESH_TOKEN")
         # Auto-auth: refresh_token + client creds enable automatic OAuth2 token refresh.
         # Priority: OAuth2 refresh_token > static token > legacy /authenticate (fallback).
         self._auto_auth = bool(

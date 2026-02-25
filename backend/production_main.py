@@ -2875,7 +2875,7 @@ async def debug_zoominfo_raw(domain: str):
 
     zi_client = _get_zoominfo_client()
     if not zi_client:
-        return {"error": "ZoomInfo not configured — set ZOOMINFO_USERNAME+PASSWORD or ZOOMINFO_ACCESS_TOKEN"}
+        return {"error": "ZoomInfo not configured — set ZOOMINFO_REFRESH_TOKEN+CLIENT_ID+CLIENT_SECRET or ZOOMINFO_ACCESS_TOKEN"}
 
     # Ensure a valid auth token is loaded before probing
     try:
