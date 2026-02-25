@@ -1,13 +1,14 @@
 """
 Tests for ZoomInfo GTM API v1 migration.
 TDD: Tests written FIRST — validates endpoint paths, JSON:API request format,
-content-type headers, and phone field output configuration.
+content-type headers, phone field output configuration, and OAuth2 auth flow.
 
 These tests MUST FAIL against the old legacy endpoint code and PASS after migration.
 """
 import pytest
 import os
 import sys
+import httpx
 from unittest.mock import AsyncMock, patch, MagicMock
 
 # Add worker directory to path for imports
@@ -344,3 +345,161 @@ class TestGTMTechEnrichFormat:
         payload = call["payload"]
         assert "data" in payload
         assert payload["data"]["type"] == "TechnologiesEnrich"
+
+
+class TestGTMOAuth2AuthFlow:
+    """Validate OAuth2 refresh_token auth is prioritized for GTM API."""
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_beats_legacy_auth_even_when_username_set(self):
+        """When BOTH refresh_token AND username/password are available, OAuth2
+        refresh_token must be tried FIRST — because the legacy /authenticate
+        endpoint returns JWTs that DON'T work with GTM API v1 endpoints."""
+        from zoominfo_client import ZoomInfoClient, ZOOMINFO_TOKEN_URL
+
+        captured_urls = []
+
+        def make_mock_response(url, **kwargs):
+            captured_urls.append(str(url))
+            mock_resp = MagicMock()
+            if "okta-login" in str(url):
+                mock_resp.status_code = 200
+                mock_resp.is_success = True
+                mock_resp.json.return_value = {
+                    "access_token": "oauth2-gtm-token",
+                    "refresh_token": "new-rotated-refresh-token",
+                    "expires_in": 86400,
+                    "token_type": "Bearer",
+                }
+                mock_resp.raise_for_status = MagicMock()
+            else:
+                # Legacy /authenticate — should NOT be reached when refresh_token works
+                mock_resp.status_code = 200
+                mock_resp.is_success = True
+                mock_resp.json.return_value = {"jwt": "legacy-jwt-token"}
+                mock_resp.raise_for_status = MagicMock()
+            return mock_resp
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(side_effect=make_mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            # Set BOTH username/password AND refresh_token + client creds
+            client = ZoomInfoClient(
+                client_id="test-client-id",
+                client_secret="test-client-secret",
+                username="user@company.com",
+                password="password123",
+                access_token=None,
+            )
+            client._refresh_token = "initial-refresh-token"
+            client._auto_auth = True
+
+            await client._authenticate()
+
+        # OAuth2 endpoint must be the FIRST URL called, even though username is set
+        assert len(captured_urls) > 0
+        assert "okta-login" in captured_urls[0], (
+            f"First auth call must be Okta OAuth2, not legacy /authenticate. "
+            f"Got: {captured_urls[0]}"
+        )
+        # Must NOT have called legacy /authenticate
+        legacy_calls = [u for u in captured_urls if "/authenticate" in u and "okta" not in u]
+        assert len(legacy_calls) == 0, (
+            f"Legacy /authenticate must not be called when refresh_token succeeds. "
+            f"Calls: {captured_urls}"
+        )
+        # Token must be the OAuth2 one, not the legacy JWT
+        assert client.access_token == "oauth2-gtm-token"
+
+    @pytest.mark.asyncio
+    async def test_refresh_token_rotation_stored(self):
+        """After successful OAuth2 refresh, new refresh_token must be stored."""
+        from zoominfo_client import ZoomInfoClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.is_success = True
+        mock_resp.json.return_value = {
+            "access_token": "new-access-token",
+            "refresh_token": "rotated-refresh-token-xyz",
+            "expires_in": 86400,
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.dict("os.environ", {"ZOOMINFO_REFRESH_TOKEN": "old-refresh-token"}):
+            with patch("httpx.AsyncClient", return_value=mock_client):
+                client = ZoomInfoClient(
+                    client_id="cid",
+                    client_secret="csecret",
+                )
+
+                await client._authenticate()
+
+        assert client._refresh_token == "rotated-refresh-token-xyz"
+        assert client.access_token == "new-access-token"
+
+    @pytest.mark.asyncio
+    async def test_oauth2_token_lifetime_24h(self):
+        """OAuth2 access tokens are valid for 24 hours (86400s), not 1 hour."""
+        import time
+        from zoominfo_client import ZoomInfoClient
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.is_success = True
+        mock_resp.json.return_value = {
+            "access_token": "token-24h",
+            "refresh_token": "rt",
+            "expires_in": 86400,
+        }
+        mock_resp.raise_for_status = MagicMock()
+
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_resp)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.dict("os.environ", {"ZOOMINFO_REFRESH_TOKEN": "rt"}):
+            with patch("httpx.AsyncClient", return_value=mock_client):
+                client = ZoomInfoClient(
+                    client_id="cid",
+                    client_secret="csecret",
+                )
+
+                before = time.time()
+                await client._authenticate()
+
+        # Token should expire ~24h from now (minus 300s buffer)
+        expected_min = before + 86400 - 300 - 5  # 5s tolerance
+        expected_max = before + 86400 - 300 + 5
+        assert expected_min <= client._token_expires_at <= expected_max, (
+            f"Token expiry should be ~24h out, got offset: "
+            f"{client._token_expires_at - before}s"
+        )
+
+    def test_legacy_authenticate_not_called_when_no_username(self):
+        """If ZOOMINFO_USERNAME is not set, legacy /authenticate is never attempted."""
+        from zoominfo_client import ZoomInfoClient
+        with patch.dict("os.environ", {}, clear=True):
+            client = ZoomInfoClient(access_token="manual-oauth-token")
+        # username/password should not be set
+        assert not client._username
+        assert not client._password
+
+    @pytest.mark.asyncio
+    async def test_static_token_fallback_when_no_refresh_token(self):
+        """When only a static access_token is provided (no refresh_token),
+        it should be used directly without any auth calls."""
+        from zoominfo_client import ZoomInfoClient
+
+        client = ZoomInfoClient(access_token="manual-oauth2-bearer-token")
+        assert client.access_token == "manual-oauth2-bearer-token"
+        assert client.headers["Authorization"] == "Bearer manual-oauth2-bearer-token"

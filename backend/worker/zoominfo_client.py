@@ -217,20 +217,20 @@ class ZoomInfoClient:
     ):
         self._client_id = client_id or os.getenv("ZOOMINFO_CLIENT_ID")
         self._client_secret = client_secret or os.getenv("ZOOMINFO_CLIENT_SECRET")
-        # Username/password for ZoomInfo standard API /authenticate endpoint.
-        # This is the most reliable auto-refresh method — no Okta OAuth required.
+        # Username/password for ZoomInfo legacy /authenticate endpoint.
+        # WARNING: The legacy /authenticate JWT does NOT work with GTM API v1
+        # endpoints.  Kept only as a last-resort diagnostic fallback.
         self._username = username or os.getenv("ZOOMINFO_USERNAME")
         self._password = password or os.getenv("ZOOMINFO_PASSWORD")
-        # Static token fallback — expires ~1 hour after issue.
+        # Static token — can be an OAuth2 bearer token from ZoomInfo docs page (24h).
         self._static_token = access_token or os.getenv("ZOOMINFO_ACCESS_TOKEN")
-        # Okta refresh_token for OAuth2 refresh_token grant.
+        # Okta refresh_token for OAuth2 refresh_token grant (GTM API compatible).
         self._refresh_token = os.getenv("ZOOMINFO_REFRESH_TOKEN")
-        # Auto-auth: any credential that can get a fresh token automatically.
-        # Priority: username/password > refresh_token > static token (no auto-refresh).
+        # Auto-auth: refresh_token + client creds enable automatic OAuth2 token refresh.
+        # Priority: OAuth2 refresh_token > static token > legacy /authenticate (fallback).
         self._auto_auth = bool(
-            (self._username and self._password)
-            or self._refresh_token
-            or (self._client_id and self._client_secret)
+            (self._refresh_token and self._client_id and self._client_secret)
+            or (self._username and self._password)
         )
         self._token_expires_at = 0.0
 
@@ -242,9 +242,10 @@ class ZoomInfoClient:
             self.access_token = self._static_token
             if not self.access_token:
                 raise ValueError(
-                    "ZoomInfo credentials required. Set one of: "
-                    "ZOOMINFO_USERNAME + ZOOMINFO_PASSWORD (recommended), "
-                    "ZOOMINFO_REFRESH_TOKEN, or ZOOMINFO_ACCESS_TOKEN. "
+                    "ZoomInfo credentials required for GTM API v1. Set one of:\n"
+                    "  1. ZOOMINFO_CLIENT_ID + ZOOMINFO_CLIENT_SECRET + ZOOMINFO_REFRESH_TOKEN "
+                    "(recommended — auto-refresh)\n"
+                    "  2. ZOOMINFO_ACCESS_TOKEN (OAuth2 bearer token from ZoomInfo docs, 24h)\n"
                     "These values must be provided via environment variables."
                 )
 
@@ -263,67 +264,30 @@ class ZoomInfoClient:
 
     async def _authenticate(self) -> None:
         """
-        Fetch a fresh ZoomInfo access token.  Three strategies attempted in order:
+        Fetch a fresh ZoomInfo access token for the GTM API v1.
 
-        1. Username/password  →  POST https://api.zoominfo.com/authenticate
-           The standard ZoomInfo data API authentication endpoint.  Gives a fresh
-           JWT on every call.  Set ZOOMINFO_USERNAME + ZOOMINFO_PASSWORD.
+        Strategy order (GTM API requires OAuth2 tokens — legacy JWTs don't work):
 
-        2. Okta refresh_token →  POST Okta /token with grant_type=refresh_token
-           Long-lived refresh token from the initial OAuth2 authorization_code
-           flow.  Set ZOOMINFO_REFRESH_TOKEN.  NOTE: ZoomInfo's Okta app only
-           supports [authorization_code, refresh_token] — NOT client_credentials.
+        1. Okta OAuth2 refresh_token grant  →  RECOMMENDED for GTM API
+           POST https://okta-login.zoominfo.com/oauth2/default/v1/token
+           Requires: ZOOMINFO_CLIENT_ID + ZOOMINFO_CLIENT_SECRET + ZOOMINFO_REFRESH_TOKEN
+           Returns: OAuth2 access_token (24h) + rotated refresh_token.
+           The rotated refresh_token is stored in memory for subsequent refreshes.
 
-        3. Static token fallback  →  ZOOMINFO_ACCESS_TOKEN (~1 hour lifespan)
-           Used as last resort.  If expired → all calls will 401.  The only
-           permanent fix is to set credentials for strategy 1 or 2.
+        2. Static ZOOMINFO_ACCESS_TOKEN  →  manual OAuth2 bearer token (24h)
+           Must be an OAuth2 token obtained from ZoomInfo docs page or OAuth2 flow.
+           Legacy JWTs from /authenticate will NOT work.
+
+        3. Legacy username/password → /authenticate  →  LAST RESORT / DIAGNOSTIC
+           WARNING: This produces a legacy JWT that does NOT work with GTM API v1.
+           Kept only to provide a clear error message pointing users to OAuth2.
         """
         last_error: Optional[str] = None
 
         # ------------------------------------------------------------------ #
-        # Strategy 1: username/password — always works, no Okta dependency   #
+        # Strategy 1: Okta OAuth2 refresh_token grant (GTM API compatible)   #
         # ------------------------------------------------------------------ #
-        if self._username and self._password:
-            try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    response = await client.post(
-                        f"{self.base_url}/authenticate",
-                        json={"username": self._username, "password": self._password},
-                        headers={"Content-Type": "application/json"},
-                    )
-                    response.raise_for_status()
-                    token_data = response.json()
-
-                # ZoomInfo /authenticate returns {"jwt": "...", "expiresAt": ...}
-                jwt = token_data.get("jwt") or token_data.get("access_token")
-                if not jwt:
-                    raise ValueError(f"No jwt in response: {list(token_data.keys())}")
-
-                self.access_token = jwt
-                # expiresAt may be epoch seconds or milliseconds
-                expires_at = token_data.get("expiresAt")
-                if expires_at:
-                    # If it's ms (>year 3000 in seconds), convert to seconds
-                    if expires_at > 9_999_999_999:
-                        expires_at = expires_at / 1000
-                    self._token_expires_at = expires_at - 300
-                else:
-                    self._token_expires_at = time.time() + 3600 - 300
-                self.headers["Authorization"] = f"Bearer {self.access_token}"
-                logger.info("ZoomInfo token obtained via username/password auth")
-                return
-
-            except httpx.HTTPStatusError as e:
-                last_error = f"username/password auth failed: HTTP {e.response.status_code}"
-                logger.warning("ZoomInfo username/password auth failed: %s", e.response.status_code)
-            except Exception as e:
-                last_error = f"username/password auth exception: {e}"
-                logger.warning("ZoomInfo username/password auth exception: %s", e)
-
-        # ------------------------------------------------------------------ #
-        # Strategy 2: Okta refresh_token grant                               #
-        # ------------------------------------------------------------------ #
-        if self._refresh_token:
+        if self._refresh_token and self._client_id and self._client_secret:
             credentials = f"{self._client_id}:{self._client_secret}"
             basic_auth = base64.b64encode(credentials.encode()).decode()
             try:
@@ -340,49 +304,176 @@ class ZoomInfoClient:
                     token_data = response.json()
 
                 self.access_token = token_data["access_token"]
+                # Refresh tokens rotate — store the new one for subsequent refreshes.
+                # The old refresh_token is invalidated after 30s grace period.
                 if "refresh_token" in token_data:
+                    old_rt = self._refresh_token[:8] + "..." if self._refresh_token else "none"
                     self._refresh_token = token_data["refresh_token"]
-                expires_in = token_data.get("expires_in", 3600)
+                    new_rt = self._refresh_token[:8] + "..."
+                    logger.info(
+                        "ZoomInfo refresh_token rotated: %s → %s (old invalidated after 30s)",
+                        old_rt, new_rt
+                    )
+                    # Persist to Supabase for restart resilience (best-effort)
+                    await self._persist_refresh_token(self._refresh_token)
+
+                # OAuth2 access tokens are valid for 24 hours
+                expires_in = token_data.get("expires_in", 86400)
                 self._token_expires_at = time.time() + expires_in - 300
                 self.headers["Authorization"] = f"Bearer {self.access_token}"
-                logger.info("ZoomInfo token refreshed via refresh_token, expires in %ds", expires_in)
+                logger.info(
+                    "ZoomInfo OAuth2 token obtained via refresh_token grant, "
+                    "expires in %ds (%dh)",
+                    expires_in, expires_in // 3600
+                )
                 return
 
             except httpx.HTTPStatusError as e:
-                last_error = f"refresh_token grant failed: HTTP {e.response.status_code}"
-                logger.warning("ZoomInfo refresh_token grant failed: %s", e.response.status_code)
+                try:
+                    err_body = e.response.json()
+                except Exception:
+                    err_body = e.response.text[:300]
+                last_error = f"OAuth2 refresh_token grant failed: HTTP {e.response.status_code} — {err_body}"
+                logger.error(
+                    "ZoomInfo OAuth2 refresh_token grant failed: HTTP %s — %s. "
+                    "The refresh_token may have been rotated and the stored value is stale. "
+                    "Obtain a new refresh_token via ZoomInfo OAuth2 authorization_code flow.",
+                    e.response.status_code, err_body
+                )
             except Exception as e:
-                last_error = f"refresh_token grant exception: {e}"
-                logger.warning("ZoomInfo refresh_token exception: %s", e)
+                last_error = f"OAuth2 refresh_token grant exception: {e}"
+                logger.error("ZoomInfo OAuth2 refresh_token exception: %s", e)
 
         # ------------------------------------------------------------------ #
-        # Strategy 3: static ZOOMINFO_ACCESS_TOKEN fallback                  #
+        # Strategy 2: static ZOOMINFO_ACCESS_TOKEN (must be OAuth2 token)    #
         # ------------------------------------------------------------------ #
         if self._static_token:
             logger.warning(
-                "ZoomInfo auto-refresh unavailable (%s). "
-                "Using static ZOOMINFO_ACCESS_TOKEN — expires ~1 hour after issue. "
-                "Set ZOOMINFO_USERNAME+ZOOMINFO_PASSWORD for permanent auto-refresh.",
-                last_error or "no auto-auth credentials configured"
+                "ZoomInfo OAuth2 auto-refresh unavailable (%s). "
+                "Using static ZOOMINFO_ACCESS_TOKEN. This MUST be an OAuth2 bearer "
+                "token (from ZoomInfo docs page or OAuth2 flow), NOT a legacy JWT "
+                "from /authenticate. OAuth2 tokens are valid for 24h.",
+                last_error or "no OAuth2 credentials configured"
             )
             self.access_token = self._static_token
-            # Mark as short-lived so we don't suppress re-auth attempts indefinitely
-            self._token_expires_at = time.time() + 3300  # 55 min
+            # OAuth2 bearer tokens from ZoomInfo are valid 24h
+            self._token_expires_at = time.time() + 82800  # 23h (conservative)
             self.headers["Authorization"] = f"Bearer {self.access_token}"
             return
 
+        # ------------------------------------------------------------------ #
+        # Strategy 3: legacy /authenticate — DIAGNOSTIC ONLY                 #
+        # ------------------------------------------------------------------ #
+        if self._username and self._password:
+            logger.warning(
+                "ZoomInfo: Attempting legacy /authenticate as last resort. "
+                "WARNING: The JWT from this endpoint does NOT work with GTM API v1 "
+                "endpoints (/gtm/data/v1/*). You MUST set up OAuth2 credentials: "
+                "ZOOMINFO_CLIENT_ID + ZOOMINFO_CLIENT_SECRET + ZOOMINFO_REFRESH_TOKEN."
+            )
+            try:
+                async with httpx.AsyncClient(timeout=self.timeout) as client:
+                    response = await client.post(
+                        f"{self.base_url}/authenticate",
+                        json={"username": self._username, "password": self._password},
+                        headers={"Content-Type": "application/json"},
+                    )
+                    response.raise_for_status()
+                    token_data = response.json()
+
+                jwt = token_data.get("jwt") or token_data.get("access_token")
+                if not jwt:
+                    raise ValueError(f"No jwt in response: {list(token_data.keys())}")
+
+                self.access_token = jwt
+                self._token_expires_at = time.time() + 3600 - 300
+                self.headers["Authorization"] = f"Bearer {self.access_token}"
+                logger.warning(
+                    "ZoomInfo legacy JWT obtained — this will cause HTTP 401 on "
+                    "GTM API v1 endpoints. Set up OAuth2 credentials ASAP."
+                )
+                return
+
+            except httpx.HTTPStatusError as e:
+                last_error = f"legacy /authenticate failed: HTTP {e.response.status_code}"
+                logger.warning("ZoomInfo legacy /authenticate failed: %s", e.response.status_code)
+            except Exception as e:
+                last_error = f"legacy /authenticate exception: {e}"
+                logger.warning("ZoomInfo legacy /authenticate exception: %s", e)
+
         raise ValueError(
-            "ZoomInfo token refresh failed — no valid credentials. "
-            "Set ZOOMINFO_USERNAME + ZOOMINFO_PASSWORD (recommended), "
-            "ZOOMINFO_REFRESH_TOKEN, or a fresh ZOOMINFO_ACCESS_TOKEN. "
+            "ZoomInfo authentication failed — no valid OAuth2 credentials.\n"
+            "The GTM API v1 requires OAuth2 tokens. Set these environment variables:\n"
+            "  ZOOMINFO_CLIENT_ID     — from ZoomInfo Okta app\n"
+            "  ZOOMINFO_CLIENT_SECRET — from ZoomInfo Okta app\n"
+            "  ZOOMINFO_REFRESH_TOKEN — from OAuth2 authorization_code flow\n"
+            "Or set ZOOMINFO_ACCESS_TOKEN with an OAuth2 bearer token (24h validity).\n"
             f"Last error: {last_error}"
         )
+
+    async def _persist_refresh_token(self, token: str) -> None:
+        """
+        Best-effort persistence of rotated refresh_token to Supabase.
+        This allows the token to survive Render service restarts.
+        If Supabase is not configured or the table doesn't exist, fails silently.
+        """
+        try:
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            if not supabase_url or not supabase_key:
+                logger.debug("Supabase not configured — refresh_token stored in memory only")
+                return
+
+            from supabase import create_client
+            sb = create_client(supabase_url, supabase_key)
+            sb.table("zi_auth_tokens").upsert({
+                "id": "zoominfo_refresh_token",
+                "token_value": token,
+                "updated_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+            }).execute()
+            logger.info("ZoomInfo refresh_token persisted to Supabase zi_auth_tokens table")
+        except Exception as e:
+            # Non-fatal — token is still in memory, just won't survive restart
+            logger.debug("Could not persist refresh_token to Supabase: %s", e)
+
+    async def _load_persisted_refresh_token(self) -> Optional[str]:
+        """
+        Try to load the latest refresh_token from Supabase.
+        Returns None if Supabase is not configured or table doesn't exist.
+        """
+        try:
+            supabase_url = os.getenv("SUPABASE_URL")
+            supabase_key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+            if not supabase_url or not supabase_key:
+                return None
+
+            from supabase import create_client
+            sb = create_client(supabase_url, supabase_key)
+            result = sb.table("zi_auth_tokens").select("token_value").eq(
+                "id", "zoominfo_refresh_token"
+            ).execute()
+            if result.data and result.data[0].get("token_value"):
+                logger.info("Loaded persisted refresh_token from Supabase")
+                return result.data[0]["token_value"]
+        except Exception as e:
+            logger.debug("Could not load refresh_token from Supabase: %s", e)
+        return None
 
     async def _ensure_valid_token(self) -> None:
         """Re-authenticate if the current token is expired or missing."""
         if self._auto_auth and (
             not self.access_token or time.time() >= self._token_expires_at
         ):
+            # On first auth attempt (or after restart), try loading a persisted
+            # refresh_token from Supabase — it may be newer than the env var.
+            if not self.access_token and self._refresh_token:
+                persisted = await self._load_persisted_refresh_token()
+                if persisted and persisted != self._refresh_token:
+                    logger.info(
+                        "Using persisted refresh_token from Supabase "
+                        "(newer than env var)"
+                    )
+                    self._refresh_token = persisted
             await self._authenticate()
 
     async def _make_request(
