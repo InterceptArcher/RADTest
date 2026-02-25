@@ -193,6 +193,25 @@ async def root():
     }
 
 
+# OAuth2 callback — displays authorization code for one-time token exchange
+from fastapi.responses import HTMLResponse
+
+@app.get("/auth/zoominfo/callback", tags=["Auth"], response_class=HTMLResponse)
+async def zoominfo_oauth_callback(code: str = None, state: str = None, error: str = None, error_description: str = None):
+    """One-time OAuth2 callback to capture the authorization code."""
+    if error:
+        return f"<h2>OAuth Error</h2><p><b>{error}</b>: {error_description or 'Unknown'}</p>"
+    if not code:
+        return "<h2>No code received</h2><p>The authorization code was not included in the redirect.</p>"
+    return f"""<html><body style='font-family:monospace;padding:40px'>
+    <h2>ZoomInfo OAuth2 Authorization Code</h2>
+    <p>Copy this code and bring it back:</p>
+    <pre style='background:#f0f0f0;padding:20px;font-size:18px;user-select:all'>{code}</pre>
+    <p style='color:#888'>State: {state or 'none'}</p>
+    <p style='color:red'><b>This code expires in ~60 seconds. Use it immediately.</b></p>
+    </body></html>"""
+
+
 # Debug endpoint to check env vars at runtime
 @app.get("/debug-env", tags=["Debug"])
 async def debug_env():
