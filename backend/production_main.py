@@ -831,19 +831,16 @@ def _get_zoominfo_client():
     Create ZoomInfo client from environment variables, or return None.
 
     Auth priority (highest → lowest):
-    1. ZOOMINFO_USERNAME + ZOOMINFO_PASSWORD — standard API /authenticate endpoint;
-       always gets a fresh token; recommended for production.
-    2. ZOOMINFO_REFRESH_TOKEN — Okta OAuth2 refresh_token grant.
-    3. ZOOMINFO_ACCESS_TOKEN — static short-lived token (~1 hour); client will
-       retry on 401 but cannot auto-refresh without credentials above.
+    1. ZOOMINFO_REFRESH_TOKEN + CLIENT_ID/SECRET — Okta OAuth2 refresh_token grant (GTM compatible).
+    2. ZOOMINFO_ACCESS_TOKEN — static OAuth2 token (~24 hours).
+    3. ZOOMINFO_USERNAME + ZOOMINFO_PASSWORD — legacy /authenticate (JWT won't work with GTM endpoints).
     """
     try:
         from worker.zoominfo_client import ZoomInfoClient
         has_credentials = (
-            (ZOOMINFO_USERNAME and ZOOMINFO_PASSWORD)
-            or ZOOMINFO_REFRESH_TOKEN
-            or ZOOMINFO_CLIENT_ID
+            (ZOOMINFO_REFRESH_TOKEN and ZOOMINFO_CLIENT_ID and ZOOMINFO_CLIENT_SECRET)
             or ZOOMINFO_ACCESS_TOKEN
+            or (ZOOMINFO_USERNAME and ZOOMINFO_PASSWORD)
         )
         if not has_credentials:
             logger.info("ZoomInfo credentials not configured, skipping")
@@ -852,6 +849,7 @@ def _get_zoominfo_client():
             access_token=ZOOMINFO_ACCESS_TOKEN,
             client_id=ZOOMINFO_CLIENT_ID,
             client_secret=ZOOMINFO_CLIENT_SECRET,
+            refresh_token=ZOOMINFO_REFRESH_TOKEN,
             username=ZOOMINFO_USERNAME,
             password=ZOOMINFO_PASSWORD,
         )
@@ -2905,7 +2903,7 @@ async def debug_zoominfo_raw(domain: str):
     async def _probe(endpoint: str, payload: dict) -> dict:
         url = f"{zi_client.base_url}{endpoint}"
         headers = {
-            "Content-Type": "application/json",
+            "Content-Type": "application/vnd.api+json",
             "Accept": "application/vnd.api+json, application/json",
             "Authorization": f"Bearer {zi_client.access_token}",
         }
@@ -2938,14 +2936,10 @@ async def debug_zoominfo_raw(domain: str):
     # ------------------------------------------------------------------ #
     from worker.zoominfo_client import COMPANY_OUTPUT_FIELDS as _CO_FIELDS
     company_payloads = [
-        # Batch format (what the API actually responds in) — outputfields required
-        {"matchCompanyInput": [{"companyWebsite": primary_website}], "outputfields": _CO_FIELDS},
-        {"matchCompanyInput": [{"companyWebsite": f"https://{bare}"}], "outputfields": _CO_FIELDS},
-        {"matchCompanyInput": [{"companyName": company_name}], "outputfields": _CO_FIELDS},
-        # Flat format fallbacks — outputfields still required
-        {"companyWebsite": primary_website, "outputfields": _CO_FIELDS},
-        {"companyWebsite": f"https://{bare}", "outputfields": _CO_FIELDS},
-        {"companyName": company_name, "outputfields": _CO_FIELDS},
+        # JSON:API format for GTM Data API v1
+        {"data": {"type": "CompanyEnrich", "attributes": {"matchCompanyInput": [{"companyWebsite": primary_website}], "outputFields": _CO_FIELDS}}},
+        {"data": {"type": "CompanyEnrich", "attributes": {"matchCompanyInput": [{"companyWebsite": f"https://{bare}"}], "outputFields": _CO_FIELDS}}},
+        {"data": {"type": "CompanyEnrich", "attributes": {"matchCompanyInput": [{"companyName": company_name}], "outputFields": _CO_FIELDS}}},
     ]
     company_probes = []
     company_id_found = None
@@ -2970,7 +2964,8 @@ async def debug_zoominfo_raw(domain: str):
     # ------------------------------------------------------------------ #
     # 2. Scoops search (known working — baseline reference)              #
     # ------------------------------------------------------------------ #
-    scoops_p = {"companyId": company_id_found} if company_id_found else {"companyWebsite": primary_website}
+    scoops_attrs = {"companyId": company_id_found} if company_id_found else {"companyWebsite": primary_website}
+    scoops_p = {"data": {"type": "ScoopsSearch", "attributes": scoops_attrs}}
     results["scoops_search"] = [await _probe(ENDPOINTS["scoops_search"], scoops_p)]
 
     # ------------------------------------------------------------------ #
@@ -2978,43 +2973,41 @@ async def debug_zoominfo_raw(domain: str):
     #    companyId, with/without topics                                   #
     # ------------------------------------------------------------------ #
     intent_payloads = []
+    intent_ep = ENDPOINTS["intent_enrich"]
     if company_id_found:
         intent_payloads += [
-            ("/enrich/intent",  {"companyId": company_id_found, "topics": DEFAULT_INTENT_TOPICS[:3]}),
-            ("/enrich/intent",  {"companyId": company_id_found}),
-            ("/search/intent",  {"companyId": company_id_found}),
+            (intent_ep, {"data": {"type": "IntentEnrich", "attributes": {"companyId": company_id_found, "topics": DEFAULT_INTENT_TOPICS[:3]}}}),
+            (intent_ep, {"data": {"type": "IntentEnrich", "attributes": {"companyId": company_id_found}}}),
         ]
     intent_payloads += [
-        ("/enrich/intent",  {"companyWebsite": primary_website, "topics": DEFAULT_INTENT_TOPICS[:3]}),
-        ("/enrich/intent",  {"companyWebsite": primary_website}),
-        ("/search/intent",  {"companyWebsite": primary_website}),
+        (intent_ep, {"data": {"type": "IntentEnrich", "attributes": {"companyWebsite": primary_website, "topics": DEFAULT_INTENT_TOPICS[:3]}}}),
+        (intent_ep, {"data": {"type": "IntentEnrich", "attributes": {"companyWebsite": primary_website}}}),
     ]
     results["intent_enrich"] = [await _probe(ep, p) for ep, p in intent_payloads]
 
     # ------------------------------------------------------------------ #
     # 4. News — try /search/news with multiple identifier types          #
     # ------------------------------------------------------------------ #
+    news_ep = ENDPOINTS["news_search"]
     news_payloads = [
-        ("/search/news", {"companyName": company_name}),
-        ("/search/news", {"companyWebsite": primary_website}),
+        (news_ep, {"data": {"type": "NewsSearch", "attributes": {"companyName": company_name}}}),
     ]
     if company_id_found:
-        news_payloads.insert(0, ("/search/news", {"companyId": company_id_found}))
+        news_payloads.insert(0, (news_ep, {"data": {"type": "NewsSearch", "attributes": {"companyId": company_id_found}}}))
     results["news_search"] = [await _probe(ep, p) for ep, p in news_payloads]
 
     # ------------------------------------------------------------------ #
     # 5. Technology — try /enrich/technology and /search/technology      #
     # ------------------------------------------------------------------ #
+    tech_ep = ENDPOINTS["tech_enrich"]
     tech_payloads = []
     if company_id_found:
-        tech_payloads += [
-            ("/enrich/technologies",  {"companyId": company_id_found}),  # correct plural path
-            ("/enrich/technology",    {"companyId": company_id_found}),  # singular (404) — kept for comparison
-        ]
-    tech_payloads += [
-        ("/enrich/technologies",  {"companyWebsite": primary_website}),
-        ("/enrich/technology",    {"companyWebsite": primary_website}),
-    ]
+        tech_payloads.append(
+            (tech_ep, {"data": {"type": "TechEnrich", "attributes": {"companyId": company_id_found}}})
+        )
+    tech_payloads.append(
+        (tech_ep, {"data": {"type": "TechEnrich", "attributes": {"companyWebsite": primary_website}}})
+    )
     results["tech_enrich"] = [await _probe(ep, p) for ep, p in tech_payloads]
 
     # ------------------------------------------------------------------ #
@@ -3022,7 +3015,7 @@ async def debug_zoominfo_raw(domain: str):
     # ------------------------------------------------------------------ #
     results["contact_search"] = [
         await _probe(ENDPOINTS["contact_search"],
-                     {"companyWebsite": zi_client._website_candidates(domain), "rpp": 3})
+                     {"data": {"type": "ContactSearch", "attributes": {"companyWebsite": zi_client._website_candidates(domain), "rpp": 3}}})
     ]
 
     return results
