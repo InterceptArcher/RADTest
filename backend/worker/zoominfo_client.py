@@ -86,22 +86,18 @@ COMPANY_OUTPUT_FIELDS = [
 # when outputFields are specified.
 # DNC flags are included so we can surface them in the UI if needed — we do NOT
 # filter out DNC-flagged numbers (the user has API access to this data).
+# NOTE: directPhone, department, linkedInUrl, managementLevel, hasDirectPhone,
+# hasCompanyPhone, fullName are DISALLOWED on this subscription (HTTP 400
+# "Invalid field requested").  Only include fields confirmed to work.
 CONTACT_ENRICH_OUTPUT_FIELDS = [
     "firstName",
     "lastName",
-    "fullName",
     "email",
     "jobTitle",
-    "managementLevel",
-    "department",
-    "linkedInUrl",
     "phone",
-    "directPhone",
     "mobilePhone",
     "companyPhone",
-    "hasDirectPhone",
     "hasMobilePhone",
-    "hasCompanyPhone",
     "directPhoneDoNotCall",
     "mobilePhoneDoNotCall",
     "contactAccuracyScore",
@@ -770,17 +766,16 @@ class ZoomInfoClient:
 
         # Build ordered list of JSON:API payloads to attempt.
         # GTM API v1 uses JSON:API format: {"data": {"type": "CompanyEnrich", "attributes": {...}}}
-        # Identifiers: companyWebsite (full URL), companyName, companyId.
+        # Only companyWebsite works as a direct attribute — companyName as a direct
+        # attribute returns HTTP 400 "invalidInputFields: ['companyName']".
         # outputFields specifies which fields to return.
         attrs_to_try: List[Dict[str, Any]] = []
         if domain:
             bare = self._bare_domain(domain)
             for website in (f"https://www.{bare}", f"https://{bare}"):
                 attrs_to_try.append({"companyWebsite": website, "outputFields": COMPANY_OUTPUT_FIELDS})
-            if company_name:
-                attrs_to_try.append({"companyWebsite": f"https://www.{bare}", "companyName": company_name, "outputFields": COMPANY_OUTPUT_FIELDS})
-        if company_name:
-            attrs_to_try.append({"companyName": company_name, "outputFields": COMPANY_OUTPUT_FIELDS})
+        if not attrs_to_try:
+            return {"success": False, "data": {}, "normalized": {}, "error": "Domain required for company enrich (companyName not supported as direct attribute)"}
 
         last_error: Optional[str] = None
         for attrs in attrs_to_try:
@@ -987,8 +982,7 @@ class ZoomInfoClient:
     ) -> Dict[str, Any]:
         """
         Enrich contacts by person IDs for full profile data including
-        directPhone, mobilePhone, companyPhone, contactAccuracyScore,
-        department, and managementLevel.
+        phone, mobilePhone, companyPhone, contactAccuracyScore, and personId.
 
         Uses GTM API v1 JSON:API format with outputFields to explicitly
         request phone number data.  The contact SEARCH endpoint does NOT
@@ -1000,11 +994,14 @@ class ZoomInfoClient:
         if not person_ids:
             return {"success": True, "people": [], "error": None}
 
+        # GTM API v1 requires matchPersonInput — each person ID is a separate
+        # entry in the array.  Flat "personId" as a direct attribute returns
+        # HTTP 400 "invalidInputFields: ['personId']".
         payload = {
             "data": {
                 "type": "ContactEnrich",
                 "attributes": {
-                    "personId": person_ids,
+                    "matchPersonInput": [{"personId": pid} for pid in person_ids],
                     "outputFields": CONTACT_ENRICH_OUTPUT_FIELDS,
                 }
             }
@@ -1321,13 +1318,12 @@ class ZoomInfoClient:
         GTM API v1: news/search rejects companyId/companyName — use news/enrich instead.
         JSON:API format: {"data": {"type": "NewsEnrich", "attributes": {...}}}
         """
-        attrs: Dict[str, Any] = {}
-        if company_id:
-            attrs["companyId"] = company_id
-        elif company_name:
-            attrs["companyName"] = company_name
-        else:
-            return {"success": False, "articles": [], "raw_data": [], "error": "companyId or companyName required for news enrich"}
+        # GTM API v1 news/enrich only accepts companyId — companyName and
+        # companyWebsite both return HTTP 400 "invalidInputFields".
+        if not company_id:
+            logger.warning("search_news: no companyId available — news enrich requires companyId")
+            return {"success": False, "articles": [], "raw_data": [], "error": "companyId required for news enrich (companyName not supported)"}
+        attrs: Dict[str, Any] = {"companyId": company_id}
 
         payload = {"data": {"type": "NewsEnrich", "attributes": attrs}}
 
@@ -1369,13 +1365,12 @@ class ZoomInfoClient:
         GTM API v1 endpoint: /gtm/data/v1/companies/technologies/enrich
         JSON:API format: {"data": {"type": "TechnologyEnrich", "attributes": {...}}}
         """
-        primary_website = self._primary_website(domain)
-
-        attrs: Dict[str, Any] = {}
-        if company_id:
-            attrs["companyId"] = company_id
-        else:
-            attrs["companyWebsite"] = primary_website
+        # GTM API v1 tech/enrich only accepts companyId — companyWebsite
+        # returns HTTP 400 "invalidInputFields: ['companyWebsite']".
+        if not company_id:
+            logger.warning("enrich_technologies: no companyId available — tech enrich requires companyId")
+            return {"success": False, "technologies": [], "raw_data": [], "error": "companyId required for tech enrich (companyWebsite not supported)"}
+        attrs: Dict[str, Any] = {"companyId": company_id}
 
         payload = {"data": {"type": "TechnologyEnrich", "attributes": attrs}}
 

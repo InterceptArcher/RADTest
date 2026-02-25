@@ -103,15 +103,13 @@ class TestCompanyEnrich:
             assert result["data"]["companyName"] == "Acme Corp"
 
     @pytest.mark.asyncio
-    async def test_enrich_by_company_name(self):
-        """Enriches company by name when domain not available."""
+    async def test_enrich_by_company_name_only_returns_error(self):
+        """Company-name-only enrichment returns error (GTM API rejects companyName as direct attribute)."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
-        mock_response = {"data": [{"companyName": "Acme Corp", "domain": "acme.com"}]}
-        with patch.object(client, "_make_request", new_callable=AsyncMock,
-                          return_value=mock_response):
-            result = await client.enrich_company(company_name="Acme Corp")
-            assert result["success"] is True
+        result = await client.enrich_company(company_name="Acme Corp")
+        assert result["success"] is False
+        assert "Domain required" in result["error"]
 
     @pytest.mark.asyncio
     async def test_enrich_handles_empty_response(self):
@@ -367,7 +365,7 @@ class TestNewsSearch:
 
     @pytest.mark.asyncio
     async def test_fetch_news(self):
-        """Fetches company news articles."""
+        """Fetches company news articles (requires companyId)."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
         mock_response = {
@@ -377,9 +375,18 @@ class TestNewsSearch:
         }
         with patch.object(client, "_make_request", new_callable=AsyncMock,
                           return_value=mock_response):
-            result = await client.search_news(company_name="Acme Corp")
+            result = await client.search_news(company_name="Acme Corp", company_id="12345")
             assert result["success"] is True
             assert len(result["articles"]) >= 1
+
+    @pytest.mark.asyncio
+    async def test_fetch_news_no_company_id_returns_error(self):
+        """News enrich fails without companyId (companyName not supported)."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        result = await client.search_news(company_name="Acme Corp")
+        assert result["success"] is False
+        assert "companyId required" in result["error"]
 
 
 class TestTechEnrich:
@@ -387,7 +394,7 @@ class TestTechEnrich:
 
     @pytest.mark.asyncio
     async def test_fetch_technologies(self):
-        """Fetches installed technologies for a company."""
+        """Fetches installed technologies for a company (requires companyId)."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
         mock_response = {
@@ -398,9 +405,18 @@ class TestTechEnrich:
         }
         with patch.object(client, "_make_request", new_callable=AsyncMock,
                           return_value=mock_response):
-            result = await client.enrich_technologies(domain="acme.com")
+            result = await client.enrich_technologies(domain="acme.com", company_id="12345")
             assert result["success"] is True
             assert len(result["technologies"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_fetch_technologies_no_company_id_returns_error(self):
+        """Tech enrich fails without companyId (companyWebsite not supported)."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        result = await client.enrich_technologies(domain="acme.com")
+        assert result["success"] is False
+        assert "companyId required" in result["error"]
 
 
 class TestErrorHandling:

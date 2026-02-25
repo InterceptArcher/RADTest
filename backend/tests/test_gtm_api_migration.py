@@ -187,7 +187,11 @@ class TestGTMContactEnrichFormat:
         assert "data" in payload, "Must use JSON:API wrapper"
         assert payload["data"]["type"] == "ContactEnrich"
         attrs = payload["data"]["attributes"]
-        assert "personId" in attrs or "matchPersonInput" in attrs
+        assert "matchPersonInput" in attrs, "Must use matchPersonInput (not flat personId)"
+        # Each person ID should be a separate entry in the array
+        mpi = attrs["matchPersonInput"]
+        assert isinstance(mpi, list)
+        assert mpi[0] == {"personId": "789"}
 
     @pytest.mark.asyncio
     async def test_contact_enrich_requests_phone_fields(self):
@@ -207,7 +211,7 @@ class TestGTMContactEnrichFormat:
         assert len(captured_payloads) > 0
         attrs = captured_payloads[0]["data"]["attributes"]
         output_fields = attrs.get("outputFields", [])
-        assert "directPhone" in output_fields, "Must request directPhone"
+        assert "phone" in output_fields, "Must request phone"
         assert "mobilePhone" in output_fields, "Must request mobilePhone"
         assert "companyPhone" in output_fields, "Must request companyPhone"
 
