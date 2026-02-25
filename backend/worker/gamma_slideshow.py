@@ -101,7 +101,8 @@ class GammaSlideshowCreator:
             logger.info(f"Creating slideshow for {company_name}")
 
             # Generate markdown content with user email for attribution
-            markdown_content = self._generate_markdown(company_data, user_email)
+            # Use template-based markdown generation for proper salesperson name support
+            markdown_content = await self._generate_template_markdown(company_data, user_email)
 
             # Count stakeholders to estimate number of cards needed
             stakeholders = company_data.get('validated_data', {}).get('stakeholder_profiles', [])
@@ -177,13 +178,16 @@ class GammaSlideshowCreator:
         est = timezone(timedelta(hours=-5))
         current_date = datetime.now(est).strftime("%B %d, %Y")
 
+        # Salesperson name (entered by user on the form)
+        salesperson_name = company_data.get('salesperson_name') or user_email or 'HP Sales Team'
+
         # Build comprehensive, data-rich structured content
         data = f"""ACCOUNT INTELLIGENCE REPORT
 
 Company: {company_name}
 Report Date: {current_date}
 Prepared By: HP RAD Intelligence Desk
-Prepared For: {user_email or 'HP Sales Team'}
+Prepared For: {salesperson_name}
 
 === COMPANY OVERVIEW ===
 
