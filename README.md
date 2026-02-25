@@ -21,7 +21,32 @@
 
 ---
 
-## Latest Features (2026-02-25) — ZoomInfo GTM API v1 Migration
+## Latest Features (2026-02-25) — OAuth2 Refresh Token Authentication
+
+### OAuth2 Auth for GTM API Compatibility
+
+The GTM Data API v1 endpoints reject legacy JWT tokens obtained via `/authenticate`. Authentication has been rewritten to use OAuth2 refresh_token grants via ZoomInfo's Okta endpoint (`https://okta-login.zoominfo.com/oauth2/default/v1/token`).
+
+#### Auth Priority Chain
+1. **OAuth2 Refresh Token** (preferred) — Uses `ZOOMINFO_CLIENT_ID`, `ZOOMINFO_CLIENT_SECRET`, and `ZOOMINFO_REFRESH_TOKEN` to obtain 24-hour access tokens. Automatically handles token rotation (new refresh token returned with each grant).
+2. **Static Access Token** — Uses `ZOOMINFO_ACCESS_TOKEN` if set (must be an OAuth2 token, not a legacy JWT).
+3. **Legacy /authenticate** (diagnostic only) — Falls back to username/password with a warning that the resulting JWT will NOT work with GTM endpoints.
+
+#### Refresh Token Persistence
+Rotated refresh tokens are persisted to Supabase (`zi_auth_tokens` table) so they survive Render restarts. On startup, the client loads the most recently persisted token before attempting authentication.
+
+#### Setup Required
+Three environment variables must be set in Render:
+- `ZOOMINFO_CLIENT_ID` — from ZoomInfo Okta app
+- `ZOOMINFO_CLIENT_SECRET` — from ZoomInfo Okta app
+- `ZOOMINFO_REFRESH_TOKEN` — obtained via one-time OAuth2 authorization_code flow with PKCE
+
+#### Rationale
+Legacy `/authenticate` returns JWTs that are rejected by all GTM Data API v1 endpoints with HTTP 401. OAuth2 refresh_token is ZoomInfo's supported long-term auth mechanism for the GTM API, with 24-hour token lifetime and automatic rotation eliminating the need for manual token refreshes.
+
+---
+
+## ZoomInfo GTM API v1 Migration (2026-02-25)
 
 ### Migration from Legacy Endpoints to GTM Data API v1
 
