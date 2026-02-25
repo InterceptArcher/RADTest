@@ -24,17 +24,18 @@ logger = logging.getLogger(__name__)
 ZOOMINFO_BASE_URL = "https://api.zoominfo.com"
 ZOOMINFO_TOKEN_URL = "https://okta-login.zoominfo.com/oauth2/default/v1/token"
 
-# ZoomInfo standard API endpoint paths (verified live — these return HTTP 401 without
-# auth, confirming the endpoints exist).  The old /gtm/data/v1/ prefix paths were
-# retired by ZoomInfo and now return 404 for all endpoints.
+# ZoomInfo GTM API v1 endpoint paths.
+# The GTM API uses /gtm/data/v1/ prefix with JSON:API request/response format.
+# The old flat endpoints (/enrich/company, /search/contact, etc.) are legacy and
+# return incorrect or missing data for many field types.
 ENDPOINTS = {
-    "company_enrich": "/enrich/company",
-    "contact_search": "/search/contact",
-    "contact_enrich": "/enrich/contact",
-    "intent_enrich": "/enrich/intent",
-    "scoops_search": "/search/scoop",
-    "news_search": "/search/news",
-    "tech_enrich": "/enrich/technologies",
+    "company_enrich": "/gtm/data/v1/companies/enrich",
+    "contact_search": "/gtm/data/v1/contacts/search",
+    "contact_enrich": "/gtm/data/v1/contacts/enrich",
+    "intent_enrich": "/gtm/data/v1/intent/enrich",
+    "scoops_search": "/gtm/data/v1/scoops/search",
+    "news_search": "/gtm/data/v1/news/search",
+    "tech_enrich": "/gtm/data/v1/technologies/enrich",
 }
 
 # Fields explicitly requested from ZoomInfo contact search so that phone data
@@ -57,15 +58,10 @@ OUTPUT_FIELDS = [
 ]
 
 # Required output fields for ZoomInfo company enrich requests.
-# The /enrich/company endpoint returns HTTP 400 "Missing required field 'outputfields'"
-# unless at least one outputField is supplied.  Field names match the ZoomInfo standard
-# API schema (camelCase).  Fields not supported by a given subscription tier are silently
-# omitted from the response rather than causing an error.
-# Fields confirmed available on this subscription tier.
-# The following were explicitly returned as invalidOutputFields by ZoomInfo and MUST NOT
-# be requested: employeesRange, industry, subIndustry, description, linkedInUrl,
-# yearFounded, companyType, ownershipType, naicsCode, sicCode, technologies.
-# Requesting any disallowed field causes HTTP 400 for the entire request.
+# The GTM API /gtm/data/v1/companies/enrich endpoint accepts outputFields inside
+# the JSON:API attributes.  Field names use camelCase per the GTM API schema.
+# Fields not supported by a given subscription tier are silently omitted from the
+# response rather than causing an error.
 COMPANY_OUTPUT_FIELDS = [
     "id",
     "name",
@@ -78,6 +74,35 @@ COMPANY_OUTPUT_FIELDS = [
     "country",
     "phone",
     "ticker",
+]
+
+# Output fields for contact enrich — explicitly request phone number fields.
+# The GTM contact search endpoint does NOT return phone/email data (per ZoomInfo docs:
+# "The Search Contacts API does not return emails, phone numbers, or any other data
+# that can be used to engage").  Phone data is ONLY returned by the enrich endpoint
+# when outputFields are specified.
+# DNC flags are included so we can surface them in the UI if needed — we do NOT
+# filter out DNC-flagged numbers (the user has API access to this data).
+CONTACT_ENRICH_OUTPUT_FIELDS = [
+    "firstName",
+    "lastName",
+    "fullName",
+    "email",
+    "jobTitle",
+    "managementLevel",
+    "department",
+    "linkedInUrl",
+    "phone",
+    "directPhone",
+    "mobilePhone",
+    "companyPhone",
+    "hasDirectPhone",
+    "hasMobilePhone",
+    "hasCompanyPhone",
+    "directPhoneDoNotCall",
+    "mobilePhoneDoNotCall",
+    "contactAccuracyScore",
+    "personId",
 ]
 
 # Priority C-Suite titles — CTO, CFO, CMO, CIO are searched first.
@@ -227,12 +252,9 @@ class ZoomInfoClient:
         self.timeout = timeout
         self.max_retries = max_retries
         self.headers = {
-            # Content-Type stays application/json — ZoomInfo accepts both
-            # JSON:API and flat JSON request bodies with this type. Using
-            # application/vnd.api+json breaks flat-format fallback payloads.
-            # Accept must include application/vnd.api+json — ZoomInfo GTM sends
-            # responses with that type and returns 406 if it's not accepted.
-            "Content-Type": "application/json",
+            # GTM API v1 uses JSON:API format — Content-Type must be
+            # application/vnd.api+json for all request payloads.
+            "Content-Type": "application/vnd.api+json",
             "Accept": "application/vnd.api+json, application/json",
         }
         if self.access_token:
@@ -624,78 +646,44 @@ class ZoomInfoClient:
         if not domain and not company_name:
             return {"success": False, "data": {}, "normalized": {}, "error": "No domain or company name provided"}
 
-        # Build ordered list of payloads to attempt.
-        # ZoomInfo's enrich API accepts multiple formats — we try them all in order:
-        # 1. companyWebsite with full https://www. URL (standard enrich format)
-        # 2. companyWebsite with no-www variant
-        # 3. website with bare domain only (some API versions use "website" not "companyWebsite")
-        # 4. matchCompanyInput array (ZoomInfo data API v2 format)
-        # 5. companyName only as last resort
-        # ZoomInfo /enrich/company requires outputFields in every request payload.
-        # Without it the API returns HTTP 400 "Missing required field 'outputfields'".
-        # outputFields is added to EVERY payload variant so the field is present
-        # regardless of which identifier format (companyWebsite / matchCompanyInput /
-        # companyName) ends up succeeding.
-        # ZoomInfo /enrich/company uses the batch format:
-        #   {"matchCompanyInput": [{"companyWebsite": "https://..."}], "outputfields": [...]}
-        # Response: {"result": [{"input": {...}, "data": [...], "matchStatus": "MATCH"}]}
-        # Valid identifier fields inside matchCompanyInput: companyWebsite, companyName, companyId.
-        # "website" (bare domain) is NOT a valid identifier and returns INVALID_INPUT.
-        payloads_to_try: List[Dict[str, Any]] = []
+        # Build ordered list of JSON:API payloads to attempt.
+        # GTM API v1 uses JSON:API format: {"data": {"type": "CompanyEnrich", "attributes": {...}}}
+        # Identifiers: companyWebsite (full URL), companyName, companyId.
+        # outputFields specifies which fields to return.
+        attrs_to_try: List[Dict[str, Any]] = []
         if domain:
             bare = self._bare_domain(domain)
-            # Batch format first — this is what the API responds in
             for website in (f"https://www.{bare}", f"https://{bare}"):
-                payloads_to_try.append({"matchCompanyInput": [{"companyWebsite": website}], "outputfields": COMPANY_OUTPUT_FIELDS})
-            # Simple flat format as fallback (companyWebsite at top level)
-            for website in (f"https://www.{bare}", f"https://{bare}"):
-                p: Dict[str, Any] = {"companyWebsite": website, "outputfields": COMPANY_OUTPUT_FIELDS}
-                if company_name:
-                    p["companyName"] = company_name
-                payloads_to_try.append(p)
+                attrs_to_try.append({"companyWebsite": website, "outputFields": COMPANY_OUTPUT_FIELDS})
+            if company_name:
+                attrs_to_try.append({"companyWebsite": f"https://www.{bare}", "companyName": company_name, "outputFields": COMPANY_OUTPUT_FIELDS})
         if company_name:
-            payloads_to_try.append({"matchCompanyInput": [{"companyName": company_name}], "outputfields": COMPANY_OUTPUT_FIELDS})
-            payloads_to_try.append({"companyName": company_name, "outputfields": COMPANY_OUTPUT_FIELDS})
+            attrs_to_try.append({"companyName": company_name, "outputFields": COMPANY_OUTPUT_FIELDS})
 
-        # Use _make_request directly (no JSON:API fallback) so 'outputfields' stays
-        # at the top level of the flat JSON payload.  _request_with_fallback buries
-        # every key inside {"data": {"attributes": {...}}} on its second attempt,
-        # causing the API to return HTTP 400 "Missing required field 'outputfields'".
         last_error: Optional[str] = None
-        for flat_payload in payloads_to_try:
+        for attrs in attrs_to_try:
+            payload = {"data": {"type": "CompanyEnrich", "attributes": attrs}}
             try:
-                response = await self._make_request(ENDPOINTS["company_enrich"], flat_payload)
+                response = await self._make_request(ENDPOINTS["company_enrich"], payload)
                 data_list = self._extract_data_list(response)
                 if data_list:
                     raw = data_list[0]
                     normalized = self._normalize_company_data(raw)
-                    # ZoomInfo batch format puts the company ID on the result-item wrapper
-                    # (result[0].id), NOT inside the data record.  If normalization
-                    # didn't find an id in the record, pull it from the wrapper now.
-                    if not normalized.get("company_id"):
-                        for batch_item in (response.get("result") or []):
-                            if isinstance(batch_item, dict) and batch_item.get("matchStatus") in ("MATCH", "PARTIAL_MATCH"):
-                                cid = batch_item.get("id") or batch_item.get("companyId")
-                                if cid:
-                                    normalized["company_id"] = str(cid)
-                                    break
                     logger.info(
-                        "ZoomInfo company enrich success with payload=%s company_id=%s",
-                        list(flat_payload.keys()), normalized.get("company_id")
+                        "ZoomInfo company enrich success with attrs=%s company_id=%s",
+                        list(attrs.keys()), normalized.get("company_id")
                     )
                     return {"success": True, "data": raw, "normalized": normalized, "error": None}
-                # This URL variant returned empty — try next
                 logger.debug(
-                    "ZoomInfo company enrich: no data for payload=%s, trying next",
-                    flat_payload
+                    "ZoomInfo company enrich: no data for attrs=%s, trying next",
+                    list(attrs.keys())
                 )
             except httpx.TimeoutException:
                 logger.warning("ZoomInfo company enrich timed out")
                 return {"success": False, "data": {}, "normalized": {}, "error": "Request timeout"}
             except httpx.HTTPStatusError as e:
                 last_error = self._http_error_detail(e)
-                logger.warning("ZoomInfo company enrich %s for payload=%s", last_error, list(flat_payload.keys()))
-                # On 4xx format errors try next payload; on auth/server errors stop
+                logger.warning("ZoomInfo company enrich %s for attrs=%s", last_error, list(attrs.keys()))
                 if e.response.status_code not in (400, 404, 422):
                     return {"success": False, "data": {}, "normalized": {}, "error": last_error}
             except Exception as e:
@@ -748,38 +736,34 @@ class ZoomInfoClient:
                     added += 1
             return added
 
-        async def _search(attrs: Dict[str, Any], label: str) -> int:
+        async def _search(search_attrs: Dict[str, Any], label: str) -> int:
             """
-            POST contact_search with flat JSON first, JSON:API wrapper as fallback.
-            The standard ZoomInfo API uses flat JSON; JSON:API is kept as fallback.
+            POST contact_search with JSON:API format.
+            GTM API v1 requires: {"data": {"type": "ContactSearch", "attributes": {...}}}
             Returns count of new contacts added.
             """
             nonlocal last_error
-            payloads = [
-                attrs,  # flat JSON — primary format for standard ZoomInfo API
-                {"data": {"type": "ContactSearch", "attributes": attrs}},  # JSON:API fallback
-            ]
-            for payload in payloads:
-                try:
-                    response = await self._make_request(ENDPOINTS["contact_search"], payload)
-                    data_list = self._extract_data_list(response)
-                    if data_list:
-                        added = _add_contacts(data_list)
-                        logger.info(
-                            "ZoomInfo %s: %d results, %d new contacts added",
-                            label, len(data_list), added
-                        )
-                        return added
-                    logger.warning(
-                        "ZoomInfo %s: 0 contacts for domain=%s response=%s",
-                        label, domain, response
+            payload = {"data": {"type": "ContactSearch", "attributes": search_attrs}}
+            try:
+                response = await self._make_request(ENDPOINTS["contact_search"], payload)
+                data_list = self._extract_data_list(response)
+                if data_list:
+                    added = _add_contacts(data_list)
+                    logger.info(
+                        "ZoomInfo %s: %d results, %d new contacts added",
+                        label, len(data_list), added
                     )
-                except httpx.HTTPStatusError as e:
-                    last_error = f"HTTP {e.response.status_code}"
-                    logger.error("ZoomInfo %s HTTP error: %s", label, e)
-                except Exception as e:
-                    last_error = str(e)
-                    logger.error("ZoomInfo %s failed: %s", label, e)
+                    return added
+                logger.warning(
+                    "ZoomInfo %s: 0 contacts for domain=%s",
+                    label, domain
+                )
+            except httpx.HTTPStatusError as e:
+                last_error = f"HTTP {e.response.status_code}"
+                logger.error("ZoomInfo %s HTTP error: %s", label, e)
+            except Exception as e:
+                last_error = str(e)
+                logger.error("ZoomInfo %s failed: %s", label, e)
             return 0
 
         async def _search_na_first(base_attrs: Dict[str, Any], label: str) -> int:
@@ -880,18 +864,28 @@ class ZoomInfoClient:
         directPhone, mobilePhone, companyPhone, contactAccuracyScore,
         department, and managementLevel.
 
+        Uses GTM API v1 JSON:API format with outputFields to explicitly
+        request phone number data.  The contact SEARCH endpoint does NOT
+        return phone/email — only this enrich endpoint does.
+
         Returns:
             Dict with success, people (enriched normalized list), error
         """
         if not person_ids:
             return {"success": True, "people": [], "error": None}
 
-        flat_payload: Dict[str, Any] = {"personId": person_ids}
+        payload = {
+            "data": {
+                "type": "ContactEnrich",
+                "attributes": {
+                    "personId": person_ids,
+                    "outputFields": CONTACT_ENRICH_OUTPUT_FIELDS,
+                }
+            }
+        }
 
         try:
-            response = await self._request_with_fallback(
-                ENDPOINTS["contact_enrich"], flat_payload, "ContactEnrich"
-            )
+            response = await self._make_request(ENDPOINTS["contact_enrich"], payload)
             data_list = self._extract_data_list(response)
             people = [self._normalize_contact(c) for c in data_list]
             return {"success": True, "people": people, "error": None}
@@ -1078,31 +1072,27 @@ class ZoomInfoClient:
         Returns:
             Dict with success, intent_signals (normalized list), raw_data, error
 
-        NOTE: /enrich/intent uses flat JSON exclusively — the JSON:API {"data": ...}
-        wrapper is NOT accepted (returns HTTP 400 invalidInputFields: ['data']).
-        We therefore use _make_request directly with ordered fallback payloads instead
-        of _request_with_fallback which appends a JSON:API attempt.
+        GTM API v1 uses JSON:API format: {"data": {"type": "IntentEnrich", "attributes": {...}}}
+        topics is MANDATORY — omitting it returns HTTP 400.
         """
         primary_website = self._primary_website(domain)
 
-        # Ordered payloads: companyId (most reliable) → companyWebsite fallback.
-        # topics is MANDATORY for /enrich/intent — omitting it returns HTTP 400
-        # "Invalid number of topics requested. Add between 1 and 50 topics."
-        # Every payload variant must therefore include topics.
-        payloads_to_try: List[Dict[str, Any]] = []
+        # Ordered attribute sets: companyId (most reliable) → companyWebsite fallback.
+        attrs_to_try: List[Dict[str, Any]] = []
         if company_id:
-            payloads_to_try.append({"companyId": company_id, "topics": DEFAULT_INTENT_TOPICS})
-        payloads_to_try.append({"companyWebsite": primary_website, "topics": DEFAULT_INTENT_TOPICS})
+            attrs_to_try.append({"companyId": company_id, "topics": DEFAULT_INTENT_TOPICS})
+        attrs_to_try.append({"companyWebsite": primary_website, "topics": DEFAULT_INTENT_TOPICS})
 
         last_error: Optional[str] = None
-        for flat_payload in payloads_to_try:
+        for attrs in attrs_to_try:
+            payload = {"data": {"type": "IntentEnrich", "attributes": attrs}}
             try:
-                response = await self._make_request(ENDPOINTS["intent_enrich"], flat_payload)
+                response = await self._make_request(ENDPOINTS["intent_enrich"], payload)
                 raw_signals = self._extract_data_list(response)
                 normalized_signals = [self._normalize_intent_signal(sig) for sig in raw_signals]
                 logger.info(
-                    "ZoomInfo intent enrich success: %d signals for domain=%s (payload=%s)",
-                    len(raw_signals), domain, list(flat_payload.keys())
+                    "ZoomInfo intent enrich success: %d signals for domain=%s (attrs=%s)",
+                    len(raw_signals), domain, list(attrs.keys())
                 )
                 return {
                     "success": True,
@@ -1116,12 +1106,9 @@ class ZoomInfoClient:
                 detail = self._http_error_detail(e)
                 last_error = detail
                 logger.warning(
-                    "ZoomInfo intent enrich %s for payload=%s",
-                    detail, list(flat_payload.keys())
+                    "ZoomInfo intent enrich %s for attrs=%s",
+                    detail, list(attrs.keys())
                 )
-                # "Invalid topics" means the topic names/IDs are not in this account's
-                # topic library — retrying with a different company identifier won't help.
-                # This typically indicates Buyer Intent is not enabled on the subscription.
                 if "invalid topics" in detail.lower() or "invalid number of topics" in detail.lower():
                     logger.warning(
                         "ZoomInfo Buyer Intent topics rejected — check that Buyer Intent is "
@@ -1129,7 +1116,6 @@ class ZoomInfoClient:
                     )
                     break
                 if e.response.status_code not in (400, 422):
-                    # Auth/server errors — no point retrying with a different payload
                     break
             except Exception as e:
                 last_error = str(e)
@@ -1154,19 +1140,21 @@ class ZoomInfoClient:
 
         Returns:
             Dict with success, scoops (normalized list), raw_data, error
+
+        GTM API v1 uses JSON:API format: {"data": {"type": "ScoopsSearch", "attributes": {...}}}
         """
-        flat_payload: Dict[str, Any] = {}
+        attrs: Dict[str, Any] = {}
         if company_id:
-            flat_payload["companyId"] = company_id
+            attrs["companyId"] = company_id
         else:
-            flat_payload["companyWebsite"] = self._primary_website(domain)
+            attrs["companyWebsite"] = self._primary_website(domain)
         if scoop_types:
-            flat_payload["scoopTypes"] = scoop_types
+            attrs["scoopTypes"] = scoop_types
+
+        payload = {"data": {"type": "ScoopsSearch", "attributes": attrs}}
 
         try:
-            response = await self._request_with_fallback(
-                ENDPOINTS["scoops_search"], flat_payload, "ScoopSearch"
-            )
+            response = await self._make_request(ENDPOINTS["scoops_search"], payload)
             raw_scoops = self._extract_data_list(response)
             normalized_scoops = [self._normalize_scoop(scoop) for scoop in raw_scoops]
             return {
@@ -1203,55 +1191,42 @@ class ZoomInfoClient:
         Returns:
             Dict with success, articles (normalized list), raw_data, error
 
-        NOTE: /search/news uses flat JSON exclusively — the JSON:API {"data": ...}
-        wrapper is NOT accepted (returns HTTP 400 invalidInputFields: ['data']).
-        We therefore use _make_request directly with ordered fallback payloads instead
-        of _request_with_fallback which appends a JSON:API attempt.
+        GTM API v1 uses JSON:API format: {"data": {"type": "NewsSearch", "attributes": {...}}}
+        The GTM news search endpoint accepts companyId, companyName, and other filters.
         """
-        # /search/news only accepts companyId.
-        # companyName → HTTP 400 invalidInputFields: ['companyname']
-        # companyWebsite → HTTP 400 invalidInputFields: ['companywebsite']
-        # Both are confirmed invalid.  Only companyId works.
-        payloads_to_try: List[Dict[str, Any]] = []
+        attrs: Dict[str, Any] = {}
         if company_id:
-            payloads_to_try.append({"companyId": company_id})
+            attrs["companyId"] = company_id
+        elif company_name:
+            attrs["companyName"] = company_name
+        else:
+            return {"success": False, "articles": [], "raw_data": [], "error": "companyId or companyName required for news search"}
 
-        if not payloads_to_try:
-            return {"success": False, "articles": [], "raw_data": [], "error": "companyId required for /search/news — not available until company enrich succeeds"}
+        payload = {"data": {"type": "NewsSearch", "attributes": attrs}}
 
-        last_error: Optional[str] = None
-        for flat_payload in payloads_to_try:
-            try:
-                response = await self._make_request(ENDPOINTS["news_search"], flat_payload)
-                raw_articles = self._extract_data_list(response)
-                normalized_articles = [self._normalize_news_article(article) for article in raw_articles]
-                logger.info(
-                    "ZoomInfo news search success: %d articles for company=%s (payload=%s)",
-                    len(raw_articles), company_name, list(flat_payload.keys())
-                )
-                return {
-                    "success": True,
-                    "articles": normalized_articles,
-                    "raw_data": raw_articles,
-                    "error": None,
-                }
-            except httpx.TimeoutException:
-                return {"success": False, "articles": [], "raw_data": [], "error": "Request timeout"}
-            except httpx.HTTPStatusError as e:
-                detail = self._http_error_detail(e)
-                last_error = detail
-                logger.warning(
-                    "ZoomInfo news search %s for payload=%s",
-                    detail, list(flat_payload.keys())
-                )
-                if e.response.status_code not in (400, 422):
-                    break
-            except Exception as e:
-                last_error = str(e)
-                logger.error("ZoomInfo news search exception: %s", e)
-                break
-
-        return {"success": False, "articles": [], "raw_data": [], "error": last_error or "No news found"}
+        try:
+            response = await self._make_request(ENDPOINTS["news_search"], payload)
+            raw_articles = self._extract_data_list(response)
+            normalized_articles = [self._normalize_news_article(article) for article in raw_articles]
+            logger.info(
+                "ZoomInfo news search success: %d articles for company=%s",
+                len(raw_articles), company_name
+            )
+            return {
+                "success": True,
+                "articles": normalized_articles,
+                "raw_data": raw_articles,
+                "error": None,
+            }
+        except httpx.TimeoutException:
+            return {"success": False, "articles": [], "raw_data": [], "error": "Request timeout"}
+        except httpx.HTTPStatusError as e:
+            detail = self._http_error_detail(e)
+            logger.warning("ZoomInfo news search %s", detail)
+            return {"success": False, "articles": [], "raw_data": [], "error": detail}
+        except Exception as e:
+            logger.error("ZoomInfo news search exception: %s", e)
+            return {"success": False, "articles": [], "raw_data": [], "error": str(e)}
 
     async def enrich_technologies(self, domain: str, company_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -1264,61 +1239,41 @@ class ZoomInfoClient:
         Returns:
             Dict with success, technologies (normalized list), raw_data, error
 
-        NOTE: The correct endpoint is /enrich/technologies (plural).
-        /enrich/technology (singular) returns HTTP 404 "Cannot POST /enrich/technology".
-        The API requires companyId; companyWebsite is tried as a fallback but may not
-        be supported depending on subscription tier.
+        GTM API v1 uses JSON:API format: {"data": {"type": "TechnologiesEnrich", "attributes": {...}}}
         """
         primary_website = self._primary_website(domain)
 
-        # Both /enrich/technology (singular) and /enrich/technologies (plural) return 404.
-        # Try every known candidate path; stop at the first that returns non-404.
-        # companyId is preferred per API docs; companyWebsite is tried as a fallback.
-        candidate_endpoints = [
-            "/search/technographics",   # most likely correct path for current API
-            "/enrich/technographics",
-            "/enrich/technologies",     # plural — confirmed 404 but kept for future-proofing
-        ]
-        payloads_to_try: List[Dict[str, Any]] = []
+        attrs: Dict[str, Any] = {}
         if company_id:
-            payloads_to_try.append({"companyId": company_id})
-        payloads_to_try.append({"companyWebsite": primary_website})
+            attrs["companyId"] = company_id
+        else:
+            attrs["companyWebsite"] = primary_website
 
-        last_error: Optional[str] = None
-        for endpoint in candidate_endpoints:
-            for flat_payload in payloads_to_try:
-                try:
-                    response = await self._make_request(endpoint, flat_payload)
-                    raw_technologies = self._extract_data_list(response)
-                    normalized_technologies = [self._normalize_technology(tech) for tech in raw_technologies]
-                    logger.info(
-                        "ZoomInfo tech enrich success via %s: %d technologies for domain=%s",
-                        endpoint, len(raw_technologies), domain
-                    )
-                    # Update ENDPOINTS cache so subsequent calls skip the probing
-                    ENDPOINTS["tech_enrich"] = endpoint
-                    return {
-                        "success": True,
-                        "technologies": normalized_technologies,
-                        "raw_data": raw_technologies,
-                        "error": None,
-                    }
-                except httpx.TimeoutException:
-                    return {"success": False, "technologies": [], "raw_data": [], "error": "Request timeout"}
-                except httpx.HTTPStatusError as e:
-                    detail = self._http_error_detail(e)
-                    last_error = detail
-                    logger.warning("ZoomInfo tech enrich %s %s", endpoint, detail)
-                    if e.response.status_code == 404:
-                        break  # This endpoint doesn't exist — skip remaining payloads, try next endpoint
-                    if e.response.status_code not in (400, 422):
-                        return {"success": False, "technologies": [], "raw_data": [], "error": detail}
-                except Exception as e:
-                    last_error = str(e)
-                    logger.error("ZoomInfo tech enrich exception on %s: %s", endpoint, e)
-                    break
+        payload = {"data": {"type": "TechnologiesEnrich", "attributes": attrs}}
 
-        return {"success": False, "technologies": [], "raw_data": [], "error": last_error or "No technology data found"}
+        try:
+            response = await self._make_request(ENDPOINTS["tech_enrich"], payload)
+            raw_technologies = self._extract_data_list(response)
+            normalized_technologies = [self._normalize_technology(tech) for tech in raw_technologies]
+            logger.info(
+                "ZoomInfo tech enrich success: %d technologies for domain=%s",
+                len(raw_technologies), domain
+            )
+            return {
+                "success": True,
+                "technologies": normalized_technologies,
+                "raw_data": raw_technologies,
+                "error": None,
+            }
+        except httpx.TimeoutException:
+            return {"success": False, "technologies": [], "raw_data": [], "error": "Request timeout"}
+        except httpx.HTTPStatusError as e:
+            detail = self._http_error_detail(e)
+            logger.warning("ZoomInfo tech enrich %s", detail)
+            return {"success": False, "technologies": [], "raw_data": [], "error": detail}
+        except Exception as e:
+            logger.error("ZoomInfo tech enrich exception: %s", e)
+            return {"success": False, "technologies": [], "raw_data": [], "error": str(e)}
 
     @staticmethod
     def _is_partner(title: str) -> bool:

@@ -43,16 +43,16 @@ class TestZoomInfoClientInit:
         assert client.timeout == 30
 
     def test_default_base_url(self):
-        """Client uses correct ZoomInfo GTM base URL."""
+        """Client uses correct ZoomInfo base URL (GTM paths are in ENDPOINTS)."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test")
-        assert client.base_url == "https://api.zoominfo.com/gtm"
+        assert client.base_url == "https://api.zoominfo.com"
 
     def test_content_type_header(self):
-        """Client sends application/json content type (not vnd.api+json)."""
+        """Client sends JSON:API content type for GTM API v1."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test")
-        assert client.headers["Content-Type"] == "application/json"
+        assert client.headers["Content-Type"] == "application/vnd.api+json"
         assert client.headers["Authorization"] == "Bearer test"
 
 
@@ -261,7 +261,7 @@ class TestContactSearchPayloadFormat:
             captured_payloads.append(payload)
             return {"data": []}
 
-        valid_levels = {"C-Level", "VP-Level", "Director", "Manager"}
+        valid_levels = {"C-Level", "VP-Level", "Director", "Director-Level", "Manager"}
 
         with patch.object(client, "_make_request", side_effect=capture_payload):
             await client.search_contacts(domain="example.com")

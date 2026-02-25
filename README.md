@@ -21,7 +21,41 @@
 
 ---
 
-## Latest Features (2026-02-19) — ZoomInfo Auth Fix + Multi-URL Search
+## Latest Features (2026-02-25) — ZoomInfo GTM API v1 Migration
+
+### Migration from Legacy Endpoints to GTM Data API v1
+
+All ZoomInfo API calls have been migrated from the legacy flat endpoints (`/enrich/company`, `/search/contact`, etc.) to the GTM Data API v1 (`/gtm/data/v1/companies/enrich`, `/gtm/data/v1/contacts/search`, etc.).
+
+#### What Changed
+
+| Endpoint | Old Path | New GTM v1 Path |
+|----------|----------|-----------------|
+| Company Enrich | `/enrich/company` | `/gtm/data/v1/companies/enrich` |
+| Contact Search | `/search/contact` | `/gtm/data/v1/contacts/search` |
+| Contact Enrich | `/enrich/contact` | `/gtm/data/v1/contacts/enrich` |
+| Intent Enrich | `/enrich/intent` | `/gtm/data/v1/intent/enrich` |
+| Scoops Search | `/search/scoop` | `/gtm/data/v1/scoops/search` |
+| News Search | `/search/news` | `/gtm/data/v1/news/search` |
+| Technologies Enrich | `/enrich/technologies` | `/gtm/data/v1/technologies/enrich` |
+
+#### Key Technical Changes
+
+1. **JSON:API Request Format** — All requests now use the JSON:API specification with `Content-Type: application/vnd.api+json` and payloads wrapped in `{"data": {"type": "TypeName", "attributes": {...}}}` structure.
+
+2. **Phone Number Fix (Contact Enrich)** — Added explicit `outputFields` to contact enrich requests including `directPhone`, `mobilePhone`, `companyPhone`, `hasDirectPhone`, `hasMobilePhone`, and DNC flags (`directPhoneDoNotCall`, `mobilePhoneDoNotCall`). The GTM contact *search* endpoint does **not** return phone/email data by design — only the *enrich* endpoint does when `outputFields` are specified.
+
+3. **Simplified Technology Enrich** — Removed multi-endpoint probing (`/search/technographics`, `/enrich/technographics`, `/enrich/technologies`) in favor of the single canonical GTM path `/gtm/data/v1/technologies/enrich`.
+
+4. **Simplified News Search** — The GTM news search endpoint now accepts `companyName` as a filter (in addition to `companyId`), so the endpoint is no longer restricted to `companyId`-only lookups.
+
+#### Rationale
+
+The legacy ZoomInfo endpoints (`/enrich/company`, `/search/contact`, etc.) were returning incomplete or missing data for several field types (intent signals, scoops, technologies, news). The GTM Data API v1 is ZoomInfo's current supported API surface, using the JSON:API specification for consistent request/response formatting. This migration ensures all enrichment and search endpoints use the correct API version and request format, which should resolve the data retrieval failures visible in the debug panels.
+
+---
+
+## Features (2026-02-19) — ZoomInfo Auth Fix + Multi-URL Search
 
 ### ZoomInfo Authentication — Root Cause & Fix
 
