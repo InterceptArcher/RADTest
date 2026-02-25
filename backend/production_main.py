@@ -170,7 +170,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "zoominfo-error-detail-debug-v5",
+        "deploy_version": "gtm-api-v1-migration",
     }
 
 
