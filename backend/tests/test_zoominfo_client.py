@@ -230,7 +230,7 @@ class TestContactSearchPayloadFormat:
 
         captured_payloads = []
 
-        async def capture_payload(endpoint, payload):
+        async def capture_payload(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -257,7 +257,7 @@ class TestContactSearchPayloadFormat:
 
         captured_payloads = []
 
-        async def capture_payload(endpoint, payload):
+        async def capture_payload(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -285,7 +285,7 @@ class TestContactSearchPayloadFormat:
 
         captured_payloads = []
 
-        async def capture_payload(endpoint, payload):
+        async def capture_payload(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -814,7 +814,7 @@ class TestSearchContactsOutputFields:
 
         captured_payloads = []
 
-        async def capture(endpoint, payload):
+        async def capture(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -838,7 +838,7 @@ class TestSearchContactsOutputFields:
 
         captured_payloads = []
 
-        async def capture(endpoint, payload):
+        async def capture(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -863,7 +863,7 @@ class TestSearchContactsOutputFields:
 
         captured_payloads = []
 
-        async def capture(endpoint, payload):
+        async def capture(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -897,7 +897,7 @@ class TestExpandedCSuiteSearch:
         client = ZoomInfoClient(access_token="test-token")
         captured_payloads = []
 
-        async def capture(endpoint, payload):
+        async def capture(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -922,7 +922,7 @@ class TestExpandedCSuiteSearch:
         client = ZoomInfoClient(access_token="test-token")
         captured_payloads = []
 
-        async def capture(endpoint, payload):
+        async def capture(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -947,7 +947,7 @@ class TestExpandedCSuiteSearch:
         client = ZoomInfoClient(access_token="test-token")
         captured_payloads = []
 
-        async def capture(endpoint, payload):
+        async def capture(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -1031,7 +1031,7 @@ class TestLookupContactsByIdentity:
 
         captured_payloads = []
 
-        async def capture(endpoint, payload):
+        async def capture(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": [{
                 "firstName": "Bob",
@@ -1115,7 +1115,7 @@ class TestLookupContactsByIdentity:
 
         called_endpoints = []
 
-        async def capture_endpoint(endpoint, payload):
+        async def capture_endpoint(endpoint, payload, _is_retry=False, params=None):
             called_endpoints.append(endpoint)
             return {"data": []}
 

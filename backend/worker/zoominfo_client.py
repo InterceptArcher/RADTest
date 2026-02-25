@@ -33,9 +33,12 @@ ENDPOINTS = {
     "contact_search": "/gtm/data/v1/contacts/search",
     "contact_enrich": "/gtm/data/v1/contacts/enrich",
     "intent_enrich": "/gtm/data/v1/intent/enrich",
-    "scoops_search": "/gtm/data/v1/scoops/search",
-    "news_search": "/gtm/data/v1/news/search",
+    "scoops_enrich": "/gtm/data/v1/scoops/enrich",
+    "news_enrich": "/gtm/data/v1/news/enrich",
     "tech_enrich": "/gtm/data/v1/technologies/enrich",
+    # Legacy keys kept for backward compatibility (point to enrich endpoints)
+    "scoops_search": "/gtm/data/v1/scoops/enrich",
+    "news_search": "/gtm/data/v1/news/enrich",
 }
 
 # Fields explicitly requested from ZoomInfo contact search so that phone data
@@ -478,7 +481,8 @@ class ZoomInfoClient:
             await self._authenticate()
 
     async def _make_request(
-        self, endpoint: str, payload: Dict[str, Any], _is_retry: bool = False
+        self, endpoint: str, payload: Dict[str, Any], _is_retry: bool = False,
+        params: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         """
         Make an authenticated POST request to ZoomInfo API.
@@ -490,7 +494,7 @@ class ZoomInfoClient:
         logger.debug(f"ZoomInfo POST {url}")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(
-                url, json=payload, headers=self.headers
+                url, json=payload, headers=self.headers, params=params,
             )
             # On first 401, force token refresh and retry once
             if response.status_code == 401 and not _is_retry and self._auto_auth:
@@ -500,7 +504,7 @@ class ZoomInfoClient:
                 )
                 self._token_expires_at = 0  # Force re-auth
                 await self._authenticate()
-                return await self._make_request(endpoint, payload, _is_retry=True)
+                return await self._make_request(endpoint, payload, _is_retry=True, params=params)
 
             if not response.is_success:
                 # Capture and log the full response body so the root cause is visible
@@ -832,12 +836,16 @@ class ZoomInfoClient:
             """
             POST contact_search with JSON:API format.
             GTM API v1 requires: {"data": {"type": "ContactSearch", "attributes": {...}}}
+            Pagination uses query params: ?page[size]=N&page[number]=N
             Returns count of new contacts added.
             """
             nonlocal last_error
+            # Extract page size from attributes (rpp) and pass as query param
+            page_size = search_attrs.pop("rpp", None)
+            query_params = {"page[size]": page_size} if page_size else None
             payload = {"data": {"type": "ContactSearch", "attributes": search_attrs}}
             try:
-                response = await self._make_request(ENDPOINTS["contact_search"], payload)
+                response = await self._make_request(ENDPOINTS["contact_search"], payload, params=query_params)
                 data_list = self._extract_data_list(response)
                 if data_list:
                     added = _add_contacts(data_list)
@@ -1233,7 +1241,8 @@ class ZoomInfoClient:
         Returns:
             Dict with success, scoops (normalized list), raw_data, error
 
-        GTM API v1 uses JSON:API format: {"data": {"type": "ScoopsSearch", "attributes": {...}}}
+        GTM API v1: scoops/search rejects companyId — use scoops/enrich instead.
+        JSON:API format: {"data": {"type": "ScoopEnrich", "attributes": {...}}}
         """
         attrs: Dict[str, Any] = {}
         if company_id:
@@ -1243,10 +1252,10 @@ class ZoomInfoClient:
         if scoop_types:
             attrs["scoopTypes"] = scoop_types
 
-        payload = {"data": {"type": "ScoopsSearch", "attributes": attrs}}
+        payload = {"data": {"type": "ScoopEnrich", "attributes": attrs}}
 
         try:
-            response = await self._make_request(ENDPOINTS["scoops_search"], payload)
+            response = await self._make_request(ENDPOINTS["scoops_enrich"], payload)
             raw_scoops = self._extract_data_list(response)
             normalized_scoops = [self._normalize_scoop(scoop) for scoop in raw_scoops]
             return {
@@ -1283,8 +1292,8 @@ class ZoomInfoClient:
         Returns:
             Dict with success, articles (normalized list), raw_data, error
 
-        GTM API v1 uses JSON:API format: {"data": {"type": "NewsSearch", "attributes": {...}}}
-        The GTM news search endpoint accepts companyId, companyName, and other filters.
+        GTM API v1: news/search rejects companyId/companyName — use news/enrich instead.
+        JSON:API format: {"data": {"type": "NewsEnrich", "attributes": {...}}}
         """
         attrs: Dict[str, Any] = {}
         if company_id:
@@ -1292,12 +1301,12 @@ class ZoomInfoClient:
         elif company_name:
             attrs["companyName"] = company_name
         else:
-            return {"success": False, "articles": [], "raw_data": [], "error": "companyId or companyName required for news search"}
+            return {"success": False, "articles": [], "raw_data": [], "error": "companyId or companyName required for news enrich"}
 
-        payload = {"data": {"type": "NewsSearch", "attributes": attrs}}
+        payload = {"data": {"type": "NewsEnrich", "attributes": attrs}}
 
         try:
-            response = await self._make_request(ENDPOINTS["news_search"], payload)
+            response = await self._make_request(ENDPOINTS["news_enrich"], payload)
             raw_articles = self._extract_data_list(response)
             normalized_articles = [self._normalize_news_article(article) for article in raw_articles]
             logger.info(

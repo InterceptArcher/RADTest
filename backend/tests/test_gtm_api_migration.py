@@ -34,13 +34,13 @@ class TestGTMEndpointPaths:
         from zoominfo_client import ENDPOINTS
         assert ENDPOINTS["intent_enrich"] == "/gtm/data/v1/intent/enrich"
 
-    def test_scoops_search_endpoint(self):
+    def test_scoops_enrich_endpoint(self):
         from zoominfo_client import ENDPOINTS
-        assert ENDPOINTS["scoops_search"] == "/gtm/data/v1/scoops/search"
+        assert ENDPOINTS["scoops_enrich"] == "/gtm/data/v1/scoops/enrich"
 
-    def test_news_search_endpoint(self):
+    def test_news_enrich_endpoint(self):
         from zoominfo_client import ENDPOINTS
-        assert ENDPOINTS["news_search"] == "/gtm/data/v1/news/search"
+        assert ENDPOINTS["news_enrich"] == "/gtm/data/v1/news/enrich"
 
     def test_tech_enrich_endpoint(self):
         from zoominfo_client import ENDPOINTS
@@ -72,7 +72,7 @@ class TestGTMCompanyEnrichFormat:
 
         captured_payloads = []
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {
                 "data": [{
@@ -108,7 +108,7 @@ class TestGTMContactSearchFormat:
 
         captured_payloads = []
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append({"endpoint": endpoint, "payload": payload})
             return {
                 "data": [{
@@ -142,7 +142,7 @@ class TestGTMContactSearchFormat:
 
         captured_endpoints = []
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             captured_endpoints.append(endpoint)
             return {"data": []}
 
@@ -164,7 +164,7 @@ class TestGTMContactEnrichFormat:
 
         captured_payloads = []
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {
                 "data": [{
@@ -197,7 +197,7 @@ class TestGTMContactEnrichFormat:
 
         captured_payloads = []
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append(payload)
             return {"data": []}
 
@@ -217,7 +217,7 @@ class TestGTMContactEnrichFormat:
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             return {
                 "data": [{
                     "type": "Contact",
@@ -254,7 +254,7 @@ class TestGTMIntentEnrichFormat:
 
         captured_payloads = []
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append({"endpoint": endpoint, "payload": payload})
             return {"data": []}
 
@@ -272,17 +272,17 @@ class TestGTMIntentEnrichFormat:
         assert "companyId" in attrs
 
 
-class TestGTMScoopsSearchFormat:
-    """Validate scoops search sends JSON:API format."""
+class TestGTMScoopsEnrichFormat:
+    """Validate scoops enrich sends JSON:API format."""
 
     @pytest.mark.asyncio
-    async def test_scoops_search_sends_jsonapi_payload(self):
+    async def test_scoops_enrich_sends_jsonapi_payload(self):
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
 
         captured_payloads = []
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append({"endpoint": endpoint, "payload": payload})
             return {"data": []}
 
@@ -291,23 +291,23 @@ class TestGTMScoopsSearchFormat:
 
         assert len(captured_payloads) > 0
         call = captured_payloads[0]
-        assert call["endpoint"] == "/gtm/data/v1/scoops/search"
+        assert call["endpoint"] == "/gtm/data/v1/scoops/enrich"
         payload = call["payload"]
         assert "data" in payload
-        assert payload["data"]["type"] == "ScoopsSearch"
+        assert payload["data"]["type"] == "ScoopEnrich"
 
 
-class TestGTMNewsSearchFormat:
-    """Validate news search sends JSON:API format."""
+class TestGTMNewsEnrichFormat:
+    """Validate news enrich sends JSON:API format."""
 
     @pytest.mark.asyncio
-    async def test_news_search_sends_jsonapi_payload(self):
+    async def test_news_enrich_sends_jsonapi_payload(self):
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
 
         captured_payloads = []
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append({"endpoint": endpoint, "payload": payload})
             return {"data": []}
 
@@ -316,10 +316,10 @@ class TestGTMNewsSearchFormat:
 
         assert len(captured_payloads) > 0
         call = captured_payloads[0]
-        assert call["endpoint"] == "/gtm/data/v1/news/search"
+        assert call["endpoint"] == "/gtm/data/v1/news/enrich"
         payload = call["payload"]
         assert "data" in payload
-        assert payload["data"]["type"] == "NewsSearch"
+        assert payload["data"]["type"] == "NewsEnrich"
 
 
 class TestGTMTechEnrichFormat:
@@ -332,7 +332,7 @@ class TestGTMTechEnrichFormat:
 
         captured_payloads = []
 
-        async def mock_make_request(endpoint, payload, _is_retry=False):
+        async def mock_make_request(endpoint, payload, _is_retry=False, params=None):
             captured_payloads.append({"endpoint": endpoint, "payload": payload})
             return {"data": []}
 

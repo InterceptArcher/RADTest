@@ -2965,8 +2965,8 @@ async def debug_zoominfo_raw(domain: str):
     # 2. Scoops search (known working — baseline reference)              #
     # ------------------------------------------------------------------ #
     scoops_attrs = {"companyId": company_id_found} if company_id_found else {"companyWebsite": primary_website}
-    scoops_p = {"data": {"type": "ScoopsSearch", "attributes": scoops_attrs}}
-    results["scoops_search"] = [await _probe(ENDPOINTS["scoops_search"], scoops_p)]
+    scoops_p = {"data": {"type": "ScoopEnrich", "attributes": scoops_attrs}}
+    results["scoops_search"] = [await _probe(ENDPOINTS["scoops_enrich"], scoops_p)]
 
     # ------------------------------------------------------------------ #
     # 3. Intent — try /enrich/intent and /search/intent, with/without    #
@@ -2988,12 +2988,12 @@ async def debug_zoominfo_raw(domain: str):
     # ------------------------------------------------------------------ #
     # 4. News — try /search/news with multiple identifier types          #
     # ------------------------------------------------------------------ #
-    news_ep = ENDPOINTS["news_search"]
-    news_payloads = [
-        (news_ep, {"data": {"type": "NewsSearch", "attributes": {"companyName": company_name}}}),
-    ]
+    news_ep = ENDPOINTS["news_enrich"]
+    news_payloads = []
     if company_id_found:
-        news_payloads.insert(0, (news_ep, {"data": {"type": "NewsSearch", "attributes": {"companyId": company_id_found}}}))
+        news_payloads.append((news_ep, {"data": {"type": "NewsEnrich", "attributes": {"companyId": company_id_found}}}))
+    else:
+        news_payloads.append((news_ep, {"data": {"type": "NewsEnrich", "attributes": {"companyName": company_name}}}))
     results["news_search"] = [await _probe(ep, p) for ep, p in news_payloads]
 
     # ------------------------------------------------------------------ #
@@ -3014,8 +3014,8 @@ async def debug_zoominfo_raw(domain: str):
     # 6. Contact search (reference — should be working)                  #
     # ------------------------------------------------------------------ #
     results["contact_search"] = [
-        await _probe(ENDPOINTS["contact_search"],
-                     {"data": {"type": "ContactSearch", "attributes": {"companyWebsite": zi_client._website_candidates(domain), "rpp": 3}}})
+        await _probe(ENDPOINTS["contact_search"] + "?page%5Bsize%5D=3",
+                     {"data": {"type": "ContactSearch", "attributes": {"companyWebsite": zi_client._website_candidates(domain)}}})
     ]
 
     return results
