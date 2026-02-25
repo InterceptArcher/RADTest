@@ -579,11 +579,34 @@ class ZoomInfoClient:
         # Both formats failed with format errors
         raise last_error  # type: ignore[misc]
 
+    @staticmethod
+    def _unwrap_jsonapi(records: list) -> list:
+        """Unwrap JSON:API records: {"attributes": {...}} → flat dict.
+
+        GTM API v1 returns records like:
+            {"id": "123", "type": "Contact", "attributes": {"firstName": "John", ...}}
+        Downstream normalization expects flat dicts:
+            {"firstName": "John", ...}
+        If the record has an "attributes" dict, merge it with any top-level id/type.
+        Non-JSON:API records (no "attributes" key) are returned as-is.
+        """
+        unwrapped = []
+        for rec in records:
+            if isinstance(rec, dict) and "attributes" in rec and isinstance(rec["attributes"], dict):
+                flat = dict(rec["attributes"])
+                # Preserve top-level id if present and not already in attributes
+                if "id" in rec and "id" not in flat:
+                    flat["id"] = rec["id"]
+                unwrapped.append(flat)
+            else:
+                unwrapped.append(rec)
+        return unwrapped
+
     def _extract_data_list(self, response: Dict[str, Any]) -> list:
         """
         Extract the data list from a ZoomInfo API response.
         Handles multiple response formats:
-          - {"data": [...]}                 (standard list)
+          - {"data": [...]}                 (standard list / JSON:API)
           - {"data": {...}}                 (single-object — wrapped in list)
           - {"result": {"data": [...]}}     (nested legacy)
           - {"result": [...]}               (result IS the list)
@@ -594,15 +617,18 @@ class ZoomInfoClient:
           - {"signals": [...]}              (intent enrich)
           - {"contacts": [...]}             (contact search flat)
           - {"people": [...]}               (flat variant)
+
+        JSON:API records with {"attributes": {...}} are automatically unwrapped
+        to flat dicts for downstream normalization compatibility.
         """
         # Primary key: "data"
         if "data" in response:
             d = response["data"]
             if isinstance(d, list):
-                return d
+                return self._unwrap_jsonapi(d)
             if isinstance(d, dict) and d:
-                # Single-object response (e.g. /enrich/company) — normalise to list
-                return [d]
+                # Single-object response — normalise to list
+                return self._unwrap_jsonapi([d])
             return []
 
         # "result" key — may be dict-with-data, a list, or a bare object
