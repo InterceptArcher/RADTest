@@ -44,7 +44,7 @@ class TestGTMEndpointPaths:
 
     def test_tech_enrich_endpoint(self):
         from zoominfo_client import ENDPOINTS
-        assert ENDPOINTS["tech_enrich"] == "/gtm/data/v1/technologies/enrich"
+        assert ENDPOINTS["tech_enrich"] == "/gtm/data/v1/companies/technologies/enrich"
 
 
 class TestGTMContentType:
@@ -341,10 +341,10 @@ class TestGTMTechEnrichFormat:
 
         assert len(captured_payloads) > 0
         call = captured_payloads[0]
-        assert call["endpoint"] == "/gtm/data/v1/technologies/enrich"
+        assert call["endpoint"] == "/gtm/data/v1/companies/technologies/enrich"
         payload = call["payload"]
         assert "data" in payload
-        assert payload["data"]["type"] == "TechnologiesEnrich"
+        assert payload["data"]["type"] == "TechnologyEnrich"
 
 
 class TestGTMOAuth2AuthFlow:

@@ -1020,58 +1020,58 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
 
         if job_data is not None:
             try:
+                from worker.zoominfo_client import ENDPOINTS as _ZI_EP
+                _zi_base = "https://api.zoominfo.com"
                 _log_api_call(
-                    job_data, "ZoomInfo Company Enrichment",
-                    "https://api.zoominfo.com/enrich/company", "POST",
-                    {"companyWebsite": f"https://www.{domain}", "companyName": company_name},
+                    job_data, "ZoomInfo Company Enrichment (GTM API v1)",
+                    f"{_zi_base}{_ZI_EP['company_enrich']}", "POST",
+                    {"data": {"type": "CompanyEnrich", "attributes": {"matchCompanyInput": [{"companyWebsite": f"https://www.{domain}"}], "outputFields": ["id", "name", "website", "revenue", "employeeCount"]}}},
                     _zi_log_resp(company_result, company_result.get("data", {}) if isinstance(company_result, dict) else {}),
                     _zi_status(company_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
                 _log_api_call(
-                    job_data, "ZoomInfo Intent Enrichment",
-                    "https://api.zoominfo.com/enrich/intent", "POST",
-                    {"companyWebsite": f"https://www.{domain}", "topics": ["Cybersecurity", "Cloud Computing", "AI"]},
+                    job_data, "ZoomInfo Intent Enrichment (GTM API v1)",
+                    f"{_zi_base}{_ZI_EP['intent_enrich']}", "POST",
+                    {"data": {"type": "IntentEnrich", "attributes": {"companyId": company_id or "N/A", "topics": ["Cybersecurity", "Cloud Computing", "AI"]}}},
                     _zi_log_resp(intent_result, {"intent_signals_count": len(intent_result.get("intent_signals", [])), "signals": intent_result.get("intent_signals", [])[:3]} if isinstance(intent_result, dict) else {}),
                     _zi_status(intent_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
                 _log_api_call(
-                    job_data, "ZoomInfo Scoops Search",
-                    "https://api.zoominfo.com/search/scoop", "POST",
-                    {"companyWebsite": f"https://www.{domain}"},
+                    job_data, "ZoomInfo Scoops Enrichment (GTM API v1)",
+                    f"{_zi_base}{_ZI_EP['scoops_enrich']}", "POST",
+                    {"data": {"type": "ScoopEnrich", "attributes": {"companyId": company_id or "N/A"}}},
                     _zi_log_resp(scoops_result, {"scoops_count": len(scoops_result.get("scoops", [])), "scoops": scoops_result.get("scoops", [])[:3]} if isinstance(scoops_result, dict) else {}),
                     _zi_status(scoops_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
                 _log_api_call(
-                    job_data, "ZoomInfo News Search",
-                    "https://api.zoominfo.com/search/news", "POST",
-                    {"companyName": company_name},
+                    job_data, "ZoomInfo News Enrichment (GTM API v1)",
+                    f"{_zi_base}{_ZI_EP['news_enrich']}", "POST",
+                    {"data": {"type": "NewsEnrich", "attributes": {"companyId": company_id or "N/A"}}},
                     _zi_log_resp(news_result, {"articles_count": len(news_result.get("articles", [])), "articles": news_result.get("articles", [])[:3]} if isinstance(news_result, dict) else {}),
                     _zi_status(news_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
                 _log_api_call(
-                    job_data, "ZoomInfo Technologies Enrichment",
-                    "https://api.zoominfo.com/enrich/technology", "POST",
-                    {"companyWebsite": f"https://www.{domain}"},
+                    job_data, "ZoomInfo Technologies Enrichment (GTM API v1)",
+                    f"{_zi_base}{_ZI_EP['tech_enrich']}", "POST",
+                    {"data": {"type": "TechnologyEnrich", "attributes": {"companyId": company_id or "N/A"}}},
                     _zi_log_resp(tech_result, {"technologies_count": len(tech_result.get("technologies", [])), "technologies": tech_result.get("technologies", [])[:5]} if isinstance(tech_result, dict) else {}),
                     _zi_status(tech_result),
                     0, is_sensitive=True, masked_fields=["authorization"],
                 )
-                # Contact Search — actual management-level + C-suite titles strategy
+                # Contact Search — multi-strategy search + enrich pipeline
                 from worker.zoominfo_client import CSUITE_JOB_TITLES
                 contacts_with_phones = [c for c in contacts if c.get("direct_phone") or c.get("mobile_phone") or c.get("company_phone")]
                 _log_api_call(
-                    job_data, "ZoomInfo Contact Search (Management Level + C-Suite Titles)",
-                    "https://api.zoominfo.com/gtm/data/v1/contacts/search", "POST",
+                    job_data, "ZoomInfo Contact Search + Enrich (GTM API v1)",
+                    f"{_zi_base}{_ZI_EP['contact_search']}", "POST",
                     {"data": {"type": "ContactSearch", "attributes": {
                         "companyWebsite": domain,
-                        "managementLevel": ["C-Level", "VP-Level", "Director-Level", "Manager-Level"],
-                        "jobTitle": CSUITE_JOB_TITLES,
-                        "rpp": 25,
-                    }}},
+                        "jobTitle": CSUITE_JOB_TITLES[:6],
+                    }}, "note": "Multi-strategy: C-Level → VP → Director → fallback, page[size] via query param"},
                     {
                         "contacts_found": len(contacts),
                         "contacts_with_phones": len(contacts_with_phones),
@@ -2997,16 +2997,16 @@ async def debug_zoominfo_raw(domain: str):
     results["news_search"] = [await _probe(ep, p) for ep, p in news_payloads]
 
     # ------------------------------------------------------------------ #
-    # 5. Technology — try /enrich/technology and /search/technology      #
+    # 5. Technology — /gtm/data/v1/companies/technologies/enrich         #
     # ------------------------------------------------------------------ #
     tech_ep = ENDPOINTS["tech_enrich"]
     tech_payloads = []
     if company_id_found:
         tech_payloads.append(
-            (tech_ep, {"data": {"type": "TechEnrich", "attributes": {"companyId": company_id_found}}})
+            (tech_ep, {"data": {"type": "TechnologyEnrich", "attributes": {"companyId": company_id_found}}})
         )
     tech_payloads.append(
-        (tech_ep, {"data": {"type": "TechEnrich", "attributes": {"companyWebsite": primary_website}}})
+        (tech_ep, {"data": {"type": "TechnologyEnrich", "attributes": {"companyWebsite": primary_website}}})
     )
     results["tech_enrich"] = [await _probe(ep, p) for ep, p in tech_payloads]
 

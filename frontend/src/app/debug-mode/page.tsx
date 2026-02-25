@@ -179,7 +179,7 @@ const generateDemoData = (): DebugData => ({
   apiResponses: [
     {
       id: 'api-0',
-      apiName: 'ZoomInfo Company Enrichment (PRIMARY SOURCE)',
+      apiName: 'ZoomInfo Company Enrichment (GTM API v1)',
       url: 'https://api.zoominfo.com/gtm/data/v1/companies/enrich',
       method: 'POST',
       statusCode: 200,
@@ -215,7 +215,7 @@ const generateDemoData = (): DebugData => ({
     },
     {
       id: 'api-0b',
-      apiName: 'ZoomInfo Intent Enrichment',
+      apiName: 'ZoomInfo Intent Enrichment (GTM API v1)',
       url: 'https://api.zoominfo.com/gtm/data/v1/intent/enrich',
       method: 'POST',
       statusCode: 200,
@@ -242,8 +242,8 @@ const generateDemoData = (): DebugData => ({
     },
     {
       id: 'api-0c',
-      apiName: 'ZoomInfo Scoops Search',
-      url: 'https://api.zoominfo.com/gtm/data/v1/scoops/search',
+      apiName: 'ZoomInfo Scoops Enrichment (GTM API v1)',
+      url: 'https://api.zoominfo.com/gtm/data/v1/scoops/enrich',
       method: 'POST',
       statusCode: 200,
       statusText: 'OK',
@@ -252,7 +252,7 @@ const generateDemoData = (): DebugData => ({
         'x-request-id': 'zi-req-003',
       },
       requestBody: {
-        data: { type: 'ScoopSearch', attributes: { companyDomain: 'microsoft.com' } },
+        data: { type: 'ScoopEnrich', attributes: { companyId: '24904409' } },
       },
       responseBody: {
         data: [
@@ -277,7 +277,7 @@ const generateDemoData = (): DebugData => ({
     },
     {
       id: 'api-0d',
-      apiName: 'ZoomInfo Contact Search',
+      apiName: 'ZoomInfo Contact Search + Enrich (GTM API v1)',
       url: 'https://api.zoominfo.com/gtm/data/v1/contacts/search',
       method: 'POST',
       statusCode: 200,

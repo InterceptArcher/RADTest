@@ -35,7 +35,7 @@ ENDPOINTS = {
     "intent_enrich": "/gtm/data/v1/intent/enrich",
     "scoops_enrich": "/gtm/data/v1/scoops/enrich",
     "news_enrich": "/gtm/data/v1/news/enrich",
-    "tech_enrich": "/gtm/data/v1/technologies/enrich",
+    "tech_enrich": "/gtm/data/v1/companies/technologies/enrich",
     # Legacy keys kept for backward compatibility (point to enrich endpoints)
     "scoops_search": "/gtm/data/v1/scoops/enrich",
     "news_search": "/gtm/data/v1/news/enrich",
@@ -1366,7 +1366,8 @@ class ZoomInfoClient:
         Returns:
             Dict with success, technologies (normalized list), raw_data, error
 
-        GTM API v1 uses JSON:API format: {"data": {"type": "TechnologiesEnrich", "attributes": {...}}}
+        GTM API v1 endpoint: /gtm/data/v1/companies/technologies/enrich
+        JSON:API format: {"data": {"type": "TechnologyEnrich", "attributes": {...}}}
         """
         primary_website = self._primary_website(domain)
 
@@ -1376,7 +1377,7 @@ class ZoomInfoClient:
         else:
             attrs["companyWebsite"] = primary_website
 
-        payload = {"data": {"type": "TechnologiesEnrich", "attributes": attrs}}
+        payload = {"data": {"type": "TechnologyEnrich", "attributes": attrs}}
 
         try:
             response = await self._make_request(ENDPOINTS["tech_enrich"], payload)
