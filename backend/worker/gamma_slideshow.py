@@ -101,8 +101,7 @@ class GammaSlideshowCreator:
             logger.info(f"Creating slideshow for {company_name}")
 
             # Generate markdown content with user email for attribution
-            # Use template-based markdown generation for proper salesperson name support
-            markdown_content = await self._generate_template_markdown(company_data, user_email)
+            markdown_content = self._generate_markdown(company_data, user_email)
 
             # Count stakeholders to estimate number of cards needed
             stakeholders = company_data.get('validated_data', {}).get('stakeholder_profiles', [])
@@ -857,6 +856,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         # ALL Intent Topics with comprehensive details (not just top 3)
         markdown += "## Intent Topics (All Available)\n\n"
 
+        intent_topics = []
         if data_unavailable:
             markdown += "**Data unavailable at the time.** Intent signal data could not be retrieved for this account.\n\n"
         else:
@@ -1156,6 +1156,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         # selected by LLM Council as most important roles for HP to target
         # ============================================================
 
+        all_stakeholders = []
         if data_unavailable:
             # Show data unavailable slide for stakeholders
             markdown += "# Stakeholder Map: Role Profiles\n\n"
@@ -1171,7 +1172,6 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
             # Use strategic stakeholders directly (NO hunter contacts, NO CEO fallback)
             # These are REAL contacts that match the 3 strategic roles
-            all_stakeholders = []
 
             if isinstance(stakeholders, list):
                 # Ensure all items are dicts, filter out any non-dict items

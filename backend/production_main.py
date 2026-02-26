@@ -2733,7 +2733,10 @@ async def generate_slideshow_endpoint(job_id: str):
         company_data = {
             "company_name": result.get("company_name"),
             "validated_data": validated_data,
-            "confidence_score": result.get("confidence_score", 0.85)
+            "confidence_score": result.get("confidence_score", 0.85),
+            # Pull salesperson_name from the original job request data so it
+            # isn't lost when regenerating a slideshow on-demand.
+            "salesperson_name": job.get("company_data", {}).get("salesperson_name", ""),
         }
 
         # Create slideshow
