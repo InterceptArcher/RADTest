@@ -789,6 +789,46 @@ def title_case_name(name: str) -> str:
     return ' '.join(result)
 
 
+def _calculate_data_confidence(data: Dict[str, Any]) -> float:
+    """
+    Calculate confidence score based on actual data field coverage.
+    Returns a score between 0.5 and 0.95.
+
+    Weights:
+    - Core fields (company_name, industry, employee_count, headquarters): 40%
+    - Extended fields (ceo, founded_year, annual_revenue, company_type): 25%
+    - Enrichment fields (technologies, competitors, products, target_market): 20%
+    - Contact data (stakeholder_map with contacts): 15%
+    """
+    score = 0.5  # Base: we have some data if we got here
+
+    # Core fields (up to +0.20)
+    core_fields = ["company_name", "industry", "employee_count", "headquarters"]
+    core_present = sum(1 for f in core_fields if data.get(f))
+    score += (core_present / len(core_fields)) * 0.20
+
+    # Extended fields (up to +0.125)
+    extended_fields = ["ceo", "founded_year", "annual_revenue", "company_type"]
+    ext_present = sum(1 for f in extended_fields if data.get(f))
+    score += (ext_present / len(extended_fields)) * 0.125
+
+    # Enrichment fields (up to +0.10)
+    enrichment_fields = ["technologies", "competitors", "products", "target_market"]
+    enrich_present = sum(1 for f in enrichment_fields if data.get(f))
+    score += (enrich_present / len(enrichment_fields)) * 0.10
+
+    # Contact/stakeholder data (up to +0.075)
+    stakeholder_map = data.get("stakeholder_map", {})
+    if isinstance(stakeholder_map, dict):
+        stakeholders = stakeholder_map.get("stakeholders", [])
+        if isinstance(stakeholders, list) and len(stakeholders) >= 3:
+            score += 0.075
+        elif isinstance(stakeholders, list) and len(stakeholders) >= 1:
+            score += 0.04
+
+    return min(round(score, 2), 0.95)
+
+
 def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hunter_data: Dict = None, news_data: Dict = None, zoominfo_data: Dict = None) -> Dict[str, Any]:
     """Extract data directly from API responses as fallback."""
     result = {
@@ -1051,20 +1091,24 @@ async def validate_with_council(company_data: Dict, apollo_data: Dict, pdl_data:
             logger.warning(f"Council returned minimal data ({len(useful_fields)} fields), using fallback")
             # Merge council result with base data, preferring council values
             merged = {**base_data, **{k: v for k, v in result.items() if v}}
-            merged["confidence_score"] = 0.65
+            # Calculate confidence based on actual data coverage, not hardcoded
+            merged["confidence_score"] = _calculate_data_confidence(merged)
             return apply_formatting(merged)
 
         # Ensure we have minimum required fields by merging with base data
         for key, value in base_data.items():
             if key not in result or not result.get(key):
+                # Don't merge placeholder confidence_score from base_data
+                if key == "confidence_score":
+                    continue
                 result[key] = value
 
         # Always include stakeholder_map from base data if council didn't generate it
         if "stakeholder_map" not in result and base_data.get("stakeholder_map"):
             result["stakeholder_map"] = base_data["stakeholder_map"]
 
-        if not result.get("confidence_score"):
-            result["confidence_score"] = 0.8
+        # Always calculate confidence based on actual data coverage
+        result["confidence_score"] = _calculate_data_confidence(result)
 
         return apply_formatting(result)
 

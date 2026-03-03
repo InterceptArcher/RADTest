@@ -80,6 +80,15 @@ COMPANY_OUTPUT_FIELDS = [
     "country",
     "phone",
     "ticker",
+    # Leadership & classification — required for Company Overview display
+    "ceoName",
+    "companyType",
+    # Industry & identity — required for executive snapshot and overview
+    "industry",
+    "subIndustry",
+    "description",
+    "yearFounded",
+    "linkedInUrl",
 ]
 
 # Output fields for contact enrich — explicitly request phone number fields.
@@ -924,6 +933,8 @@ class ZoomInfoClient:
             # Extract page size from attributes (rpp) and pass as query param
             page_size = search_attrs.pop("rpp", None)
             query_params = {"page[size]": page_size} if page_size else None
+            # Filter out people who left the company — only return current employees
+            search_attrs.setdefault("companyPastOrPresent", "present")
             payload = {"data": {"type": "ContactSearch", "attributes": search_attrs}}
             try:
                 response = await self._make_request(ENDPOINTS["contact_search"], payload, params=query_params)
@@ -1099,8 +1110,14 @@ class ZoomInfoClient:
         First searches for contacts, then enriches with full profile data
         including phone numbers and accuracy scores.
 
+        Merges enrich results back into search results by person_id so that:
+        - Enriched contacts get real phone numbers
+        - Unenriched contacts are preserved (with phone fields cleared)
+        - Each contact has an 'enriched' boolean
+        - An 'enrichment_summary' tracks counts
+
         Returns:
-            Dict with success, people (fully enriched), error
+            Dict with success, people (merged), enrichment_summary, error
         """
         # Step 1: Search for contacts
         search_result = await self.search_contacts(
@@ -1109,38 +1126,86 @@ class ZoomInfoClient:
         if not search_result.get("success") or not search_result.get("people"):
             return search_result
 
+        search_people = search_result["people"]
+
         # Step 2: Extract person IDs and enrich
         person_ids = [
-            p.get("person_id") for p in search_result["people"]
+            p.get("person_id") for p in search_people
             if p.get("person_id")
         ]
 
         if not person_ids:
-            # No person IDs available, return search results as-is
-            return search_result
+            # No person IDs available — mark all as unenriched, clear phone fields
+            phone_fields = ("phone", "direct_phone", "mobile_phone", "company_phone")
+            people_no_phones = [
+                {**p, **{f: "" for f in phone_fields}, "enriched": False}
+                for p in search_people
+            ]
+            return {
+                **search_result,
+                "people": people_no_phones,
+                "enrichment_summary": {
+                    "total_searched": len(search_people),
+                    "total_enriched": 0,
+                    "total_unenriched": len(search_people),
+                },
+            }
 
         enrich_result = await self.enrich_contacts(person_ids=person_ids)
-        if enrich_result.get("success") and enrich_result.get("people"):
-            return enrich_result
 
-        # Enrich failed — do NOT silently return search results which have asterisk-masked
-        # phone numbers.  Clear all phone fields and surface the enrich error so callers
-        # know real phones are unavailable and can surface this in the UI.
-        enrich_error = enrich_result.get("error", "Contact enrich failed")
-        logger.warning(
-            "ZoomInfo contact enrich failed (%s) — "
-            "clearing phone fields from search results (phones are masked in search). "
-            "Fix the enrich error to get real phone numbers.",
-            enrich_error,
-        )
+        # Step 3: Merge enrich results back into search results by person_id
         phone_fields = ("phone", "direct_phone", "mobile_phone", "company_phone")
-        people_no_phones = [
-            {**p, **{f: "" for f in phone_fields}} for p in search_result.get("people", [])
-        ]
+        enriched_by_pid: Dict[str, Dict[str, Any]] = {}
+
+        if enrich_result.get("success") and enrich_result.get("people"):
+            for ep in enrich_result["people"]:
+                pid = ep.get("person_id")
+                if pid:
+                    enriched_by_pid[pid] = ep
+
+        merged_people = []
+        enriched_count = 0
+        for sp in search_people:
+            pid = sp.get("person_id")
+            if pid and pid in enriched_by_pid:
+                # Use enriched data — it has real phone numbers
+                enriched_contact = {**enriched_by_pid[pid], "enriched": True}
+                merged_people.append(enriched_contact)
+                enriched_count += 1
+            else:
+                # Not enriched — keep search data but clear masked phone fields
+                unenriched_contact = {
+                    **sp,
+                    **{f: "" for f in phone_fields},
+                    "enriched": False,
+                }
+                merged_people.append(unenriched_contact)
+
+        unenriched_count = len(merged_people) - enriched_count
+
+        if unenriched_count > 0:
+            enrich_error = enrich_result.get("error", "")
+            logger.warning(
+                "ZoomInfo contact enrich: %d/%d contacts enriched, %d unenriched "
+                "(phones cleared for unenriched). enrich_error=%s",
+                enriched_count, len(search_people), unenriched_count, enrich_error,
+            )
+
+        logger.info(
+            "ZoomInfo search_and_enrich: %d total contacts, %d enriched with phones, %d without",
+            len(merged_people), enriched_count, unenriched_count,
+        )
+
         return {
-            **search_result,
-            "people": people_no_phones,
-            "enrich_error": enrich_error,
+            "success": True,
+            "people": merged_people,
+            "error": enrich_result.get("error") if unenriched_count == len(merged_people) else None,
+            "enrich_error": enrich_result.get("error") if not enrich_result.get("success") else None,
+            "enrichment_summary": {
+                "total_searched": len(search_people),
+                "total_enriched": enriched_count,
+                "total_unenriched": unenriched_count,
+            },
         }
 
     async def lookup_contacts_by_identity(

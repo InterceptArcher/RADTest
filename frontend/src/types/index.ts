@@ -475,6 +475,17 @@ export interface StakeholderContact {
   contactAccuracyScore?: number;
   /** 'zoominfo' when phone data was enriched via ZoomInfo Contact Enrich API */
   phoneSource?: string;
+  /** Whether this contact was successfully enriched with real phone numbers */
+  enriched?: boolean;
+}
+
+/**
+ * Summary of contact enrichment results from ZoomInfo.
+ */
+export interface EnrichmentSummary {
+  totalSearched: number;
+  totalEnriched: number;
+  totalUnenriched: number;
 }
 
 /**
@@ -569,6 +580,7 @@ export interface StakeholderMap {
   otherContacts?: Stakeholder[];
   lastUpdated?: string;
   searchPerformed?: boolean;
+  enrichmentSummary?: EnrichmentSummary;
 }
 
 /**

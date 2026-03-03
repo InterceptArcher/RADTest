@@ -21,6 +21,61 @@
 
 ---
 
+## ZoomInfo Data Quality & Contact Enrichment Fixes (2026-03-03 v2)
+
+Six production issues affecting company overview display, contact accuracy, phone enrichment, and confidence scoring were identified and fixed.
+
+### Fix 6: Company CEO and Type Missing from Overview
+
+**Root cause**: `COMPANY_OUTPUT_FIELDS` in `zoominfo_client.py` only requested 11 basic fields (`id`, `name`, `website`, `revenue`, etc.). Critical fields `ceoName`, `companyType`, `industry`, `subIndustry`, `description`, `yearFounded`, `linkedInUrl` were not in the output fields list, so ZoomInfo never returned them even though `_normalize_company_data` tried to extract them.
+
+**Fix**: Added all 7 missing fields to `COMPANY_OUTPUT_FIELDS`. The CEO, company type, industry, and other firmographic data now flow through from ZoomInfo to the frontend.
+
+**Rationale**: The ZoomInfo GTM API only returns fields explicitly listed in `outputFields`. The normalizer was correctly mapping them but receiving empty data because the fields were never requested.
+
+### Fix 7: Contacts Who Left the Company Appearing in Results
+
+**Root cause**: ZoomInfo contact search had no employment status filter. It returned all contacts ever associated with a company, including people who had left.
+
+**Fix**: Added `companyPastOrPresent: "present"` to all contact search payloads in the `_search` inner function. This ZoomInfo GTM API filter restricts results to current employees only.
+
+**Rationale**: Per ZoomInfo API docs, `companyPastOrPresent` supports `"past"`, `"present"`, or `"pastAndPresent"`. Using `"present"` ensures only active employees appear in stakeholder results, improving data accuracy for sales outreach.
+
+### Fix 8: Contact Enrich Losing Unenriched Contacts
+
+**Root cause**: `search_and_enrich_contacts` returned ONLY the enrich results when enrichment succeeded. If the enrich endpoint returned fewer contacts than searched (common when some person IDs don't match), the unenriched contacts were silently lost.
+
+**Fix**: Rewrote the merge logic to:
+1. Build a lookup map of enriched contacts by `person_id`
+2. For each searched contact: use enriched data if available (real phones), otherwise keep the search data with phone fields cleared
+3. Add `enriched: true/false` flag per contact
+4. Return `enrichment_summary` with `total_searched`, `total_enriched`, `total_unenriched` counts
+
+**Rationale**: The two-step Search → Enrich pipeline should never lose contacts. Unenriched contacts still have valuable name/title/role data even without phone numbers. Tracking enrichment status per contact enables the debug UI to show exactly which contacts got real phone data.
+
+### Fix 9: Debug Mode Contact Enrichment Panel
+
+**New feature**: Added a "Phone Number Enrichment" panel to the Stakeholder Map card showing:
+- Summary stats: total searched, total got real phones, total without phone data
+- Per-contact status: each contact shown with "Phone visible", "Not enriched", or "No phone" badge
+- Individual contact enrichment badges in the contact info block ("Enriched" / "Not enriched")
+- Debug data endpoint includes per-contact enrichment details (name, title, enriched status, phone field presence, accuracy score)
+
+**Rationale**: Makes it immediately visible which contacts had their phone numbers successfully de-asterisked via the ZoomInfo Contact Enrich API, enabling faster diagnosis of enrichment issues.
+
+### Fix 10: Confidence Score Hardcoded to 65%
+
+**Root cause**: In `llm_council.py`, when the LLM Council returned minimal data (< 3 useful fields), the confidence score was hardcoded to `0.65`. Additionally, when the council returned good data, the base_data's placeholder `confidence_score: 0.6` leaked into the result via field merging, preventing the proper `0.8` assignment.
+
+**Fix**:
+1. Added `_calculate_data_confidence()` function that scores based on actual data coverage: core fields (company_name, industry, employee_count, headquarters) = 40%, extended fields (ceo, founded_year, revenue, company_type) = 25%, enrichment fields = 20%, contact data = 15%
+2. Applied this function to ALL code paths (minimal data, good data, and error fallback) instead of hardcoded values
+3. Prevented the base_data placeholder confidence_score from being merged into council results
+
+**Rationale**: Confidence should reflect actual data quality, not be an arbitrary constant. With the new COMPANY_OUTPUT_FIELDS fix providing CEO, company_type, industry, etc., the confidence calculation now reflects the richer data set and produces higher scores when more fields are populated.
+
+---
+
 ## ZoomInfo API Bug Fixes (2026-03-03)
 
 Five production bugs in the ZoomInfo GTM Data API v1 integration were identified and fixed.

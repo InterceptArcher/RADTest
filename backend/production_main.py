@@ -993,6 +993,14 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                 sample = contacts[0]
                 logger.info(f"   Sample: {sample.get('name', 'N/A')} — {sample.get('title', 'N/A')}")
                 logger.info(f"   Has phone: {bool(sample.get('direct_phone') or sample.get('mobile_phone'))}")
+                # Store enrichment summary for debug mode
+                enrichment_summary = contacts_result.get("enrichment_summary", {})
+                if enrichment_summary:
+                    combined_data["_enrichment_summary"] = enrichment_summary
+                    logger.info(
+                        f"   Enrichment: {enrichment_summary.get('total_enriched', 0)}/"
+                        f"{enrichment_summary.get('total_searched', 0)} contacts got real phones"
+                    )
             else:
                 err = contacts_result.get("error") or "No contacts returned"
                 logger.warning(f"⚠️  ZoomInfo contacts returned 0 for domain={domain}: {err}")
@@ -1635,7 +1643,8 @@ async def process_company_profile(job_id: str, company_data: dict):
             "stakeholders": [],
             "otherContacts": [],
             "lastUpdated": datetime.utcnow().isoformat(),
-            "searchPerformed": True
+            "searchPerformed": True,
+            "enrichmentSummary": zoominfo_data.get("_enrichment_summary"),
         }
         if stakeholders_data:
             ai_stakeholder_profiles = validated_data.get("stakeholder_profiles", {})
@@ -1660,6 +1669,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                         "linkedinUrl": s.get("linkedin_url"),
                         "contactAccuracyScore": s.get("contact_accuracy_score"),
                         "phoneSource": "zoominfo" if s.get("source") == "zoominfo" else None,
+                        "enriched": s.get("enriched"),
                     },
                     "factCheckScore": s.get("fact_check_score"),
                     "factCheckNotes": s.get("fact_check_notes"),
@@ -3578,6 +3588,19 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "metadata": {
                     "source": "ZoomInfo Contact Enrich",
                     "contacts_enriched": len(zi_contacts) if zi_contacts else 0,
+                    "enrichment_summary": zoominfo_data.get("_enrichment_summary"),
+                    "per_contact_enrichment": [
+                        {
+                            "name": c.get("name", "Unknown"),
+                            "title": c.get("title", ""),
+                            "enriched": c.get("enriched", False),
+                            "has_direct_phone": bool(c.get("direct_phone")),
+                            "has_mobile_phone": bool(c.get("mobile_phone")),
+                            "has_company_phone": bool(c.get("company_phone")),
+                            "accuracy_score": c.get("contact_accuracy_score", 0),
+                        }
+                        for c in (zi_contacts or [])
+                    ],
                     "fields_added": ["directPhone", "mobilePhone", "companyPhone", "contactAccuracyScore", "department", "managementLevel"],
                     "error": zoominfo_data.get("_contact_search_error") if not zi_contacts else None,
                     "debug_hint": (

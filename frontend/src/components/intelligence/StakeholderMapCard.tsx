@@ -315,7 +315,15 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
           </svg>
           Contact
         </span>
-        {isZoomInfoSource && hasPhones && <ZoomInfoBadge />}
+        <span className="flex items-center gap-1.5">
+          {isZoomInfoSource && hasPhones && <ZoomInfoBadge />}
+          {contact.enriched === true && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-green-100 text-green-700">Enriched</span>
+          )}
+          {contact.enriched === false && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-medium bg-amber-100 text-amber-600">Not enriched</span>
+          )}
+        </span>
       </h5>
       <div className="space-y-1.5">
         {/* Email */}
@@ -625,6 +633,63 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
               <p className="text-xs text-slate-500 max-w-sm mx-auto">
                 Contact data unavailable for this company. Try a different company or check data source configuration.
               </p>
+            </div>
+          )}
+
+          {/* Phone Enrichment Summary (Debug Info) */}
+          {stakeholderMap.enrichmentSummary && (
+            <div className="mt-6 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg p-4 border border-blue-100">
+              <div className="flex items-center space-x-2 mb-3">
+                <svg className="w-4 h-4 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                </svg>
+                <h4 className="text-sm font-semibold text-blue-900">Phone Number Enrichment</h4>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white/60 rounded-md px-3 py-2 text-center">
+                  <p className="text-lg font-bold text-slate-900">{stakeholderMap.enrichmentSummary.totalSearched}</p>
+                  <p className="text-xs text-slate-500">Searched</p>
+                </div>
+                <div className="bg-white/60 rounded-md px-3 py-2 text-center">
+                  <p className="text-lg font-bold text-green-600">{stakeholderMap.enrichmentSummary.totalEnriched}</p>
+                  <p className="text-xs text-slate-500">Got Real Phones</p>
+                </div>
+                <div className="bg-white/60 rounded-md px-3 py-2 text-center">
+                  <p className="text-lg font-bold text-amber-600">{stakeholderMap.enrichmentSummary.totalUnenriched}</p>
+                  <p className="text-xs text-slate-500">No Phone Data</p>
+                </div>
+              </div>
+              {/* Per-contact enrichment status */}
+              {totalCount > 0 && (
+                <div className="mt-3 border-t border-blue-200 pt-3">
+                  <p className="text-xs font-medium text-blue-800 mb-2">Per-Contact Status:</p>
+                  <div className="space-y-1">
+                    {allContacts.map((contact, idx) => {
+                      const hasRealPhone = isRealPhone(contact.contact?.directPhone) ||
+                                           isRealPhone(contact.contact?.mobilePhone) ||
+                                           isRealPhone(contact.contact?.companyPhone) ||
+                                           isRealPhone(contact.contact?.phone);
+                      const isEnriched = contact.contact?.enriched === true;
+                      return (
+                        <div key={idx} className="flex items-center justify-between text-xs">
+                          <span className="text-slate-700 truncate max-w-[180px]">
+                            {contact.name} <span className="text-slate-400">({contact.roleType})</span>
+                          </span>
+                          <span className={`inline-flex items-center px-2 py-0.5 rounded-full font-medium ${
+                            hasRealPhone
+                              ? 'bg-green-100 text-green-700'
+                              : isEnriched === false
+                              ? 'bg-amber-100 text-amber-700'
+                              : 'bg-slate-100 text-slate-500'
+                          }`}>
+                            {hasRealPhone ? 'Phone visible' : isEnriched === false ? 'Not enriched' : 'No phone'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

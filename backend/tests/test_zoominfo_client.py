@@ -1589,3 +1589,317 @@ class TestTechEnrichFallback:
         )
         assert "acme.com" in attrs["companyWebsite"]
         assert "companyId" not in attrs
+
+
+# =============================================================================
+# Issue 1: COMPANY_OUTPUT_FIELDS must include CEO, companyType, industry, etc.
+# =============================================================================
+class TestCompanyOutputFieldsIncludeCeoAndType:
+    """
+    TDD: COMPANY_OUTPUT_FIELDS must request ceoName, companyType, industry,
+    subIndustry, description, yearFounded, linkedInUrl from ZoomInfo.
+    Without these, _normalize_company_data returns empty CEO and company_type.
+    """
+
+    def test_company_output_fields_includes_ceo_name(self):
+        """COMPANY_OUTPUT_FIELDS must include ceoName."""
+        from zoominfo_client import COMPANY_OUTPUT_FIELDS
+        assert "ceoName" in COMPANY_OUTPUT_FIELDS, (
+            "COMPANY_OUTPUT_FIELDS is missing 'ceoName' — CEO will never appear in results"
+        )
+
+    def test_company_output_fields_includes_company_type(self):
+        """COMPANY_OUTPUT_FIELDS must include companyType."""
+        from zoominfo_client import COMPANY_OUTPUT_FIELDS
+        assert "companyType" in COMPANY_OUTPUT_FIELDS, (
+            "COMPANY_OUTPUT_FIELDS is missing 'companyType' — company type will never appear in results"
+        )
+
+    def test_company_output_fields_includes_industry(self):
+        """COMPANY_OUTPUT_FIELDS must include industry."""
+        from zoominfo_client import COMPANY_OUTPUT_FIELDS
+        assert "industry" in COMPANY_OUTPUT_FIELDS, (
+            "COMPANY_OUTPUT_FIELDS is missing 'industry'"
+        )
+
+    def test_company_output_fields_includes_description(self):
+        """COMPANY_OUTPUT_FIELDS must include description."""
+        from zoominfo_client import COMPANY_OUTPUT_FIELDS
+        assert "description" in COMPANY_OUTPUT_FIELDS, (
+            "COMPANY_OUTPUT_FIELDS is missing 'description'"
+        )
+
+    def test_company_output_fields_includes_year_founded(self):
+        """COMPANY_OUTPUT_FIELDS must include yearFounded."""
+        from zoominfo_client import COMPANY_OUTPUT_FIELDS
+        assert "yearFounded" in COMPANY_OUTPUT_FIELDS, (
+            "COMPANY_OUTPUT_FIELDS is missing 'yearFounded'"
+        )
+
+    def test_company_output_fields_includes_linkedin(self):
+        """COMPANY_OUTPUT_FIELDS must include linkedInUrl."""
+        from zoominfo_client import COMPANY_OUTPUT_FIELDS
+        assert "linkedInUrl" in COMPANY_OUTPUT_FIELDS, (
+            "COMPANY_OUTPUT_FIELDS is missing 'linkedInUrl'"
+        )
+
+    def test_company_enrich_returns_ceo(self):
+        """enrich_company normalizes ceoName → ceo field."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        mock_response = {
+            "data": [{
+                "companyName": "Acme Corp",
+                "ceoName": "John Smith",
+                "companyType": "Public",
+                "industry": "Technology",
+                "yearFounded": 2010,
+                "linkedInUrl": "https://linkedin.com/company/acme",
+                "description": "Leading tech company",
+            }]
+        }
+        import asyncio
+        with patch.object(client, "_make_request", new_callable=AsyncMock,
+                          return_value=mock_response):
+            result = asyncio.get_event_loop().run_until_complete(
+                client.enrich_company(domain="acme.com")
+            )
+            normalized = result["normalized"]
+            assert normalized["ceo"] == "John Smith"
+            assert normalized["company_type"] == "Public"
+            assert normalized["industry"] == "Technology"
+            assert normalized["founded_year"] == 2010
+
+
+# =============================================================================
+# Issue 2: Contact search must filter out people who left the company
+# =============================================================================
+class TestContactSearchFiltersFormerEmployees:
+    """
+    TDD: Contact search must use companyPastOrPresent='present' to exclude
+    people who no longer work at the company.
+    """
+
+    @pytest.mark.asyncio
+    async def test_search_includes_past_or_present_filter(self):
+        """Every contact search payload must include companyPastOrPresent='present'."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+
+        async def capture(endpoint, payload, _is_retry=False, params=None):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.search_contacts(domain="example.com")
+
+        contact_search_payloads = [
+            p for p in captured_payloads
+            if p.get("data", {}).get("type") == "ContactSearch"
+        ]
+        assert len(contact_search_payloads) > 0, "No ContactSearch payloads found"
+
+        for p in contact_search_payloads:
+            attrs = p["data"]["attributes"]
+            assert attrs.get("companyPastOrPresent") == "present", (
+                f"ContactSearch must include companyPastOrPresent='present' to filter out "
+                f"former employees. Got attrs: {list(attrs.keys())}"
+            )
+
+
+# =============================================================================
+# Issue 3: search_and_enrich_contacts must merge enrich results back into search
+# =============================================================================
+class TestSearchAndEnrichMergesResults:
+    """
+    TDD: When enrich_contacts returns fewer contacts than search_contacts,
+    the missing contacts should be kept with phone fields cleared (not lost).
+    Also, enrichment status per contact should be tracked.
+    """
+
+    @pytest.mark.asyncio
+    async def test_enrich_partial_preserves_unenriched_contacts(self):
+        """Contacts not returned by enrich are kept with cleared phone fields."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        search_result = {
+            "success": True,
+            "people": [
+                {"name": "Jane Doe", "title": "CTO", "person_id": "100",
+                 "email": "jane@co.com", "phone": "+1-***-***-1234",
+                 "direct_phone": "", "mobile_phone": "", "company_phone": "",
+                 "linkedin": "", "contact_accuracy_score": 0,
+                 "department": "", "management_level": ""},
+                {"name": "Bob Lee", "title": "CFO", "person_id": "200",
+                 "email": "bob@co.com", "phone": "+1-***-***-5678",
+                 "direct_phone": "", "mobile_phone": "", "company_phone": "",
+                 "linkedin": "", "contact_accuracy_score": 0,
+                 "department": "", "management_level": ""},
+            ],
+            "error": None
+        }
+        # Enrich only returns data for Jane, not Bob
+        enrich_result = {
+            "success": True,
+            "people": [
+                {"name": "Jane Doe", "title": "CTO", "person_id": "100",
+                 "email": "jane@co.com", "phone": "+1-555-0100",
+                 "direct_phone": "+1-555-0200", "mobile_phone": "+1-555-0300",
+                 "company_phone": "+1-555-0400", "linkedin": "",
+                 "contact_accuracy_score": 92, "department": "Tech",
+                 "management_level": "C-Level"},
+            ],
+            "error": None
+        }
+
+        with patch.object(client, "search_contacts", new_callable=AsyncMock,
+                          return_value=search_result):
+            with patch.object(client, "enrich_contacts", new_callable=AsyncMock,
+                              return_value=enrich_result):
+                result = await client.search_and_enrich_contacts(domain="co.com")
+
+        assert result["success"] is True
+        assert len(result["people"]) == 2, (
+            f"Should preserve both contacts, got {len(result['people'])}"
+        )
+
+        # Jane should have enriched phones
+        jane = next(p for p in result["people"] if p["name"] == "Jane Doe")
+        assert jane["direct_phone"] == "+1-555-0200"
+        assert jane["contact_accuracy_score"] == 92
+
+        # Bob should be kept but with cleared phone fields
+        bob = next(p for p in result["people"] if p["name"] == "Bob Lee")
+        assert bob["phone"] == ""
+        assert bob["direct_phone"] == ""
+        assert bob["mobile_phone"] == ""
+        assert bob["company_phone"] == ""
+
+    @pytest.mark.asyncio
+    async def test_enrichment_status_tracked_per_contact(self):
+        """Each contact should have an 'enriched' boolean indicating enrichment status."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        search_result = {
+            "success": True,
+            "people": [
+                {"name": "Jane", "title": "CTO", "person_id": "100",
+                 "email": "", "phone": "", "direct_phone": "", "mobile_phone": "",
+                 "company_phone": "", "linkedin": "", "contact_accuracy_score": 0,
+                 "department": "", "management_level": ""},
+                {"name": "Bob", "title": "CFO", "person_id": "200",
+                 "email": "", "phone": "", "direct_phone": "", "mobile_phone": "",
+                 "company_phone": "", "linkedin": "", "contact_accuracy_score": 0,
+                 "department": "", "management_level": ""},
+            ],
+            "error": None
+        }
+        enrich_result = {
+            "success": True,
+            "people": [
+                {"name": "Jane", "title": "CTO", "person_id": "100",
+                 "email": "", "phone": "+1-555", "direct_phone": "+1-555",
+                 "mobile_phone": "", "company_phone": "", "linkedin": "",
+                 "contact_accuracy_score": 90, "department": "", "management_level": ""},
+            ],
+            "error": None
+        }
+
+        with patch.object(client, "search_contacts", new_callable=AsyncMock,
+                          return_value=search_result):
+            with patch.object(client, "enrich_contacts", new_callable=AsyncMock,
+                              return_value=enrich_result):
+                result = await client.search_and_enrich_contacts(domain="co.com")
+
+        jane = next(p for p in result["people"] if p["name"] == "Jane")
+        bob = next(p for p in result["people"] if p["name"] == "Bob")
+        assert jane.get("enriched") is True
+        assert bob.get("enriched") is False
+
+    @pytest.mark.asyncio
+    async def test_result_includes_enrichment_summary(self):
+        """Result should include enrichment_summary with counts."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        search_result = {
+            "success": True,
+            "people": [
+                {"name": "A", "title": "CTO", "person_id": "1",
+                 "email": "", "phone": "", "direct_phone": "", "mobile_phone": "",
+                 "company_phone": "", "linkedin": "", "contact_accuracy_score": 0,
+                 "department": "", "management_level": ""},
+            ],
+            "error": None
+        }
+        enrich_result = {
+            "success": True,
+            "people": [
+                {"name": "A", "title": "CTO", "person_id": "1",
+                 "email": "", "phone": "+1-555", "direct_phone": "+1-555",
+                 "mobile_phone": "", "company_phone": "", "linkedin": "",
+                 "contact_accuracy_score": 95, "department": "", "management_level": ""},
+            ],
+            "error": None
+        }
+
+        with patch.object(client, "search_contacts", new_callable=AsyncMock,
+                          return_value=search_result):
+            with patch.object(client, "enrich_contacts", new_callable=AsyncMock,
+                              return_value=enrich_result):
+                result = await client.search_and_enrich_contacts(domain="co.com")
+
+        assert "enrichment_summary" in result
+        summary = result["enrichment_summary"]
+        assert summary["total_searched"] == 1
+        assert summary["total_enriched"] == 1
+        assert summary["total_unenriched"] == 0
+
+
+# =============================================================================
+# Issue 5: Confidence score - council minimal data fallback must be smarter
+# =============================================================================
+class TestConfidenceScoreNotHardcoded:
+    """
+    TDD: When LLM Council returns minimal data, the confidence score should
+    be calculated based on actual data availability, not hardcoded to 0.65.
+    """
+
+    def test_council_with_good_data_gets_high_confidence(self):
+        """When council returns many useful fields, confidence should be > 0.7."""
+        import asyncio
+        import sys, os
+        sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        from llm_council import validate_with_council
+
+        # Mock the council to return good data — must also set OPENAI_API_KEY
+        # so validate_with_council doesn't skip to the "not configured" branch
+        async def _test():
+            with patch("llm_council.OPENAI_API_KEY", "test-key"):
+                with patch("llm_council.run_council", new_callable=AsyncMock) as mock_council:
+                    mock_council.return_value = {
+                        "company_name": "TestCo",
+                        "industry": "Technology",
+                        "employee_count": 500,
+                        "headquarters": "San Francisco, CA",
+                        "ceo": "John Smith",
+                        "annual_revenue": "$50M",
+                        "founded_year": 2015,
+                        "company_type": "Private",
+                        "technologies": ["AWS", "React"],
+                        "_council_metadata": {"specialists_run": 20}
+                    }
+                    result = await validate_with_council(
+                        {"company_name": "TestCo", "domain": "test.com"},
+                        {"industry": "Tech"}, {}, {}
+                    )
+                    return result
+
+        result = asyncio.get_event_loop().run_until_complete(_test())
+        assert result.get("confidence_score", 0) >= 0.75, (
+            f"Good data should have confidence >= 0.75, got {result.get('confidence_score')}"
+        )
