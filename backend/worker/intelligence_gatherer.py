@@ -619,26 +619,51 @@ class IntelligenceGatherer:
             )
 
         try:
-            # Call ALL ZoomInfo endpoints in parallel for comprehensive data
-            logger.info(f"Fetching comprehensive ZoomInfo data for {company_name} from 5 endpoints")
-
-            company_task = self.zoominfo_client.enrich_company(
+            # Step 1: Company enrich first to obtain company_id.
+            # News enrich, tech enrich, and intent enrich all work best with company_id —
+            # running them without it forces fallback identifiers (companyName/companyWebsite)
+            # which are less reliable.
+            logger.info(f"Fetching ZoomInfo company data for {company_name} (step 1/2)")
+            company_result = await self.zoominfo_client.enrich_company(
                 domain=domain, company_name=company_name
             )
-            intent_task = self.zoominfo_client.enrich_intent(domain=domain)
-            scoops_task = self.zoominfo_client.search_scoops(domain=domain)
-            news_task = self.zoominfo_client.search_news(company_name=company_name)
-            tech_task = self.zoominfo_client.enrich_technologies(domain=domain)
 
-            # Execute all in parallel
-            company_result, intent_result, scoops_result, news_result, tech_result = await asyncio.gather(
-                company_task, intent_task, scoops_task, news_task, tech_task,
+            # Extract company_id for use in subsequent calls
+            company_id: Optional[str] = None
+            if isinstance(company_result, dict) and company_result.get("success"):
+                company_id = company_result.get("normalized", {}).get("company_id") or None
+                if company_id:
+                    logger.info(
+                        "ZoomInfo company_id=%s resolved for %s — "
+                        "using for intent/news/tech enrich",
+                        company_id, company_name
+                    )
+
+            # Step 2: Run remaining enrichment in parallel now that we have company_id
+            logger.info(
+                f"Fetching ZoomInfo intent/scoops/news/tech for {company_name} "
+                f"(step 2/2, company_id={'set' if company_id else 'not available'})"
+            )
+            intent_task = self.zoominfo_client.enrich_intent(
+                domain=domain, company_id=company_id
+            )
+            scoops_task = self.zoominfo_client.search_scoops(
+                domain=domain, company_id=company_id
+            )
+            news_task = self.zoominfo_client.search_news(
+                company_name=company_name, company_id=company_id, domain=domain
+            )
+            tech_task = self.zoominfo_client.enrich_technologies(
+                domain=domain, company_id=company_id
+            )
+
+            intent_result, scoops_result, news_result, tech_result = await asyncio.gather(
+                intent_task, scoops_task, news_task, tech_task,
                 return_exceptions=True
             )
 
-            # Check if any result is an exception
+            # Check if any parallel result is an exception
             for result, name in [
-                (company_result, "company"),
                 (intent_result, "intent"),
                 (scoops_result, "scoops"),
                 (news_result, "news"),

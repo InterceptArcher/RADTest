@@ -36,6 +36,9 @@ ENDPOINTS = {
     "scoops_enrich": "/gtm/data/v1/scoops/enrich",
     "news_enrich": "/gtm/data/v1/news/enrich",
     "tech_enrich": "/gtm/data/v1/companies/technologies/enrich",
+    # Lookup endpoint for valid intent topic strings (GET request).
+    # Must call this before intent/enrich to avoid PFAPI0006 "Invalid topics".
+    "intent_topics_lookup": "/gtm/data/v1/lookup/intentTopics",
     # Legacy keys kept for backward compatibility (point to enrich endpoints)
     "scoops_search": "/gtm/data/v1/scoops/enrich",
     "news_search": "/gtm/data/v1/news/enrich",
@@ -84,11 +87,13 @@ COMPANY_OUTPUT_FIELDS = [
 # "The Search Contacts API does not return emails, phone numbers, or any other data
 # that can be used to engage").  Phone data is ONLY returned by the enrich endpoint
 # when outputFields are specified.
-# DNC flags are included so we can surface them in the UI if needed — we do NOT
-# filter out DNC-flagged numbers (the user has API access to this data).
 # NOTE: directPhone, department, linkedInUrl, managementLevel, hasDirectPhone,
-# hasCompanyPhone, fullName are DISALLOWED on this subscription (HTTP 400
-# "Invalid field requested").  Only include fields confirmed to work.
+# hasCompanyPhone, fullName, hasMobilePhone, directPhoneDoNotCall, mobilePhoneDoNotCall
+# are DISALLOWED on this subscription (HTTP 400 "Invalid field requested").
+# Including ANY disallowed field causes the entire enrich request to fail with HTTP 400,
+# which silently falls back to search results that have asterisk-masked phone numbers.
+# personId is NOT a valid outputField — it is implicit in the JSON:API response id.
+# Only include fields confirmed to work on this subscription.
 CONTACT_ENRICH_OUTPUT_FIELDS = [
     "firstName",
     "lastName",
@@ -97,11 +102,7 @@ CONTACT_ENRICH_OUTPUT_FIELDS = [
     "phone",
     "mobilePhone",
     "companyPhone",
-    "hasMobilePhone",
-    "directPhoneDoNotCall",
-    "mobilePhoneDoNotCall",
     "contactAccuracyScore",
-    "personId",
 ]
 
 # Priority C-Suite titles — CTO, CFO, CMO, CIO are searched first.
@@ -261,6 +262,9 @@ class ZoomInfoClient:
         if self.access_token:
             self.headers["Authorization"] = f"Bearer {self.access_token}"
         self.rate_limiter = ZoomInfoRateLimiter()
+        # Cache for valid intent topic strings fetched from the lookup endpoint.
+        # None = not yet fetched; [] = fetched but empty/failed; [...] = valid topics.
+        self._valid_topics_cache: Optional[List[str]] = None
 
     async def _authenticate(self) -> None:
         """
@@ -458,6 +462,59 @@ class ZoomInfoClient:
         except Exception as e:
             logger.debug("Could not load refresh_token from Supabase: %s", e)
         return None
+
+    async def _fetch_valid_intent_topics(self) -> List[str]:
+        """
+        Fetch the list of valid intent topic strings from ZoomInfo's lookup endpoint.
+
+        ZoomInfo maintains a taxonomy of supported Buyer Intent topics.  Passing
+        topic strings that are not in the taxonomy returns PFAPI0006 "Invalid topics
+        requested", which silently prevents intent signals from being retrieved.
+
+        This method makes a GET request to /gtm/data/v1/lookup/intentTopics,
+        caches the result in memory, and returns the list of valid topic names.
+        Falls back to an empty list if the lookup fails (e.g. Buyer Intent not
+        enabled on the subscription) so callers can decide how to handle it.
+        """
+        # Return cached result if available
+        if self._valid_topics_cache is not None:
+            return self._valid_topics_cache
+
+        await self._ensure_valid_token()
+        url = f"{self.base_url}{ENDPOINTS['intent_topics_lookup']}"
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(url, headers=self.headers)
+                response.raise_for_status()
+                data = response.json()
+
+            topics: List[str] = []
+            # Response may be {"data": [{"name": "..."}, ...]} or a plain list
+            raw_list = data.get("data", data) if isinstance(data, dict) else data
+            if isinstance(raw_list, list):
+                for item in raw_list:
+                    if isinstance(item, str) and item:
+                        topics.append(item)
+                    elif isinstance(item, dict):
+                        name = item.get("name") or item.get("topic") or item.get("value") or ""
+                        if name:
+                            topics.append(str(name))
+
+            self._valid_topics_cache = topics
+            logger.info(
+                "ZoomInfo intent topics lookup: %d valid topics fetched", len(topics)
+            )
+            return topics
+
+        except Exception as e:
+            logger.warning(
+                "ZoomInfo intent topics lookup failed (%s). "
+                "Buyer Intent may not be enabled on this subscription. "
+                "Intent enrichment will be skipped.",
+                e,
+            )
+            self._valid_topics_cache = []
+            return []
 
     async def _ensure_valid_token(self) -> None:
         """Re-authenticate if the current token is expired or missing."""
@@ -765,17 +822,20 @@ class ZoomInfoClient:
             return {"success": False, "data": {}, "normalized": {}, "error": "No domain or company name provided"}
 
         # Build ordered list of JSON:API payloads to attempt.
-        # GTM API v1 uses JSON:API format: {"data": {"type": "CompanyEnrich", "attributes": {...}}}
-        # Only companyWebsite works as a direct attribute — companyName as a direct
-        # attribute returns HTTP 400 "invalidInputFields: ['companyName']".
+        # GTM API v1 requires matchCompanyInput array format (like matchPersonInput for contacts).
+        # Passing companyWebsite as a direct top-level attribute returns PFAPI0005
+        # "Invalid field requested" — it must be nested inside matchCompanyInput.
         # outputFields specifies which fields to return.
         attrs_to_try: List[Dict[str, Any]] = []
         if domain:
             bare = self._bare_domain(domain)
             for website in (f"https://www.{bare}", f"https://{bare}"):
-                attrs_to_try.append({"companyWebsite": website, "outputFields": COMPANY_OUTPUT_FIELDS})
+                attrs_to_try.append({
+                    "matchCompanyInput": [{"companyWebsite": website}],
+                    "outputFields": COMPANY_OUTPUT_FIELDS,
+                })
         if not attrs_to_try:
-            return {"success": False, "data": {}, "normalized": {}, "error": "Domain required for company enrich (companyName not supported as direct attribute)"}
+            return {"success": False, "data": {}, "normalized": {}, "error": "Domain required for company enrich"}
 
         last_error: Optional[str] = None
         for attrs in attrs_to_try:
@@ -1017,8 +1077,13 @@ class ZoomInfoClient:
             logger.warning("ZoomInfo contact enrich timed out")
             return {"success": False, "people": [], "error": "Request timeout"}
         except httpx.HTTPStatusError as e:
-            logger.warning(f"ZoomInfo contact enrich HTTP error: {e.response.status_code}")
-            return {"success": False, "people": [], "error": f"HTTP {e.response.status_code}"}
+            detail = self._http_error_detail(e)
+            logger.error(
+                "ZoomInfo contact enrich failed: %s — "
+                "if this is PFAPI0005 check CONTACT_ENRICH_OUTPUT_FIELDS for disallowed fields",
+                detail,
+            )
+            return {"success": False, "people": [], "error": detail}
         except Exception as e:
             logger.error(f"ZoomInfo contact enrich failed: {e}")
             return {"success": False, "people": [], "error": str(e)}
@@ -1058,9 +1123,25 @@ class ZoomInfoClient:
         if enrich_result.get("success") and enrich_result.get("people"):
             return enrich_result
 
-        # Fall back to search results if enrich fails
-        logger.warning("Contact enrich failed, returning search results")
-        return search_result
+        # Enrich failed — do NOT silently return search results which have asterisk-masked
+        # phone numbers.  Clear all phone fields and surface the enrich error so callers
+        # know real phones are unavailable and can surface this in the UI.
+        enrich_error = enrich_result.get("error", "Contact enrich failed")
+        logger.warning(
+            "ZoomInfo contact enrich failed (%s) — "
+            "clearing phone fields from search results (phones are masked in search). "
+            "Fix the enrich error to get real phone numbers.",
+            enrich_error,
+        )
+        phone_fields = ("phone", "direct_phone", "mobile_phone", "company_phone")
+        people_no_phones = [
+            {**p, **{f: "" for f in phone_fields}} for p in search_result.get("people", [])
+        ]
+        return {
+            **search_result,
+            "people": people_no_phones,
+            "enrich_error": enrich_error,
+        }
 
     async def lookup_contacts_by_identity(
         self,
@@ -1198,13 +1279,33 @@ class ZoomInfoClient:
         GTM API v1 uses JSON:API format: {"data": {"type": "IntentEnrich", "attributes": {...}}}
         topics is MANDATORY — omitting it returns HTTP 400.
         """
+        # Fetch valid topic strings from ZoomInfo's lookup endpoint.
+        # Hard-coded topic names cause PFAPI0006 "Invalid topics requested" if they
+        # don't match ZoomInfo's taxonomy exactly.  The lookup endpoint returns the
+        # authoritative list for this subscription.
+        topics = await self._fetch_valid_intent_topics()
+        if not topics:
+            logger.info(
+                "ZoomInfo intent enrich skipped for domain=%s: "
+                "no valid topics available (Buyer Intent may not be enabled on subscription)",
+                domain,
+            )
+            return {
+                "success": False,
+                "intent_signals": [],
+                "raw_data": [],
+                "error": "No valid intent topics available — Buyer Intent may not be enabled",
+            }
+
+        # Limit to 50 topics (ZoomInfo API maximum)
+        topics_to_use = topics[:50]
         primary_website = self._primary_website(domain)
 
         # Ordered attribute sets: companyId (most reliable) → companyWebsite fallback.
         attrs_to_try: List[Dict[str, Any]] = []
         if company_id:
-            attrs_to_try.append({"companyId": company_id, "topics": DEFAULT_INTENT_TOPICS})
-        attrs_to_try.append({"companyWebsite": primary_website, "topics": DEFAULT_INTENT_TOPICS})
+            attrs_to_try.append({"companyId": company_id, "topics": topics_to_use})
+        attrs_to_try.append({"companyWebsite": primary_website, "topics": topics_to_use})
 
         last_error: Optional[str] = None
         for attrs in attrs_to_try:
@@ -1232,11 +1333,13 @@ class ZoomInfoClient:
                     "ZoomInfo intent enrich %s for attrs=%s",
                     detail, list(attrs.keys())
                 )
+                # If topics are still rejected, clear the cache so next run re-fetches
                 if "invalid topics" in detail.lower() or "invalid number of topics" in detail.lower():
                     logger.warning(
-                        "ZoomInfo Buyer Intent topics rejected — check that Buyer Intent is "
-                        "enabled on the account and that topic names match the ZoomInfo taxonomy"
+                        "ZoomInfo Buyer Intent topics rejected even after lookup — "
+                        "clearing topic cache. Buyer Intent may not be enabled."
                     )
+                    self._valid_topics_cache = None
                     break
                 if e.response.status_code not in (400, 422):
                     break
@@ -1300,7 +1403,7 @@ class ZoomInfoClient:
 
     async def search_news(
         self,
-        company_name: str,
+        company_name: Optional[str] = None,
         company_id: Optional[str] = None,
         domain: Optional[str] = None,
     ) -> Dict[str, Any]:
@@ -1308,22 +1411,28 @@ class ZoomInfoClient:
         Search for company news articles with full field extraction.
 
         Args:
-            company_name: Company name string
-            company_id:   ZoomInfo internal company ID (preferred — more reliable lookup)
-            domain:       Company domain (optional, used as companyWebsite fallback)
+            company_name: Company name string (valid identifier per ZoomInfo docs)
+            company_id:   ZoomInfo internal company ID (preferred — most reliable)
+            domain:       Company domain (used as companyWebsite fallback)
 
         Returns:
             Dict with success, articles (normalized list), raw_data, error
 
-        GTM API v1: news/search rejects companyId/companyName — use news/enrich instead.
-        JSON:API format: {"data": {"type": "NewsEnrich", "attributes": {...}}}
+        GTM API v1 news/enrich accepts companyId, companyName, OR companyWebsite
+        (per official ZoomInfo API docs).  Lookup priority: companyId → companyName → domain.
         """
-        # GTM API v1 news/enrich only accepts companyId — companyName and
-        # companyWebsite both return HTTP 400 "invalidInputFields".
-        if not company_id:
-            logger.warning("search_news: no companyId available — news enrich requires companyId")
-            return {"success": False, "articles": [], "raw_data": [], "error": "companyId required for news enrich (companyName not supported)"}
-        attrs: Dict[str, Any] = {"companyId": company_id}
+        # Build attributes using best available identifier
+        if company_id:
+            attrs: Dict[str, Any] = {"companyId": company_id}
+        elif company_name:
+            attrs = {"companyName": company_name}
+        elif domain:
+            attrs = {"companyWebsite": self._primary_website(domain)}
+        else:
+            return {
+                "success": False, "articles": [], "raw_data": [],
+                "error": "A company identifier (companyId, companyName, or domain) is required for news enrich",
+            }
 
         payload = {"data": {"type": "NewsEnrich", "attributes": attrs}}
 
@@ -1365,12 +1474,13 @@ class ZoomInfoClient:
         GTM API v1 endpoint: /gtm/data/v1/companies/technologies/enrich
         JSON:API format: {"data": {"type": "TechnologyEnrich", "attributes": {...}}}
         """
-        # GTM API v1 tech/enrich only accepts companyId — companyWebsite
-        # returns HTTP 400 "invalidInputFields: ['companyWebsite']".
-        if not company_id:
-            logger.warning("enrich_technologies: no companyId available — tech enrich requires companyId")
-            return {"success": False, "technologies": [], "raw_data": [], "error": "companyId required for tech enrich (companyWebsite not supported)"}
-        attrs: Dict[str, Any] = {"companyId": company_id}
+        # Prefer companyId for tech enrich (most reliable).
+        # Fall back to companyWebsite when companyId is not yet available
+        # (e.g. when the company enrich step hasn't completed yet or returned no ID).
+        if company_id:
+            attrs: Dict[str, Any] = {"companyId": company_id}
+        else:
+            attrs = {"companyWebsite": self._primary_website(domain)}
 
         payload = {"data": {"type": "TechnologyEnrich", "attributes": attrs}}
 

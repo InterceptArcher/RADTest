@@ -21,6 +21,65 @@
 
 ---
 
+## ZoomInfo API Bug Fixes (2026-03-03)
+
+Five production bugs in the ZoomInfo GTM Data API v1 integration were identified and fixed.
+
+### Fix 1: Company Enrich — PFAPI0005 `companyWebsite` Invalid Field
+
+**Root cause**: `companyWebsite` was passed as a direct top-level attribute in the `CompanyEnrich` payload. The GTM API v1 requires match inputs to be wrapped in a `matchCompanyInput` array (analogous to `matchPersonInput` for contact enrich).
+
+**Fix**: Changed payload from `{"companyWebsite": "..."}` to `{"matchCompanyInput": [{"companyWebsite": "..."}]}`.
+
+**Rationale**: The ZoomInfo GTM API v1 uses JSON:API conventions where entity-matching inputs are nested in typed arrays to allow multi-record batch semantics and avoid field name collisions with output fields.
+
+---
+
+### Fix 2: Intent Enrich — PFAPI0006 Invalid Topics
+
+**Root cause**: `DEFAULT_INTENT_TOPICS` was a hardcoded list of generic industry strings that did not match ZoomInfo's internal Buyer Intent taxonomy exactly.
+
+**Fix**: Added `_fetch_valid_intent_topics()` method that makes a `GET /gtm/data/v1/lookup/intentTopics` call before each intent enrichment session, caches the result in memory, and uses only validated topic strings. If the lookup fails (e.g. Buyer Intent not enabled on the subscription), intent enrichment is gracefully skipped instead of sending invalid requests.
+
+**Rationale**: ZoomInfo's topic taxonomy is subscription-specific and can change. Fetching it dynamically ensures topic names always match what the account supports, and the cache prevents repeated overhead API calls.
+
+---
+
+### Fix 3: News Enrich — Wrong `companyId`-Only Restriction
+
+**Root cause**: `search_news` had an early return requiring `companyId`, based on a wrong assumption. ZoomInfo API docs confirm `companyName` and `companyWebsite` are valid identifiers for news enrich.
+
+**Fix**: Removed the restriction. Priority order is now: `companyId` → `companyName` → `companyWebsite` (from domain). The `intelligence_gatherer.py` sequential restructure now also passes `company_id` once available.
+
+---
+
+### Fix 4: Technology Enrich — Wrong `companyId`-Only Restriction
+
+**Root cause**: Same wrong assumption in `enrich_technologies`.
+
+**Fix**: Falls back to `companyWebsite` when `companyId` is not yet available.
+
+---
+
+### Fix 5: Contact Enrich Returns Asterisk Phone Numbers
+
+**Root cause** (confirmed by ZoomInfo support): Search endpoint never returns real phone numbers — only the Enrich endpoint does. The code already did a Search → Enrich two-step, but the Enrich step was silently failing with HTTP 400 due to three invalid output fields (`hasMobilePhone`, `directPhoneDoNotCall`, `mobilePhoneDoNotCall`) and `personId` (not a valid outputField). Any single invalid field causes the entire enrich request to fail, and the old fallback silently returned search results with asterisk-masked phones.
+
+**Fixes**:
+1. Removed the four invalid fields from `CONTACT_ENRICH_OUTPUT_FIELDS`
+2. Fixed `enrich_contacts` error logging to include the full ZoomInfo error detail (not just HTTP status code)
+3. When enrich fails, `search_and_enrich_contacts` now clears phone fields from search results (no asterisks returned to UI) and surfaces an `enrich_error` key so callers know phones are unavailable
+
+**Rationale**: Silent fallback to asterisk phones was confusing — it looked like the API was returning data when it wasn't. Clearing phone fields makes the missing data explicit. The error detail logging makes it possible to diagnose future field permission issues without guessing.
+
+---
+
+### Sequential Company → Parallel Enrichment in `intelligence_gatherer.py`
+
+`_fetch_zoominfo_data` was restructured from one parallel gather (all 5 endpoints simultaneously) to a two-step approach: (1) company enrich first, (2) intent/scoops/news/tech in parallel with the resolved `company_id`. This ensures all dependent endpoints get the best possible identifier.
+
+---
+
 ## Latest Features (2026-02-25) — OAuth2 Refresh Token Authentication
 
 ### OAuth2 Auth for GTM API Compatibility
