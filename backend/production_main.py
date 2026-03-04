@@ -649,29 +649,58 @@ async def _call_openai_json(prompt: str, system_prompt: str = "Output only valid
 
 async def fact_check_contacts(company_name: str, domain: str, contacts: list) -> list:
     """
-    LLM-based contact fact checker. Validates C-suite contacts against
-    public knowledge. Filters out contacts with score < 0.3.
+    LLM-based contact fact checker with LinkedIn validation.
+
+    Validates contacts using their LinkedIn URLs and job titles to detect
+    mismatches (e.g. someone listed at Microsoft whose LinkedIn says they are
+    CEO of a small IT company — using Microsoft as a placeholder).
+
+    Only contacts WITH LinkedIn URLs are sent to the LLM for validation.
+    Contacts without LinkedIn URLs retain score=1.0 (trusted from ZoomInfo/Apollo/PDL).
 
     Returns contacts with added fact_check_score and fact_check_notes.
-
-    NOTE: Disabled - LLMs don't have real-time company roster data.
-    Contacts from ZoomInfo/Apollo/PDL are already verified sources.
+    Filters out contacts with score < 0.15.
     """
     if not contacts:
         return []
 
-    # DISABLED: Trust verified data sources (ZoomInfo, Apollo, PDL)
-    # LLM fact checking gives false negatives for real contacts
-    logger.info(f"✅ Fact checker disabled - trusting {len(contacts)} verified contacts from primary sources")
+    # Separate contacts with and without LinkedIn URLs
+    contacts_with_linkedin = []
+    contacts_without_linkedin = []
     for contact in contacts:
+        linkedin = contact.get("linkedin_url") or contact.get("linkedin") or ""
+        if linkedin:
+            contacts_with_linkedin.append(contact)
+        else:
+            contacts_without_linkedin.append(contact)
+
+    # Contacts without LinkedIn: trust ZoomInfo data source
+    for contact in contacts_without_linkedin:
         contact["fact_check_score"] = 1.0
         contact["fact_check_notes"] = "Verified by primary data source (ZoomInfo/Apollo/PDL)"
-    return contacts
 
-    prompt = f"""Verify these executive contacts for {company_name} ({domain}).
-For each contact, score how likely they are the actual person in that role (0.0 = definitely wrong, 1.0 = verified correct).
+    if not contacts_with_linkedin:
+        logger.info(f"Fact checker: no contacts with LinkedIn URLs, trusting {len(contacts)} contacts")
+        return contacts
 
-Contacts to verify:
+    # Build contact list for LLM validation
+    contact_list = []
+    for c in contacts_with_linkedin:
+        linkedin = c.get("linkedin_url") or c.get("linkedin") or ""
+        contact_list.append({
+            "name": c.get("name", ""),
+            "title": c.get("title", ""),
+            "linkedin_url": linkedin,
+        })
+
+    prompt = f"""Validate these contacts for {company_name} ({domain}).
+
+For each contact, check if their job title is consistent with working at {company_name}.
+Flag contacts whose title suggests they work at a DIFFERENT company (e.g. "CEO of Small IT Firm" listed under Microsoft, or "Founder of XYZ Consulting" listed under Google).
+
+LinkedIn URLs are provided for reference — use the profile URL as additional context.
+
+Contacts to validate:
 {json.dumps(contact_list, indent=2)}
 
 Output JSON:
@@ -679,15 +708,26 @@ Output JSON:
     "contacts": [
         {{"name": "...", "fact_check_score": 0.0-1.0, "fact_check_notes": "brief explanation"}}
     ]
-}}"""
+}}
+
+Scoring guide:
+- 1.0: Title clearly matches {company_name} (e.g. "CTO at {company_name}")
+- 0.7-0.9: Title is plausible for {company_name} (generic C-suite title)
+- 0.3-0.6: Title is ambiguous or mentions a different company
+- 0.0-0.2: Title clearly refers to a different company"""
 
     result = await _call_openai_json(
         prompt,
-        "You are a corporate executive verification system. Verify executive names and titles against your knowledge. Be accurate."
+        f"You are a corporate contact verification system for {company_name}. "
+        "Validate that contacts actually work at this company based on their titles "
+        "and LinkedIn profiles. Be accurate — flag obvious mismatches but don't over-filter."
     )
 
     if not result or "contacts" not in result:
-        logger.warning("Fact checker returned no results, keeping original contacts")
+        logger.warning("Fact checker returned no results, keeping contacts with score=0.7")
+        for contact in contacts_with_linkedin:
+            contact["fact_check_score"] = 0.7
+            contact["fact_check_notes"] = "LinkedIn validation unavailable"
         return contacts
 
     # Map scores back to contacts
@@ -700,18 +740,16 @@ Output JSON:
         }
 
     # Apply scores and filter
-    enriched = []
-    for contact in contacts:
+    enriched = list(contacts_without_linkedin)  # Already scored 1.0
+    for contact in contacts_with_linkedin:
         name_key = (contact.get("name") or "").lower().strip()
         if name_key in score_map:
             contact["fact_check_score"] = score_map[name_key]["fact_check_score"]
             contact["fact_check_notes"] = score_map[name_key]["fact_check_notes"]
         else:
-            contact["fact_check_score"] = 0.5  # Unknown
-            contact["fact_check_notes"] = "Not verified"
+            contact["fact_check_score"] = 0.7
+            contact["fact_check_notes"] = "Not matched in validation response"
 
-        # Only filter contacts that are clearly wrong (score < 0.15)
-        # Keep most contacts and let the frontend show confidence badges
         if contact["fact_check_score"] >= 0.15:
             enriched.append(contact)
         else:
@@ -720,6 +758,11 @@ Output JSON:
                 f"(score={contact['fact_check_score']}: {contact.get('fact_check_notes')})"
             )
 
+    logger.info(
+        f"Fact checker: {len(enriched)}/{len(contacts)} contacts passed "
+        f"({len(contacts_with_linkedin)} validated via LinkedIn)"
+    )
+    return enriched
 
 
 def _infer_role_type(title: str) -> str:
@@ -1099,27 +1142,33 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                 )
                 # Contact Enrich — show actual person IDs from search results
                 person_ids = [c.get("person_id") for c in contacts if c.get("person_id")]
+                _enrich_summary = combined_data.get("_enrichment_summary", {})
+                _enrich_contacts_for_log = [
+                    {
+                        "name": c.get("name"), "title": c.get("title"),
+                        "roleType": _infer_role_type(c.get("title", "")),
+                        "directPhone": c.get("direct_phone") or None,
+                        "mobilePhone": c.get("mobile_phone") or None,
+                        "companyPhone": c.get("company_phone") or None,
+                        "phone": c.get("phone") or None,
+                        "enriched": c.get("enriched"),
+                        "contactAccuracyScore": c.get("contact_accuracy_score"),
+                    }
+                    for c in contacts[:10]
+                ]
                 _log_api_call(
                     job_data, "ZoomInfo Contact Enrich (from Search person_ids)",
                     "https://api.zoominfo.com/gtm/data/v1/contacts/enrich", "POST",
                     {"data": {"type": "ContactEnrich", "attributes": {
-                        "personId": person_ids or ["(no person_ids returned — phones sourced from outputFields in search)"]
+                        "personId": person_ids or ["(no person_ids returned)"]
                     }}},
                     {
                         "contacts_enriched": len(person_ids),
-                        "enriched_contacts": [
-                            {
-                                "personId": c.get("person_id"), "name": c.get("name"),
-                                "directPhone": c.get("direct_phone") or "N/A",
-                                "mobilePhone": c.get("mobile_phone") or "N/A",
-                                "companyPhone": c.get("company_phone") or "N/A",
-                                "contactAccuracyScore": c.get("contact_accuracy_score"),
-                            }
-                            for c in contacts[:5]
-                        ] if person_ids else [{"note": "phones come from outputFields in search response"}],
+                        "contacts": _enrich_contacts_for_log,
+                        "enrichment_summary": _enrich_summary if _enrich_summary else None,
                     },
                     200 if person_ids else 204,
-                    0, is_sensitive=True, masked_fields=["authorization", "directPhone", "mobilePhone"],
+                    0, is_sensitive=True, masked_fields=["authorization"],
                 )
             except Exception as log_err:
                 # Logging is non-critical — never let it corrupt combined_data / contacts
@@ -1165,6 +1214,11 @@ def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -
                     stakeholder["department"] = zi_contact["department"]
                 if zi_contact.get("management_level"):
                     stakeholder["management_level"] = zi_contact["management_level"]
+                # Preserve enrichment status and LinkedIn URL
+                if "enriched" in zi_contact:
+                    stakeholder["enriched"] = zi_contact["enriched"]
+                if zi_contact.get("linkedin") and not stakeholder.get("linkedin_url"):
+                    stakeholder["linkedin_url"] = zi_contact["linkedin"]
                 # Also fill in phone if empty
                 if not stakeholder.get("phone") and zi_contact.get("phone"):
                     stakeholder["phone"] = zi_contact["phone"]
@@ -3096,14 +3150,18 @@ async def enrich_contacts_by_domain(domain: str):
             "phoneSource": "zoominfo",
         })
 
+    enrichment_summary = result.get("enrichment_summary") if result.get("success") else None
     logger.info(f"Contact enrichment for {domain}: returned {len(contacts)} contacts")
 
-    return {
+    response_data = {
         "domain": domain,
         "total_count": len(contacts),
         "contacts": contacts,
         "source": "zoominfo",
     }
+    if enrichment_summary:
+        response_data["enrichment_summary"] = enrichment_summary
+    return response_data
 
 
 # ============================================================================

@@ -63,12 +63,8 @@ OUTPUT_FIELDS = [
     "contactAccuracyScore",
 ]
 
-# Required output fields for ZoomInfo company enrich requests.
-# The GTM API /gtm/data/v1/companies/enrich endpoint accepts outputFields inside
-# the JSON:API attributes.  Field names use camelCase per the GTM API schema.
-# Fields not supported by a given subscription tier are silently omitted from the
-# response rather than causing an error.
-COMPANY_OUTPUT_FIELDS = [
+# Base output fields for ZoomInfo company enrich — always work on any subscription.
+BASE_COMPANY_OUTPUT_FIELDS = [
     "id",
     "name",
     "website",
@@ -80,16 +76,23 @@ COMPANY_OUTPUT_FIELDS = [
     "country",
     "phone",
     "ticker",
-    # Leadership & classification — required for Company Overview display
+]
+
+# Extended output fields — include leadership/industry fields that may be disallowed
+# on some subscription tiers (PFAPI0009).  enrich_company() tries extended first,
+# falls back to base if the API rejects them.
+EXTENDED_COMPANY_OUTPUT_FIELDS = BASE_COMPANY_OUTPUT_FIELDS + [
     "ceoName",
     "companyType",
-    # Industry & identity — required for executive snapshot and overview
     "industry",
     "subIndustry",
     "description",
     "yearFounded",
     "linkedInUrl",
 ]
+
+# Default: try extended first (backward compat alias)
+COMPANY_OUTPUT_FIELDS = EXTENDED_COMPANY_OUTPUT_FIELDS
 
 # Output fields for contact enrich — explicitly request phone number fields.
 # The GTM contact search endpoint does NOT return phone/email data (per ZoomInfo docs:
@@ -518,12 +521,11 @@ class ZoomInfoClient:
         except Exception as e:
             logger.warning(
                 "ZoomInfo intent topics lookup failed (%s). "
-                "Buyer Intent may not be enabled on this subscription. "
-                "Intent enrichment will be skipped.",
+                "Falling back to DEFAULT_INTENT_TOPICS.",
                 e,
             )
-            self._valid_topics_cache = []
-            return []
+            self._valid_topics_cache = list(DEFAULT_INTENT_TOPICS)
+            return self._valid_topics_cache
 
     async def _ensure_valid_token(self) -> None:
         """Re-authenticate if the current token is expired or missing."""
@@ -835,46 +837,52 @@ class ZoomInfoClient:
         # Passing companyWebsite as a direct top-level attribute returns PFAPI0005
         # "Invalid field requested" — it must be nested inside matchCompanyInput.
         # outputFields specifies which fields to return.
-        attrs_to_try: List[Dict[str, Any]] = []
-        if domain:
-            bare = self._bare_domain(domain)
-            for website in (f"https://www.{bare}", f"https://{bare}"):
-                attrs_to_try.append({
-                    "matchCompanyInput": [{"companyWebsite": website}],
-                    "outputFields": COMPANY_OUTPUT_FIELDS,
-                })
-        if not attrs_to_try:
+        # Try extended fields first; on PFAPI0009 (disallowed fields), retry with base.
+        if not domain:
             return {"success": False, "data": {}, "normalized": {}, "error": "Domain required for company enrich"}
 
+        bare = self._bare_domain(domain)
+        website_variants = [f"https://www.{bare}", f"https://{bare}"]
+        field_tiers = [EXTENDED_COMPANY_OUTPUT_FIELDS, BASE_COMPANY_OUTPUT_FIELDS]
+
         last_error: Optional[str] = None
-        for attrs in attrs_to_try:
-            payload = {"data": {"type": "CompanyEnrich", "attributes": attrs}}
-            try:
-                response = await self._make_request(ENDPOINTS["company_enrich"], payload)
-                data_list = self._extract_data_list(response)
-                if data_list:
-                    raw = data_list[0]
-                    normalized = self._normalize_company_data(raw)
-                    logger.info(
-                        "ZoomInfo company enrich success with attrs=%s company_id=%s",
-                        list(attrs.keys()), normalized.get("company_id")
+        for output_fields in field_tiers:
+            for website in website_variants:
+                attrs = {
+                    "matchCompanyInput": [{"companyWebsite": website}],
+                    "outputFields": output_fields,
+                }
+                payload = {"data": {"type": "CompanyEnrich", "attributes": attrs}}
+                try:
+                    response = await self._make_request(ENDPOINTS["company_enrich"], payload)
+                    data_list = self._extract_data_list(response)
+                    if data_list:
+                        raw = data_list[0]
+                        normalized = self._normalize_company_data(raw)
+                        logger.info(
+                            "ZoomInfo company enrich success (fields=%d) company_id=%s",
+                            len(output_fields), normalized.get("company_id")
+                        )
+                        return {"success": True, "data": raw, "normalized": normalized, "error": None}
+                    logger.debug(
+                        "ZoomInfo company enrich: no data for website=%s fields=%d, trying next",
+                        website, len(output_fields)
                     )
-                    return {"success": True, "data": raw, "normalized": normalized, "error": None}
-                logger.debug(
-                    "ZoomInfo company enrich: no data for attrs=%s, trying next",
-                    list(attrs.keys())
-                )
-            except httpx.TimeoutException:
-                logger.warning("ZoomInfo company enrich timed out")
-                return {"success": False, "data": {}, "normalized": {}, "error": "Request timeout"}
-            except httpx.HTTPStatusError as e:
-                last_error = self._http_error_detail(e)
-                logger.warning("ZoomInfo company enrich %s for attrs=%s", last_error, list(attrs.keys()))
-                if e.response.status_code not in (400, 404, 422):
-                    return {"success": False, "data": {}, "normalized": {}, "error": last_error}
-            except Exception as e:
-                last_error = str(e)
-                logger.error("ZoomInfo company enrich exception: %s", e)
+                except httpx.TimeoutException:
+                    logger.warning("ZoomInfo company enrich timed out")
+                    return {"success": False, "data": {}, "normalized": {}, "error": "Request timeout"}
+                except httpx.HTTPStatusError as e:
+                    last_error = self._http_error_detail(e)
+                    logger.warning("ZoomInfo company enrich %s (fields=%d)", last_error, len(output_fields))
+                    # PFAPI0009 = disallowed outputFields — retry with base fields
+                    if "PFAPI0009" in last_error or "disallowed" in last_error.lower():
+                        logger.info("Retrying company enrich with base fields only")
+                        break  # Break inner loop, try next field tier
+                    if e.response.status_code not in (400, 404, 422):
+                        return {"success": False, "data": {}, "normalized": {}, "error": last_error}
+                except Exception as e:
+                    last_error = str(e)
+                    logger.error("ZoomInfo company enrich exception: %s", e)
 
         return {"success": False, "data": {}, "normalized": {}, "error": last_error or "No company data found"}
 
@@ -1128,6 +1136,15 @@ class ZoomInfoClient:
 
         search_people = search_result["people"]
 
+        # Sort by management level so C-suite contacts are enriched first.
+        # If enrich has partial results, C-Level contacts get real phones first.
+        _MGMT_ENRICH_PRIORITY = {"c-level": 0, "vp-level": 1, "director": 2, "manager": 3}
+        search_people.sort(
+            key=lambda p: _MGMT_ENRICH_PRIORITY.get(
+                (p.get("management_level") or "").lower(), 99
+            )
+        )
+
         # Step 2: Extract person IDs and enrich
         person_ids = [
             p.get("person_id") for p in search_people
@@ -1163,13 +1180,26 @@ class ZoomInfoClient:
                 if pid:
                     enriched_by_pid[pid] = ep
 
+        # Fields that the search step returns but the enrich endpoint CANNOT return
+        # (e.g. linkedInUrl is disallowed in CONTACT_ENRICH_OUTPUT_FIELDS).
+        # Preserve these from the search result during the merge.
+        _SEARCH_ONLY_FIELDS = ("linkedin", "linkedinUrl", "linkedInUrl",
+                                "management_level", "managementLevel", "department")
+
         merged_people = []
         enriched_count = 0
         for sp in search_people:
             pid = sp.get("person_id")
             if pid and pid in enriched_by_pid:
+                # Preserve fields from search that enrich can't return
+                search_extras = {}
+                for key in _SEARCH_ONLY_FIELDS:
+                    val = sp.get(key)
+                    if val:
+                        search_extras[key] = val
                 # Use enriched data — it has real phone numbers
-                enriched_contact = {**enriched_by_pid[pid], "enriched": True}
+                # search_extras go first so enrich data takes precedence for overlapping fields
+                enriched_contact = {**search_extras, **enriched_by_pid[pid], "enriched": True}
                 merged_people.append(enriched_contact)
                 enriched_count += 1
             else:
@@ -1476,54 +1506,58 @@ class ZoomInfoClient:
         Search for company news articles with full field extraction.
 
         Args:
-            company_name: Company name string (valid identifier per ZoomInfo docs)
+            company_name: Company name string (NOT used — causes PFAPI0005)
             company_id:   ZoomInfo internal company ID (preferred — most reliable)
             domain:       Company domain (used as companyWebsite fallback)
 
         Returns:
             Dict with success, articles (normalized list), raw_data, error
 
-        GTM API v1 news/enrich accepts companyId, companyName, OR companyWebsite
-        (per official ZoomInfo API docs).  Lookup priority: companyId → companyName → domain.
+        GTM API v1 news/enrich: companyName causes PFAPI0005 "Invalid field requested".
+        Use companyId (most reliable) or companyWebsite as fallback.
         """
-        # Build attributes using best available identifier
+        # Build ordered list of attribute sets to try.
+        # companyName is NOT a valid field for news/enrich on this API version.
+        attrs_to_try: List[Dict[str, Any]] = []
         if company_id:
-            attrs: Dict[str, Any] = {"companyId": company_id}
-        elif company_name:
-            attrs = {"companyName": company_name}
-        elif domain:
-            attrs = {"companyWebsite": self._primary_website(domain)}
-        else:
+            attrs_to_try.append({"companyId": company_id})
+        if domain:
+            attrs_to_try.append({"companyWebsite": self._primary_website(domain)})
+        if not attrs_to_try:
             return {
                 "success": False, "articles": [], "raw_data": [],
-                "error": "A company identifier (companyId, companyName, or domain) is required for news enrich",
+                "error": "companyId or domain required for news enrich (companyName not supported)",
             }
 
-        payload = {"data": {"type": "NewsEnrich", "attributes": attrs}}
+        last_error: Optional[str] = None
+        for attrs in attrs_to_try:
+            payload = {"data": {"type": "NewsEnrich", "attributes": attrs}}
+            try:
+                response = await self._make_request(ENDPOINTS["news_enrich"], payload)
+                raw_articles = self._extract_data_list(response)
+                normalized_articles = [self._normalize_news_article(article) for article in raw_articles]
+                logger.info(
+                    "ZoomInfo news search success: %d articles (attrs=%s)",
+                    len(raw_articles), list(attrs.keys())
+                )
+                return {
+                    "success": True,
+                    "articles": normalized_articles,
+                    "raw_data": raw_articles,
+                    "error": None,
+                }
+            except httpx.TimeoutException:
+                return {"success": False, "articles": [], "raw_data": [], "error": "Request timeout"}
+            except httpx.HTTPStatusError as e:
+                last_error = self._http_error_detail(e)
+                logger.warning("ZoomInfo news search %s for attrs=%s", last_error, list(attrs.keys()))
+                if e.response.status_code not in (400, 404, 422):
+                    return {"success": False, "articles": [], "raw_data": [], "error": last_error}
+            except Exception as e:
+                logger.error("ZoomInfo news search exception: %s", e)
+                return {"success": False, "articles": [], "raw_data": [], "error": str(e)}
 
-        try:
-            response = await self._make_request(ENDPOINTS["news_enrich"], payload)
-            raw_articles = self._extract_data_list(response)
-            normalized_articles = [self._normalize_news_article(article) for article in raw_articles]
-            logger.info(
-                "ZoomInfo news search success: %d articles for company=%s",
-                len(raw_articles), company_name
-            )
-            return {
-                "success": True,
-                "articles": normalized_articles,
-                "raw_data": raw_articles,
-                "error": None,
-            }
-        except httpx.TimeoutException:
-            return {"success": False, "articles": [], "raw_data": [], "error": "Request timeout"}
-        except httpx.HTTPStatusError as e:
-            detail = self._http_error_detail(e)
-            logger.warning("ZoomInfo news search %s", detail)
-            return {"success": False, "articles": [], "raw_data": [], "error": detail}
-        except Exception as e:
-            logger.error("ZoomInfo news search exception: %s", e)
-            return {"success": False, "articles": [], "raw_data": [], "error": str(e)}
+        return {"success": False, "articles": [], "raw_data": [], "error": last_error or "No news data found"}
 
     async def enrich_technologies(self, domain: str, company_id: Optional[str] = None) -> Dict[str, Any]:
         """
@@ -1538,40 +1572,50 @@ class ZoomInfoClient:
 
         GTM API v1 endpoint: /gtm/data/v1/companies/technologies/enrich
         JSON:API format: {"data": {"type": "TechnologyEnrich", "attributes": {...}}}
+        Flat companyWebsite causes PFAPI0005 — use matchCompanyInput array or companyId.
         """
-        # Prefer companyId for tech enrich (most reliable).
-        # Fall back to companyWebsite when companyId is not yet available
-        # (e.g. when the company enrich step hasn't completed yet or returned no ID).
+        # Build ordered list of attribute sets to try.
+        # Flat companyWebsite causes PFAPI0005 — use matchCompanyInput format instead.
+        attrs_to_try: List[Dict[str, Any]] = []
         if company_id:
-            attrs: Dict[str, Any] = {"companyId": company_id}
-        else:
-            attrs = {"companyWebsite": self._primary_website(domain)}
+            attrs_to_try.append({"companyId": company_id})
+        if domain:
+            bare = self._bare_domain(domain)
+            attrs_to_try.append({
+                "matchCompanyInput": [{"companyWebsite": f"https://www.{bare}"}],
+            })
+        if not attrs_to_try:
+            return {"success": False, "technologies": [], "raw_data": [], "error": "companyId or domain required"}
 
-        payload = {"data": {"type": "TechnologyEnrich", "attributes": attrs}}
+        last_error: Optional[str] = None
+        for attrs in attrs_to_try:
+            payload = {"data": {"type": "TechnologyEnrich", "attributes": attrs}}
+            try:
+                response = await self._make_request(ENDPOINTS["tech_enrich"], payload)
+                raw_technologies = self._extract_data_list(response)
+                normalized_technologies = [self._normalize_technology(tech) for tech in raw_technologies]
+                logger.info(
+                    "ZoomInfo tech enrich success: %d technologies (attrs=%s)",
+                    len(raw_technologies), list(attrs.keys())
+                )
+                return {
+                    "success": True,
+                    "technologies": normalized_technologies,
+                    "raw_data": raw_technologies,
+                    "error": None,
+                }
+            except httpx.TimeoutException:
+                return {"success": False, "technologies": [], "raw_data": [], "error": "Request timeout"}
+            except httpx.HTTPStatusError as e:
+                last_error = self._http_error_detail(e)
+                logger.warning("ZoomInfo tech enrich %s for attrs=%s", last_error, list(attrs.keys()))
+                if e.response.status_code not in (400, 404, 422):
+                    return {"success": False, "technologies": [], "raw_data": [], "error": last_error}
+            except Exception as e:
+                logger.error("ZoomInfo tech enrich exception: %s", e)
+                return {"success": False, "technologies": [], "raw_data": [], "error": str(e)}
 
-        try:
-            response = await self._make_request(ENDPOINTS["tech_enrich"], payload)
-            raw_technologies = self._extract_data_list(response)
-            normalized_technologies = [self._normalize_technology(tech) for tech in raw_technologies]
-            logger.info(
-                "ZoomInfo tech enrich success: %d technologies for domain=%s",
-                len(raw_technologies), domain
-            )
-            return {
-                "success": True,
-                "technologies": normalized_technologies,
-                "raw_data": raw_technologies,
-                "error": None,
-            }
-        except httpx.TimeoutException:
-            return {"success": False, "technologies": [], "raw_data": [], "error": "Request timeout"}
-        except httpx.HTTPStatusError as e:
-            detail = self._http_error_detail(e)
-            logger.warning("ZoomInfo tech enrich %s", detail)
-            return {"success": False, "technologies": [], "raw_data": [], "error": detail}
-        except Exception as e:
-            logger.error("ZoomInfo tech enrich exception: %s", e)
-            return {"success": False, "technologies": [], "raw_data": [], "error": str(e)}
+        return {"success": False, "technologies": [], "raw_data": [], "error": last_error or "No technology data found"}
 
     @staticmethod
     def _is_partner(title: str) -> bool:

@@ -21,6 +21,60 @@
 
 ---
 
+## ZoomInfo API Fixes, LinkedIn Validation & Enrichment Improvements (2026-03-04)
+
+Seven fixes addressing broken ZoomInfo API endpoints, LinkedIn-based contact validation, C-suite phone prioritization, and UI improvements.
+
+### Fix 1: Company Enrich PFAPI0009 — Disallowed OutputFields
+
+**Root cause**: Previous commit added `ceoName`, `companyType`, `industry`, `subIndustry`, `yearFounded`, `linkedInUrl` to `COMPANY_OUTPUT_FIELDS`. These fields are disallowed on the current subscription, causing HTTP 400 PFAPI0009 on every company enrich call. This cascaded — no `company_id` meant news/tech/intent all failed.
+
+**Fix**: Split into `BASE_COMPANY_OUTPUT_FIELDS` (11 safe fields) and `EXTENDED_COMPANY_OUTPUT_FIELDS` (18 fields). `enrich_company()` tries extended first, falls back to base on PFAPI0009. Subscriptions that support extended fields still get them automatically.
+
+### Fix 2: News Enrich PFAPI0005 — Invalid companyName Field
+
+**Root cause**: Previous commit changed news fallback from `companyId`-only to `companyName`, which the GTM API news endpoint rejects.
+
+**Fix**: Removed `companyName` as an identifier. News now tries `companyId` first, falls back to `companyWebsite` from domain. Uses retry chain so one format failing doesn't block the next.
+
+### Fix 3: Tech Enrich PFAPI0005 — Invalid companyWebsite Field
+
+**Root cause**: Previous commit changed tech fallback from `companyId`-only to flat `companyWebsite`, which the GTM API tech endpoint rejects.
+
+**Fix**: Uses `matchCompanyInput` array format (like company enrich) as fallback instead of flat `companyWebsite`. This is the correct GTM API v1 format for company identifiers.
+
+### Fix 4: Intent Enrich — Lookup Returns Empty Topics
+
+**Root cause**: Previous commit replaced working hardcoded `DEFAULT_INTENT_TOPICS` with dynamic lookup via `_fetch_valid_intent_topics()`. When the lookup fails or returns empty, intent enrichment is skipped entirely.
+
+**Fix**: `_fetch_valid_intent_topics()` now falls back to `DEFAULT_INTENT_TOPICS` (12 B2B topics) when the lookup endpoint fails. Intent enrichment proceeds with known-good topics instead of giving up.
+
+### Fix 5: LinkedIn URLs Lost During Contact Enrich Merge
+
+**Root cause**: The two-step search-then-enrich flow discards search data when merging. Contact search returns `linkedinUrl` but the enrich endpoint can't request it (disallowed field). The merge (`{**enriched_data, "enriched": True}`) overwrites search data, losing LinkedIn URLs.
+
+**Fix**: Preserve search-only fields (`linkedin`, `managementLevel`, `department`) during the merge by copying them before overlaying enrich data. LinkedIn URLs now flow through to the stakeholder map and Gamma presentations.
+
+### Fix 6: C-Suite Phone Enrichment Priority
+
+**Root cause**: Contacts were sent to the enrich endpoint in search order. If the API returns partial results (rate limits, quota), C-suite executives might not get phone numbers while lower-priority contacts do.
+
+**Fix**: Sort contacts by management level before enriching: C-Level first, then VP, Director, Manager. C-suite executives are now guaranteed to be at the front of the enrich request, maximizing their chances of getting real phone numbers.
+
+### Fix 7: LinkedIn-Based Contact Validation (LLM Fact Checker)
+
+**Root cause**: The LLM fact checker was disabled because generic "verify this executive" prompts gave false negatives. But no validation was happening, allowing mismatched contacts (e.g., someone listing Microsoft as their company while being CEO of a small IT firm).
+
+**Fix**: Re-enabled the fact checker with a focused LinkedIn validation prompt. Only contacts WITH LinkedIn URLs are validated — the LLM checks if the job title is consistent with working at the target company. Contacts without LinkedIn URLs retain trust score 1.0 (trusted from ZoomInfo/Apollo/PDL). Score < 0.15 is filtered out, 0.15-0.8 shows "Unverified", >= 0.8 shows "Verified".
+
+### UI: Phone Enrichment Panel Moved to Debug Panel
+
+**Change**: Removed the phone enrichment summary (Searched/Got Real Phones/No Phone Data grid) from the company overview StakeholderMapCard. Moved it to the debug panel under the Contact Enrich API response card. Individual contact enrichment badges (Enriched/Not enriched) remain on each contact card.
+
+**Rationale**: The enrichment summary is debugging/diagnostic information, not end-user facing. The debug panel is the correct location for API-level stats.
+
+---
+
 ## ZoomInfo Data Quality & Contact Enrichment Fixes (2026-03-03 v2)
 
 Six production issues affecting company overview display, contact accuracy, phone enrichment, and confidence scoring were identified and fixed.

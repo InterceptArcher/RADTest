@@ -387,18 +387,13 @@ class TestNewsSearch:
 
     @pytest.mark.asyncio
     async def test_fetch_news_with_company_name_works(self):
-        """News enrich succeeds with companyName when no companyId available.
-        ZoomInfo docs confirm companyName is a valid identifier for news enrich."""
+        """News enrich does NOT use companyName (causes PFAPI0005).
+        When only company_name provided (no domain/id), should return error."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
-        mock_response = {
-            "data": [{"title": "Acme Corp raises Series B", "url": "https://example.com/news"}]
-        }
-        with patch.object(client, "_make_request", new_callable=AsyncMock,
-                          return_value=mock_response):
-            result = await client.search_news(company_name="Acme Corp")
-            assert result["success"] is True
-            assert len(result["articles"]) >= 1
+        result = await client.search_news(company_name="Acme Corp")
+        # companyName is not a valid field — should fail without domain or companyId
+        assert result["success"] is False
 
     @pytest.mark.asyncio
     async def test_fetch_news_with_domain_fallback_works(self):
@@ -1510,24 +1505,15 @@ class TestNewsEnrichFallback:
         assert attrs.get("companyId") == "99999", "Must use companyId when available"
 
     @pytest.mark.asyncio
-    async def test_news_payload_falls_back_to_companyName(self):
-        """When no company_id, payload uses companyName."""
+    async def test_news_rejects_company_name_only(self):
+        """When only company_name provided (no domain, no id), returns error.
+        companyName causes PFAPI0005 in the GTM API."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
-        captured = []
 
-        async def capture(endpoint, payload, _is_retry=False, params=None):
-            captured.append(payload)
-            return {"data": []}
-
-        with patch.object(client, "_make_request", side_effect=capture):
-            await client.search_news(company_name="Acme Corp")
-
-        attrs = captured[0]["data"]["attributes"]
-        assert attrs.get("companyName") == "Acme Corp", (
-            f"Must fall back to companyName. attrs: {attrs}"
-        )
-        assert "companyId" not in attrs
+        result = await client.search_news(company_name="Acme Corp")
+        assert result["success"] is False
+        assert "companyName not supported" in result.get("error", "")
 
     @pytest.mark.asyncio
     async def test_news_payload_falls_back_to_domain(self):
@@ -1570,8 +1556,9 @@ class TestTechEnrichFallback:
         assert attrs.get("companyId") == "88888"
 
     @pytest.mark.asyncio
-    async def test_tech_payload_falls_back_to_companyWebsite(self):
-        """When no company_id, payload uses companyWebsite."""
+    async def test_tech_payload_falls_back_to_matchCompanyInput(self):
+        """When no company_id, payload uses matchCompanyInput array format.
+        Flat companyWebsite causes PFAPI0005 — must wrap in matchCompanyInput."""
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")
         captured = []
@@ -1584,10 +1571,10 @@ class TestTechEnrichFallback:
             await client.enrich_technologies(domain="acme.com")
 
         attrs = captured[0]["data"]["attributes"]
-        assert "companyWebsite" in attrs, (
-            f"Must use companyWebsite fallback when no companyId. attrs: {attrs}"
+        assert "matchCompanyInput" in attrs, (
+            f"Must use matchCompanyInput format when no companyId. attrs: {attrs}"
         )
-        assert "acme.com" in attrs["companyWebsite"]
+        assert "acme.com" in str(attrs["matchCompanyInput"])
         assert "companyId" not in attrs
 
 
@@ -1903,3 +1890,294 @@ class TestConfidenceScoreNotHardcoded:
         assert result.get("confidence_score", 0) >= 0.75, (
             f"Good data should have confidence >= 0.75, got {result.get('confidence_score')}"
         )
+
+
+class TestCompanyEnrichOutputFieldsFallback:
+    """Test that company enrich falls back to base fields when extended fields are disallowed."""
+
+    def test_base_company_output_fields_exist(self):
+        """BASE_COMPANY_OUTPUT_FIELDS constant exists with the 11 safe fields."""
+        from zoominfo_client import BASE_COMPANY_OUTPUT_FIELDS
+        assert "id" in BASE_COMPANY_OUTPUT_FIELDS
+        assert "name" in BASE_COMPANY_OUTPUT_FIELDS
+        assert "website" in BASE_COMPANY_OUTPUT_FIELDS
+        assert "revenue" in BASE_COMPANY_OUTPUT_FIELDS
+        assert "employeeCount" in BASE_COMPANY_OUTPUT_FIELDS
+        # Extended fields should NOT be in base
+        assert "ceoName" not in BASE_COMPANY_OUTPUT_FIELDS
+        assert "companyType" not in BASE_COMPANY_OUTPUT_FIELDS
+        assert "industry" not in BASE_COMPANY_OUTPUT_FIELDS
+
+    def test_extended_company_output_fields_include_base(self):
+        """EXTENDED_COMPANY_OUTPUT_FIELDS includes base + leadership/industry fields."""
+        from zoominfo_client import BASE_COMPANY_OUTPUT_FIELDS, EXTENDED_COMPANY_OUTPUT_FIELDS
+        for field in BASE_COMPANY_OUTPUT_FIELDS:
+            assert field in EXTENDED_COMPANY_OUTPUT_FIELDS
+        assert "ceoName" in EXTENDED_COMPANY_OUTPUT_FIELDS
+        assert "industry" in EXTENDED_COMPANY_OUTPUT_FIELDS
+
+    def test_company_enrich_retries_with_base_fields_on_pfapi0009(self):
+        """When extended fields cause PFAPI0009, company enrich retries with base fields."""
+        from zoominfo_client import ZoomInfoClient
+        import httpx
+
+        client = ZoomInfoClient(access_token="test-token")
+
+        # First call with extended fields fails with PFAPI0009
+        pfapi_error_body = {
+            "detail": "OutputFields invalid or disallowed",
+            "errors": [{"code": "PFAPI0009", "detail": "Invalid field 'ceoname'"}],
+        }
+        error_response = httpx.Response(400, json=pfapi_error_body, request=httpx.Request("POST", "https://api.zoominfo.com/test"))
+
+        # Second call with base fields succeeds
+        success_response = {
+            "data": [{"id": "123", "attributes": {"name": "TestCo", "website": "https://test.com"}}]
+        }
+
+        call_count = 0
+        async def mock_make_request(endpoint, payload, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            output_fields = payload.get("data", {}).get("attributes", {}).get("outputFields", [])
+            if "ceoName" in output_fields:
+                # Simulate PFAPI0009 for extended fields
+                raise httpx.HTTPStatusError(
+                    "400", response=error_response, request=error_response.request
+                )
+            return success_response
+
+        client._make_request = mock_make_request
+
+        async def _test():
+            result = await client.enrich_company(domain="test.com")
+            return result
+
+        result = asyncio.get_event_loop().run_until_complete(_test())
+        assert result["success"] is True
+        assert call_count >= 2  # Extended failed, base succeeded
+
+
+class TestLinkedInPreservationInEnrichMerge:
+    """Test that LinkedIn URLs from search are preserved when merging with enrich results."""
+
+    def test_linkedin_preserved_after_enrich_merge(self):
+        """search_and_enrich_contacts preserves linkedinUrl from search step."""
+        from zoominfo_client import ZoomInfoClient
+
+        client = ZoomInfoClient(access_token="test-token")
+
+        # Mock search: returns contacts WITH linkedin
+        search_result = {
+            "success": True,
+            "people": [
+                {
+                    "person_id": "pid-1",
+                    "name": "Jane Doe",
+                    "title": "CTO",
+                    "linkedin": "https://linkedin.com/in/janedoe",
+                    "management_level": "C-Level",
+                    "phone": "***",
+                    "direct_phone": "***",
+                    "mobile_phone": "",
+                    "company_phone": "",
+                }
+            ],
+        }
+
+        # Mock enrich: returns phone data but NO linkedin
+        enrich_result = {
+            "success": True,
+            "people": [
+                {
+                    "person_id": "pid-1",
+                    "name": "Jane Doe",
+                    "title": "CTO",
+                    "phone": "+1-555-000-1234",
+                    "mobile_phone": "+1-555-000-5678",
+                    "company_phone": "",
+                    "contact_accuracy_score": 92,
+                }
+            ],
+        }
+
+        client.search_contacts = AsyncMock(return_value=search_result)
+        client.enrich_contacts = AsyncMock(return_value=enrich_result)
+
+        async def _test():
+            result = await client.search_and_enrich_contacts(domain="test.com")
+            return result
+
+        result = asyncio.get_event_loop().run_until_complete(_test())
+        contact = result["people"][0]
+        assert contact.get("linkedin") == "https://linkedin.com/in/janedoe", (
+            f"LinkedIn URL lost during merge: got {contact.get('linkedin')}"
+        )
+        assert contact["enriched"] is True
+
+
+class TestCSuiteEnrichmentPriority:
+    """Test that C-suite contacts are prioritized for phone enrichment."""
+
+    def test_csuite_contacts_enriched_first(self):
+        """C-Level contacts appear before lower-level contacts in enrich request."""
+        from zoominfo_client import ZoomInfoClient
+
+        client = ZoomInfoClient(access_token="test-token")
+
+        # Search returns contacts in mixed order
+        search_result = {
+            "success": True,
+            "people": [
+                {"person_id": "pid-mgr", "name": "Manager Bob", "title": "Manager", "management_level": "Manager"},
+                {"person_id": "pid-cto", "name": "CTO Jane", "title": "CTO", "management_level": "C-Level"},
+                {"person_id": "pid-dir", "name": "Director Kim", "title": "Director", "management_level": "Director"},
+                {"person_id": "pid-vp", "name": "VP Alex", "title": "VP Engineering", "management_level": "VP-Level"},
+            ],
+        }
+
+        captured_person_ids = []
+        async def mock_enrich(person_ids):
+            captured_person_ids.extend(person_ids)
+            return {"success": True, "people": []}
+
+        client.search_contacts = AsyncMock(return_value=search_result)
+        client.enrich_contacts = mock_enrich
+
+        async def _test():
+            return await client.search_and_enrich_contacts(domain="test.com")
+
+        asyncio.get_event_loop().run_until_complete(_test())
+
+        # C-Level should be first in the enrich request
+        assert captured_person_ids[0] == "pid-cto", (
+            f"C-Level contact should be first for enrichment, got order: {captured_person_ids}"
+        )
+
+
+class TestIntentTopicsFallback:
+    """Test that intent enrichment falls back to DEFAULT_INTENT_TOPICS when lookup fails."""
+
+    def test_default_intent_topics_exist(self):
+        """DEFAULT_INTENT_TOPICS constant exists as fallback."""
+        from zoominfo_client import DEFAULT_INTENT_TOPICS
+        assert isinstance(DEFAULT_INTENT_TOPICS, list)
+        assert len(DEFAULT_INTENT_TOPICS) > 0
+        assert "Cybersecurity" in DEFAULT_INTENT_TOPICS
+
+    def test_fetch_topics_returns_defaults_on_failure(self):
+        """_fetch_valid_intent_topics returns DEFAULT_INTENT_TOPICS when lookup fails."""
+        from zoominfo_client import ZoomInfoClient, DEFAULT_INTENT_TOPICS
+
+        client = ZoomInfoClient(access_token="test-token")
+        client._valid_topics_cache = None  # Reset cache
+
+        async def _test():
+            # Mock _ensure_valid_token to no-op
+            client._ensure_valid_token = AsyncMock()
+            # Mock httpx to raise on GET
+            with patch("httpx.AsyncClient") as mock_client_cls:
+                mock_client = AsyncMock()
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client.get = AsyncMock(side_effect=Exception("lookup failed"))
+                mock_client_cls.return_value = mock_client
+                topics = await client._fetch_valid_intent_topics()
+            return topics
+
+        topics = asyncio.get_event_loop().run_until_complete(_test())
+        assert topics == DEFAULT_INTENT_TOPICS, (
+            f"Should fall back to DEFAULT_INTENT_TOPICS, got: {topics}"
+        )
+
+
+class TestNewsEnrichCompanyIdFirst:
+    """Test that news enrich uses companyId-first pattern with fallback chain."""
+
+    def test_news_uses_companyid_when_available(self):
+        """News enrich uses companyId as primary identifier."""
+        from zoominfo_client import ZoomInfoClient
+
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+        async def mock_make_request(endpoint, payload, **kwargs):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        client._make_request = mock_make_request
+
+        async def _test():
+            return await client.search_news(company_id="zi-123", domain="test.com")
+
+        asyncio.get_event_loop().run_until_complete(_test())
+        first_attrs = captured_payloads[0]["data"]["attributes"]
+        assert "companyId" in first_attrs, "Should try companyId first"
+
+    def test_news_does_not_use_company_name(self):
+        """News enrich should NOT use companyName (causes PFAPI0005)."""
+        from zoominfo_client import ZoomInfoClient
+
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+        async def mock_make_request(endpoint, payload, **kwargs):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        client._make_request = mock_make_request
+
+        async def _test():
+            return await client.search_news(company_name="TestCo", domain="test.com")
+
+        asyncio.get_event_loop().run_until_complete(_test())
+        for p in captured_payloads:
+            attrs = p["data"]["attributes"]
+            assert "companyName" not in attrs, "companyName causes PFAPI0005 — should not be used"
+
+
+class TestTechEnrichCompanyIdFirst:
+    """Test that tech enrich uses companyId-first pattern."""
+
+    def test_tech_uses_companyid_when_available(self):
+        """Tech enrich uses companyId as primary identifier."""
+        from zoominfo_client import ZoomInfoClient
+
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+        async def mock_make_request(endpoint, payload, **kwargs):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        client._make_request = mock_make_request
+
+        async def _test():
+            return await client.enrich_technologies(domain="test.com", company_id="zi-123")
+
+        asyncio.get_event_loop().run_until_complete(_test())
+        first_attrs = captured_payloads[0]["data"]["attributes"]
+        assert "companyId" in first_attrs
+
+    def test_tech_fallback_does_not_use_flat_company_website(self):
+        """Tech enrich should NOT use flat companyWebsite (causes PFAPI0005)."""
+        from zoominfo_client import ZoomInfoClient
+
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured_payloads = []
+        async def mock_make_request(endpoint, payload, **kwargs):
+            captured_payloads.append(payload)
+            return {"data": []}
+
+        client._make_request = mock_make_request
+
+        async def _test():
+            return await client.enrich_technologies(domain="test.com")
+
+        asyncio.get_event_loop().run_until_complete(_test())
+        for p in captured_payloads:
+            attrs = p["data"]["attributes"]
+            assert "companyWebsite" not in attrs, (
+                "Flat companyWebsite causes PFAPI0005 — should use matchCompanyInput or companyId"
+            )
