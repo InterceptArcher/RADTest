@@ -2181,3 +2181,85 @@ class TestTechEnrichCompanyIdFirst:
             assert "companyWebsite" not in attrs, (
                 "Flat companyWebsite causes PFAPI0005 — should use matchCompanyInput or companyId"
             )
+
+
+class TestNormalizeContactLinkedInCasing:
+    """Test that _normalize_contact handles all casing variants of LinkedIn URL."""
+
+    def test_normalize_handles_lowercase_linkedinUrl(self):
+        """ZoomInfo search returns 'linkedinUrl' (lowercase i) — must be captured."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        # Simulate a raw JSON:API record with ZoomInfo's actual field name
+        raw = {"id": "123", "attributes": {"linkedinUrl": "https://linkedin.com/in/janedoe", "firstName": "Jane", "lastName": "Doe"}}
+        person = client._normalize_contact(raw)
+        assert person["linkedin"] == "https://linkedin.com/in/janedoe", (
+            f"_normalize_contact missed 'linkedinUrl' (lowercase i): got '{person['linkedin']}'"
+        )
+
+    def test_normalize_handles_camelCase_linkedInUrl(self):
+        """Some sources return 'linkedInUrl' (capital I) — must also be captured."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        raw = {"id": "456", "attributes": {"linkedInUrl": "https://linkedin.com/in/johndoe", "firstName": "John", "lastName": "Doe"}}
+        person = client._normalize_contact(raw)
+        assert person["linkedin"] == "https://linkedin.com/in/johndoe"
+
+
+class TestNormalizeContactLinkedInFromSearchResponse:
+    """Test that _normalize_contact correctly extracts LinkedIn from real ZoomInfo search responses."""
+
+    def test_normalize_from_jsonapi_unwrapped_response(self):
+        """After _unwrap_jsonapi, the flat dict has 'linkedinUrl' — must be captured."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        # Simulate what _unwrap_jsonapi produces from a real ZoomInfo search response
+        # The JSON:API record {"attributes": {"linkedinUrl": "..."}} gets flattened to {"linkedinUrl": "..."}
+        unwrapped = {
+            "id": "person-123",
+            "firstName": "Jane",
+            "lastName": "Doe",
+            "jobTitle": "CTO",
+            "linkedinUrl": "https://linkedin.com/in/janedoe",
+            "managementLevel": "C-Level",
+            "contactAccuracyScore": 95,
+        }
+        # _normalize_contact expects a raw dict with optional "attributes"
+        # When called directly with a flat dict (post-unwrap), attrs=raw
+        person = client._normalize_contact(unwrapped)
+        assert person["linkedin"] == "https://linkedin.com/in/janedoe", (
+            f"LinkedIn URL lost during normalization: got '{person['linkedin']}'"
+        )
+
+    def test_search_and_enrich_preserves_linkedin_through_full_pipeline(self):
+        """End-to-end: search returns linkedinUrl → normalize → merge → preserved in output."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        # Mock _make_request for search step — returns JSON:API format
+        search_response = {
+            "data": [
+                {
+                    "id": "person-456",
+                    "type": "Contact",
+                    "attributes": {
+                        "firstName": "Bob",
+                        "lastName": "Smith",
+                        "jobTitle": "CTO",
+                        "linkedinUrl": "https://linkedin.com/in/bobsmith",
+                        "managementLevel": "C-Level",
+                        "phone": "***-***-1234",
+                        "contactAccuracyScore": 90,
+                    }
+                }
+            ]
+        }
+        # After _extract_data_list + _normalize_contact in search_contacts,
+        # the person dict should have linkedin="https://linkedin.com/in/bobsmith"
+        data_list = client._extract_data_list(search_response)
+        assert len(data_list) == 1
+        person = client._normalize_contact(data_list[0])
+        assert person["linkedin"] == "https://linkedin.com/in/bobsmith", (
+            f"LinkedIn lost after extract+normalize: got '{person['linkedin']}'"
+        )

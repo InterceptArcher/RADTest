@@ -2029,7 +2029,7 @@ class ZoomInfoClient:
             "title": attrs.get("jobTitle", attrs.get("job_title", attrs.get("title", ""))),
             "email": attrs.get("email", attrs.get("emailAddress", "")),
             "phone": attrs.get("phone", attrs.get("phoneNumber", "")),
-            "linkedin": attrs.get("linkedInUrl", attrs.get("linkedin_url", attrs.get("linkedin", ""))),
+            "linkedin": attrs.get("linkedinUrl", attrs.get("linkedInUrl", attrs.get("linkedin_url", attrs.get("linkedin", "")))),
             "direct_phone": attrs.get("directPhone", attrs.get("direct_phone", "")),
             "mobile_phone": attrs.get("mobilePhone", attrs.get("mobile_phone", "")),
             "company_phone": attrs.get("companyPhone", attrs.get("company_phone", "")),

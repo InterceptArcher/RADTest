@@ -1503,6 +1503,79 @@ async def process_company_profile(job_id: str, company_data: dict):
                     logger.warning(f"ZoomInfo GTM identity lookup failed: {e}")
                     jobs_store[job_id]["step_2_84_result"] = {"error": str(e)}
 
+        # Step 2.85: Enrich contacts missing LinkedIn URLs via Apollo people/match.
+        # ZoomInfo contact search does NOT return LinkedIn URLs (disallowed engagement data).
+        # Apollo's mixed_people/search can match contacts by name + domain and return linkedin_url.
+        if APOLLO_API_KEY and stakeholders_data:
+            contacts_needing_linkedin = [
+                s for s in stakeholders_data
+                if not s.get("linkedin_url")
+                and s.get("name")
+            ]
+            if contacts_needing_linkedin:
+                jobs_store[job_id]["current_step"] = (
+                    f"Looking up LinkedIn URLs for {len(contacts_needing_linkedin)} contacts..."
+                )
+                _t_li = time.monotonic()
+                linkedin_found = 0
+                try:
+                    import httpx as _httpx_li
+                    async with _httpx_li.AsyncClient() as _li_client:
+                        for contact in contacts_needing_linkedin[:15]:
+                            name = contact.get("name", "")
+                            parts = name.split(None, 1)
+                            first = parts[0] if parts else ""
+                            last = parts[1] if len(parts) > 1 else ""
+                            if not (first and last):
+                                continue
+                            try:
+                                resp = await _li_client.post(
+                                    "https://api.apollo.io/v1/people/match",
+                                    headers={
+                                        "Content-Type": "application/json",
+                                        "X-Api-Key": APOLLO_API_KEY,
+                                    },
+                                    json={
+                                        "first_name": first,
+                                        "last_name": last,
+                                        "organization_name": company_data["company_name"],
+                                        "domain": company_data.get("domain", ""),
+                                    },
+                                    timeout=10.0,
+                                )
+                                if resp.status_code == 200:
+                                    person = resp.json().get("person", {})
+                                    li_url = person.get("linkedin_url", "")
+                                    if li_url:
+                                        contact["linkedin_url"] = li_url
+                                        linkedin_found += 1
+                            except Exception as e:
+                                logger.debug(f"Apollo people/match failed for {name}: {e}")
+                    _li_duration = int((time.monotonic() - _t_li) * 1000)
+                    logger.info(
+                        f"LinkedIn enrichment: {linkedin_found}/{len(contacts_needing_linkedin)} "
+                        f"contacts got LinkedIn URLs via Apollo ({_li_duration}ms)"
+                    )
+                    _log_api_call(
+                        jobs_store[job_id],
+                        "Apollo LinkedIn Enrichment",
+                        "https://api.apollo.io/v1/people/match", "POST",
+                        {
+                            "strategy": "Match contacts by name + company to find LinkedIn URLs",
+                            "contacts_attempted": len(contacts_needing_linkedin),
+                        },
+                        {
+                            "linkedin_urls_found": linkedin_found,
+                            "contacts_enriched": [
+                                {"name": c.get("name"), "linkedin_url": c.get("linkedin_url") or "N/A"}
+                                for c in contacts_needing_linkedin[:10]
+                            ],
+                        },
+                        200, _li_duration,
+                    )
+                except Exception as e:
+                    logger.warning(f"LinkedIn enrichment via Apollo failed: {e}")
+
         # Step 2.83: LLM Contact Fact Checker - Validate contacts against public knowledge
         jobs_store[job_id]["progress"] = 46
         jobs_store[job_id]["current_step"] = "Fact-checking contacts with LLM verification..."

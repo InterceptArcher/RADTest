@@ -49,11 +49,17 @@ Seven fixes addressing broken ZoomInfo API endpoints, LinkedIn-based contact val
 
 **Fix**: `_fetch_valid_intent_topics()` now falls back to `DEFAULT_INTENT_TOPICS` (12 B2B topics) when the lookup endpoint fails. Intent enrichment proceeds with known-good topics instead of giving up.
 
-### Fix 5: LinkedIn URLs Lost During Contact Enrich Merge
+### Fix 5: LinkedIn URLs Missing for All Contacts
 
-**Root cause**: The two-step search-then-enrich flow discards search data when merging. Contact search returns `linkedinUrl` but the enrich endpoint can't request it (disallowed field). The merge (`{**enriched_data, "enriched": True}`) overwrites search data, losing LinkedIn URLs.
+**Root cause (multi-layered)**:
+1. **ZoomInfo contact search does NOT return LinkedIn URLs** — the API docs state it "does not return emails, phone numbers, or any other data that can be used to engage." `linkedinUrl` is an engagement field, silently omitted.
+2. **Casing bug in `_normalize_contact()`**: ZoomInfo's field name is `linkedinUrl` (lowercase `i` in `in`), but `_normalize_contact` tried `linkedInUrl` (capital `I`) first. Python dict keys are case-sensitive, so `attrs.get("linkedInUrl")` missed `"linkedinUrl"`, falling through to empty string. Even if ZoomInfo ever returns the field, it was being dropped.
+3. **No LinkedIn enrichment for ZoomInfo-only contacts**: Apollo contacts have `linkedin_url` from `mixed_people/search`, but ZoomInfo-only contacts (not matched to Apollo) had no way to get LinkedIn.
 
-**Fix**: Preserve search-only fields (`linkedin`, `managementLevel`, `department`) during the merge by copying them before overlaying enrich data. LinkedIn URLs now flow through to the stakeholder map and Gamma presentations.
+**Fix (three changes)**:
+1. Fixed `_normalize_contact()` to try `linkedinUrl` (ZoomInfo's actual casing) FIRST, then `linkedInUrl` as fallback.
+2. Preserved search-only fields (`linkedin`, `managementLevel`, `department`) during the enrich merge.
+3. Added **Step 2.85: Apollo LinkedIn Enrichment** — after ZoomInfo merge, contacts without LinkedIn URLs are matched against Apollo's `people/match` endpoint by name + company. LinkedIn URLs are backfilled for up to 15 contacts.
 
 ### Fix 6: C-Suite Phone Enrichment Priority
 
