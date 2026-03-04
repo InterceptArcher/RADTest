@@ -695,10 +695,18 @@ async def fact_check_contacts(company_name: str, domain: str, contacts: list) ->
 
     prompt = f"""Validate these contacts for {company_name} ({domain}).
 
-For each contact, check if their job title is consistent with working at {company_name}.
-Flag contacts whose title suggests they work at a DIFFERENT company (e.g. "CEO of Small IT Firm" listed under Microsoft, or "Founder of XYZ Consulting" listed under Google).
+CRITICAL: Verify that each contact is a CURRENT employee of {company_name}.
+Use their LinkedIn URL and job title together to determine if they currently work at {company_name}.
 
-LinkedIn URLs are provided for reference — use the profile URL as additional context.
+Check for these red flags:
+1. Title suggests they work at a DIFFERENT company (e.g. "CEO of Small IT Firm" listed under Microsoft)
+2. LinkedIn profile URL slug doesn't match the person's name (possible data mismatch)
+3. Title contains "Former", "Ex-", or "Previous" — they may have left {company_name}
+4. Generic titles that could belong to any company without verification
+
+LinkedIn URLs are provided — use the LinkedIn profile URL to cross-reference that the person
+is currently employed at {company_name}. A valid LinkedIn URL matching the person's name
+increases confidence they are a real, current employee.
 
 Contacts to validate:
 {json.dumps(contact_list, indent=2)}
@@ -711,16 +719,18 @@ Output JSON:
 }}
 
 Scoring guide:
-- 1.0: Title clearly matches {company_name} (e.g. "CTO at {company_name}")
-- 0.7-0.9: Title is plausible for {company_name} (generic C-suite title)
-- 0.3-0.6: Title is ambiguous or mentions a different company
-- 0.0-0.2: Title clearly refers to a different company"""
+- 1.0: Title clearly matches {company_name} AND LinkedIn URL confirms identity (e.g. "CTO at {company_name}")
+- 0.7-0.9: Title is plausible for {company_name}, LinkedIn URL present and consistent
+- 0.5-0.7: Title is plausible but no LinkedIn URL to confirm current employment
+- 0.3-0.5: Title is ambiguous or mentions a different company
+- 0.0-0.2: Title clearly refers to a different company or person has left"""
 
     result = await _call_openai_json(
         prompt,
         f"You are a corporate contact verification system for {company_name}. "
-        "Validate that contacts actually work at this company based on their titles "
-        "and LinkedIn profiles. Be accurate — flag obvious mismatches but don't over-filter."
+        "Validate that contacts CURRENTLY work at this company based on their titles "
+        "and LinkedIn profile URLs. Use LinkedIn URLs to confirm identity and current employment. "
+        "Be accurate — flag obvious mismatches but don't over-filter legitimate employees."
     )
 
     if not result or "contacts" not in result:
@@ -1131,6 +1141,7 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                                 "name": c.get("name"), "title": c.get("title"),
                                 "directPhone": c.get("direct_phone") or "N/A",
                                 "mobilePhone": c.get("mobile_phone") or "N/A",
+                                "linkedinUrl": c.get("linkedin") or c.get("linkedin_url") or "N/A",
                                 "contactAccuracyScore": c.get("contact_accuracy_score"),
                             }
                             for c in contacts[:5]
@@ -1151,6 +1162,7 @@ async def _fetch_all_zoominfo(zi_client, company_data: dict, job_data: Optional[
                         "mobilePhone": c.get("mobile_phone") or None,
                         "companyPhone": c.get("company_phone") or None,
                         "phone": c.get("phone") or None,
+                        "linkedinUrl": c.get("linkedin") or c.get("linkedin_url") or None,
                         "enriched": c.get("enriched"),
                         "contactAccuracyScore": c.get("contact_accuracy_score"),
                     }
@@ -1521,7 +1533,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                 try:
                     import httpx as _httpx_li
                     async with _httpx_li.AsyncClient() as _li_client:
-                        for contact in contacts_needing_linkedin[:15]:
+                        for contact in contacts_needing_linkedin:
                             name = contact.get("name", "")
                             parts = name.split(None, 1)
                             first = parts[0] if parts else ""
@@ -3728,11 +3740,13 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                             "has_direct_phone": bool(c.get("direct_phone")),
                             "has_mobile_phone": bool(c.get("mobile_phone")),
                             "has_company_phone": bool(c.get("company_phone")),
+                            "has_linkedin_url": bool(c.get("linkedin") or c.get("linkedin_url")),
+                            "linkedin_url": c.get("linkedin") or c.get("linkedin_url") or "",
                             "accuracy_score": c.get("contact_accuracy_score", 0),
                         }
                         for c in (zi_contacts or [])
                     ],
-                    "fields_added": ["directPhone", "mobilePhone", "companyPhone", "contactAccuracyScore", "department", "managementLevel"],
+                    "fields_added": ["directPhone", "mobilePhone", "companyPhone", "contactAccuracyScore", "department", "managementLevel", "linkedinUrl"],
                     "error": zoominfo_data.get("_contact_search_error") if not zi_contacts else None,
                     "debug_hint": (
                         "Check backend logs for ZoomInfo HTTP error details. "

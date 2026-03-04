@@ -943,6 +943,9 @@ class ZoomInfoClient:
             query_params = {"page[size]": page_size} if page_size else None
             # Filter out people who left the company — only return current employees
             search_attrs.setdefault("companyPastOrPresent", "present")
+            # Request specific output fields so ZoomInfo returns linkedinUrl,
+            # managementLevel, department, etc. in the search response.
+            search_attrs.setdefault("outputFields", OUTPUT_FIELDS)
             payload = {"data": {"type": "ContactSearch", "attributes": search_attrs}}
             try:
                 response = await self._make_request(ENDPOINTS["contact_search"], payload, params=query_params)

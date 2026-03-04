@@ -21,6 +21,43 @@
 
 ---
 
+## LinkedIn URL Retrieval & Current Employment Validation (2026-03-04)
+
+Five fixes to ensure LinkedIn URLs are actually retrieved from ZoomInfo and used for current employment validation.
+
+### Fix 1: ZoomInfo Search Missing outputFields (Root Cause)
+
+**Root cause**: `OUTPUT_FIELDS` (which includes `linkedinUrl`) was defined but **never sent** in the contact search API payload. The `_search()` function built the payload without `outputFields`, so ZoomInfo returned its default fields — which exclude LinkedIn URLs.
+
+**Fix**: Added `search_attrs.setdefault("outputFields", OUTPUT_FIELDS)` to the `_search()` function in `zoominfo_client.py`. Every contact search request now explicitly requests `linkedinUrl`, `managementLevel`, `department`, etc.
+
+### Fix 2: Apollo LinkedIn Enrichment Capped at 15 Contacts
+
+**Root cause**: The Apollo LinkedIn backfill (Step 2.85) only processed `contacts_needing_linkedin[:15]`, meaning contacts beyond the first 15 without LinkedIn URLs were never enriched.
+
+**Fix**: Removed the `[:15]` slice. All contacts missing LinkedIn URLs are now sent to Apollo's `people/match` endpoint.
+
+### Fix 3: LinkedIn URLs Added to Debug Mode
+
+**Change**: Debug mode's ZoomInfo Contact Enrich step (step-1d) now shows `has_linkedin_url` and `linkedin_url` for each contact in `per_contact_enrichment`. Contact search and enrich log samples also include `linkedinUrl`. This makes it easy to verify LinkedIn retrieval is working.
+
+### Fix 4: LLM Fact Checker Enhanced for Current Employment Validation
+
+**Root cause**: The LLM fact checker only asked if a contact's title "is consistent with working at" the company — a vague check. It did not explicitly instruct the LLM to verify **current** employment or use LinkedIn URLs as identity cross-references.
+
+**Fix**: Rewrote the fact checker prompt to:
+- Explicitly verify each contact is a **CURRENT** employee (not former/ex)
+- Use LinkedIn profile URLs to cross-reference identity and current employment
+- Flag contacts whose LinkedIn slug doesn't match their name
+- Score higher when LinkedIn URL confirms identity + current employment
+- Score lower when no LinkedIn URL is available to confirm
+
+### Fix 5: Updated Test for outputFields Inclusion
+
+**Change**: The old test `test_search_payload_excludes_output_fields` incorrectly asserted that outputFields should NOT be sent (which was the bug). Replaced with `test_search_payload_includes_output_fields_with_linkedin` that verifies `linkedinUrl` is in every search request's outputFields.
+
+---
+
 ## ZoomInfo API Fixes, LinkedIn Validation & Enrichment Improvements (2026-03-04)
 
 Seven fixes addressing broken ZoomInfo API endpoints, LinkedIn-based contact validation, C-suite phone prioritization, and UI improvements.

@@ -856,9 +856,9 @@ class TestSearchContactsOutputFields:
     """
 
     @pytest.mark.asyncio
-    async def test_search_payload_excludes_output_fields(self):
-        """No search payload should include outputFields — it causes HTTP 400."""
-        from zoominfo_client import ZoomInfoClient
+    async def test_search_payload_includes_output_fields_with_linkedin(self):
+        """Search payloads must include outputFields with linkedinUrl for LinkedIn retrieval."""
+        from zoominfo_client import ZoomInfoClient, OUTPUT_FIELDS
         client = ZoomInfoClient(access_token="test-token")
 
         captured_payloads = []
@@ -874,10 +874,14 @@ class TestSearchContactsOutputFields:
             p for p in captured_payloads
             if p.get("data", {}).get("attributes", {}).get("outputFields") is not None
         ]
-        assert not payloads_with_output, (
-            "search_contacts must NOT include outputFields — it causes HTTP 400 on ZoomInfo GTM. "
-            "Found it in payloads: " + str([list(p.get("data", {}).get("attributes", {}).keys()) for p in payloads_with_output])
+        assert payloads_with_output, (
+            "search_contacts must include outputFields to retrieve linkedinUrl from ZoomInfo. "
+            "No payload included outputFields."
         )
+        # Verify linkedinUrl is in the outputFields
+        for p in payloads_with_output:
+            fields = p["data"]["attributes"]["outputFields"]
+            assert "linkedinUrl" in fields, f"outputFields missing linkedinUrl: {fields}"
 
     @pytest.mark.asyncio
     async def test_search_payload_uses_rpp_not_pagesize(self):
