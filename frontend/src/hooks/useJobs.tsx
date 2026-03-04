@@ -16,6 +16,15 @@ interface JobsContextType {
 const JobsContext = createContext<JobsContextType | undefined>(undefined);
 
 const STORAGE_KEY = 'radtest_jobs';
+const MAX_STORED_JOBS = 50;
+
+/**
+ * Strip bulky result data before persisting to localStorage.
+ * Only job metadata (id, status, timestamps) is stored.
+ */
+function toStorable(jobs: JobWithMetadata[]): JobWithMetadata[] {
+  return jobs.slice(0, MAX_STORED_JOBS).map(({ result, ...meta }) => meta as JobWithMetadata);
+}
 
 export function JobsProvider({ children }: { children: ReactNode }) {
   const [jobs, setJobs] = useState<JobWithMetadata[]>([]);
@@ -35,7 +44,11 @@ export function JobsProvider({ children }: { children: ReactNode }) {
 
   // Save jobs to localStorage when they change
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(jobs));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(toStorable(jobs)));
+    } catch (e) {
+      console.error('Failed to persist jobs to localStorage:', e);
+    }
   }, [jobs]);
 
   const addJob = useCallback((jobId: string, request: CompanyProfileRequest) => {
