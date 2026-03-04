@@ -21,40 +21,40 @@
 
 ---
 
-## LinkedIn URL Retrieval & Current Employment Validation (2026-03-04)
+## Robust LinkedIn Retrieval & Strict Contact Validation (2026-03-04)
 
-Five fixes to ensure LinkedIn URLs are actually retrieved from ZoomInfo and used for current employment validation.
+Multi-source LinkedIn enrichment via ZoomInfo Enrich + Apollo + PDL with strict pre-LLM filtering and decision-maker verification.
 
-### Fix 1: ZoomInfo Search Missing outputFields (Root Cause)
+### Architecture
 
-**Root cause**: `OUTPUT_FIELDS` (which includes `linkedinUrl`) was defined but **never sent** in the contact search API payload. The `_search()` function built the payload without `outputFields`, so ZoomInfo returned its default fields — which exclude LinkedIn URLs.
+1. **Query ZoomInfo, Apollo, PDL** for contacts working at the target company
+2. **ZoomInfo Contact Enrich** with extended fields (tries `linkedinUrl` first, falls back to base fields if subscription doesn't support it). Cross-reference Apollo/PDL contacts against ZoomInfo for phone data. LinkedIn URLs already found via Apollo/PDL skip ZoomInfo re-lookup.
+3. **LLM Contact Validation** with hard pre-filters: (a) No LinkedIn → omit, (b) LinkedIn but no phone AND no email → omit, (c) LLM verifies the contact is a current decision maker at the company via their LinkedIn profile.
 
-**Fix**: Added `search_attrs.setdefault("outputFields", OUTPUT_FIELDS)` to the `_search()` function in `zoominfo_client.py`. Every contact search request now explicitly requests `linkedinUrl`, `managementLevel`, `department`, etc.
+### Fix 1: Reverted Broken outputFields in ZoomInfo Search
 
-### Fix 2: Apollo LinkedIn Enrichment Capped at 15 Contacts
+**Root cause**: Previous commit added `outputFields` to the Contact Search payload. Per ZoomInfo API docs, `outputFields` is ONLY valid on the Contact Enrich endpoint — the Search endpoint rejects it with HTTP 400, breaking all contact discovery.
 
-**Root cause**: The Apollo LinkedIn backfill (Step 2.85) only processed `contacts_needing_linkedin[:15]`, meaning contacts beyond the first 15 without LinkedIn URLs were never enriched.
+**Fix**: Removed `outputFields` from search. Added clear code comment explaining why it must never be added.
 
-**Fix**: Removed the `[:15]` slice. All contacts missing LinkedIn URLs are now sent to Apollo's `people/match` endpoint.
+### Fix 2: ZoomInfo Contact Enrich Now Tries Extended Fields (linkedinUrl)
 
-### Fix 3: LinkedIn URLs Added to Debug Mode
+**Change**: Added `CONTACT_ENRICH_EXTENDED_FIELDS` list that includes `linkedinUrl` on top of the base fields. `enrich_contacts()` now tries extended fields first. If the subscription rejects `linkedinUrl` (HTTP 400 / PFAPI0005), it automatically retries with base fields. Subscriptions that support `linkedinUrl` get LinkedIn URLs directly from ZoomInfo enrich.
 
-**Change**: Debug mode's ZoomInfo Contact Enrich step (step-1d) now shows `has_linkedin_url` and `linkedin_url` for each contact in `per_contact_enrichment`. Contact search and enrich log samples also include `linkedinUrl`. This makes it easy to verify LinkedIn retrieval is working.
+### Fix 3: Strict Pre-LLM Contact Filtering
 
-### Fix 4: LLM Fact Checker Enhanced for Current Employment Validation
+**Change**: Rewrote `fact_check_contacts()` with hard pre-filters applied BEFORE the LLM:
+- **(a) No LinkedIn → omit**: Contacts without a LinkedIn URL are dropped immediately
+- **(b) LinkedIn but no phone/email → omit**: Must have at least one of phone or email
+- **(c) LLM verifies decision maker status**: Remaining contacts are validated by LLM for current employment AND decision-maker title
 
-**Root cause**: The LLM fact checker only asked if a contact's title "is consistent with working at" the company — a vague check. It did not explicitly instruct the LLM to verify **current** employment or use LinkedIn URLs as identity cross-references.
+### Fix 4: LLM Prompt Enhanced for Decision Maker Verification
 
-**Fix**: Rewrote the fact checker prompt to:
-- Explicitly verify each contact is a **CURRENT** employee (not former/ex)
-- Use LinkedIn profile URLs to cross-reference identity and current employment
-- Flag contacts whose LinkedIn slug doesn't match their name
-- Score higher when LinkedIn URL confirms identity + current employment
-- Score lower when no LinkedIn URL is available to confirm
+**Change**: LLM prompt now explicitly checks two things: (1) current employee (not former/ex) and (2) decision maker (executive, VP, director, senior leadership). Junior titles and consultants are flagged. LinkedIn URL cross-referencing is emphasized.
 
-### Fix 5: Updated Test for outputFields Inclusion
+### Fix 5: Debug Mode Shows LinkedIn URLs
 
-**Change**: The old test `test_search_payload_excludes_output_fields` incorrectly asserted that outputFields should NOT be sent (which was the bug). Replaced with `test_search_payload_includes_output_fields_with_linkedin` that verifies `linkedinUrl` is in every search request's outputFields.
+**Change**: Debug mode's ZoomInfo Contact Enrich step (step-1d) shows `has_linkedin_url` and `linkedin_url` for each contact. Contact search and enrich log samples also include `linkedinUrl`.
 
 ---
 

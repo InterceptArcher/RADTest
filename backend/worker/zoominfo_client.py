@@ -117,6 +117,13 @@ CONTACT_ENRICH_OUTPUT_FIELDS = [
     "contactAccuracyScore",
 ]
 
+# Extended enrich fields — include linkedinUrl which may be available on some
+# subscription tiers.  enrich_contacts() tries extended first, falls back to
+# base CONTACT_ENRICH_OUTPUT_FIELDS if the API rejects them (PFAPI0005).
+CONTACT_ENRICH_EXTENDED_FIELDS = CONTACT_ENRICH_OUTPUT_FIELDS + [
+    "linkedinUrl",
+]
+
 # Priority C-Suite titles — CTO, CFO, CMO, CIO are searched first.
 # These are Intercept's primary target personas.
 PRIORITY_CSUITE_TITLES = [
@@ -943,9 +950,9 @@ class ZoomInfoClient:
             query_params = {"page[size]": page_size} if page_size else None
             # Filter out people who left the company — only return current employees
             search_attrs.setdefault("companyPastOrPresent", "present")
-            # Request specific output fields so ZoomInfo returns linkedinUrl,
-            # managementLevel, department, etc. in the search response.
-            search_attrs.setdefault("outputFields", OUTPUT_FIELDS)
+            # NOTE: Do NOT add outputFields here — the ZoomInfo Contact Search
+            # endpoint does NOT support outputFields (only Contact Enrich does).
+            # Adding it causes HTTP 400 "Invalid field requested".
             payload = {"data": {"type": "ContactSearch", "attributes": search_attrs}}
             try:
                 response = await self._make_request(ENDPOINTS["contact_search"], payload, params=query_params)
@@ -1070,45 +1077,64 @@ class ZoomInfoClient:
         request phone number data.  The contact SEARCH endpoint does NOT
         return phone/email — only this enrich endpoint does.
 
+        Tries extended fields (including linkedinUrl) first, then falls back
+        to base fields if the API rejects them (PFAPI0005).
+
         Returns:
             Dict with success, people (enriched normalized list), error
         """
         if not person_ids:
             return {"success": True, "people": [], "error": None}
 
-        # GTM API v1 requires matchPersonInput — each person ID is a separate
-        # entry in the array.  Flat "personId" as a direct attribute returns
-        # HTTP 400 "invalidInputFields: ['personId']".
-        payload = {
-            "data": {
-                "type": "ContactEnrich",
-                "attributes": {
-                    "matchPersonInput": [{"personId": pid} for pid in person_ids],
-                    "outputFields": CONTACT_ENRICH_OUTPUT_FIELDS,
+        match_input = [{"personId": pid} for pid in person_ids]
+
+        # Try extended fields first (includes linkedinUrl), fall back to base
+        field_tiers = [CONTACT_ENRICH_EXTENDED_FIELDS, CONTACT_ENRICH_OUTPUT_FIELDS]
+        last_error: Optional[str] = None
+
+        for output_fields in field_tiers:
+            payload = {
+                "data": {
+                    "type": "ContactEnrich",
+                    "attributes": {
+                        "matchPersonInput": match_input,
+                        "outputFields": output_fields,
+                    }
                 }
             }
-        }
 
-        try:
-            response = await self._make_request(ENDPOINTS["contact_enrich"], payload)
-            data_list = self._extract_data_list(response)
-            people = [self._normalize_contact(c) for c in data_list]
-            return {"success": True, "people": people, "error": None}
+            try:
+                response = await self._make_request(ENDPOINTS["contact_enrich"], payload)
+                data_list = self._extract_data_list(response)
+                people = [self._normalize_contact(c) for c in data_list]
+                if output_fields is CONTACT_ENRICH_EXTENDED_FIELDS:
+                    logger.info("ZoomInfo contact enrich succeeded with extended fields (includes linkedinUrl)")
+                return {"success": True, "people": people, "error": None}
 
-        except httpx.TimeoutException:
-            logger.warning("ZoomInfo contact enrich timed out")
-            return {"success": False, "people": [], "error": "Request timeout"}
-        except httpx.HTTPStatusError as e:
-            detail = self._http_error_detail(e)
-            logger.error(
-                "ZoomInfo contact enrich failed: %s — "
-                "if this is PFAPI0005 check CONTACT_ENRICH_OUTPUT_FIELDS for disallowed fields",
-                detail,
-            )
-            return {"success": False, "people": [], "error": detail}
-        except Exception as e:
-            logger.error(f"ZoomInfo contact enrich failed: {e}")
-            return {"success": False, "people": [], "error": str(e)}
+            except httpx.HTTPStatusError as e:
+                detail = self._http_error_detail(e)
+                last_error = detail
+                # PFAPI0005 = disallowed outputFields — retry with base fields
+                if "PFAPI0005" in detail or "Invalid field" in detail or e.response.status_code == 400:
+                    if output_fields is CONTACT_ENRICH_EXTENDED_FIELDS:
+                        logger.warning(
+                            "ZoomInfo contact enrich extended fields rejected (PFAPI0005), "
+                            "retrying with base fields (no linkedinUrl): %s", detail
+                        )
+                        continue
+                logger.error("ZoomInfo contact enrich failed: %s", detail)
+                return {"success": False, "people": [], "error": detail}
+
+            except httpx.TimeoutException:
+                logger.warning("ZoomInfo contact enrich timed out")
+                return {"success": False, "people": [], "error": "Request timeout"}
+            except Exception as e:
+                logger.error(f"ZoomInfo contact enrich failed: {e}")
+                return {"success": False, "people": [], "error": str(e)}
+
+        # If we exhausted all tiers (shouldn't happen in practice)
+        logger.error("ZoomInfo contact enrich failed on all field tiers: %s", last_error)
+        return {"success": False, "people": [], "error": last_error or "All field tiers failed"}
 
     async def search_and_enrich_contacts(
         self,

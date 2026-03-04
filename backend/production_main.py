@@ -649,14 +649,13 @@ async def _call_openai_json(prompt: str, system_prompt: str = "Output only valid
 
 async def fact_check_contacts(company_name: str, domain: str, contacts: list) -> list:
     """
-    LLM-based contact fact checker with LinkedIn validation.
+    Contact validation with strict filtering rules + LLM employment verification.
 
-    Validates contacts using their LinkedIn URLs and job titles to detect
-    mismatches (e.g. someone listed at Microsoft whose LinkedIn says they are
-    CEO of a small IT company — using Microsoft as a placeholder).
-
-    Only contacts WITH LinkedIn URLs are sent to the LLM for validation.
-    Contacts without LinkedIn URLs retain score=1.0 (trusted from ZoomInfo/Apollo/PDL).
+    Ground rules (applied BEFORE LLM):
+      (a) No LinkedIn → omit
+      (b) LinkedIn present but no phone AND no email → omit
+    Then LLM validates remaining contacts:
+      (c) Check LinkedIn to verify they are a current decision maker at the company
 
     Returns contacts with added fact_check_score and fact_check_notes.
     Filters out contacts with score < 0.15.
@@ -664,49 +663,75 @@ async def fact_check_contacts(company_name: str, domain: str, contacts: list) ->
     if not contacts:
         return []
 
-    # Separate contacts with and without LinkedIn URLs
-    contacts_with_linkedin = []
-    contacts_without_linkedin = []
+    # ── Pre-LLM hard filters ──────────────────────────────────────────────
+    qualified = []
+    filtered_no_linkedin = 0
+    filtered_no_contact_info = 0
+
     for contact in contacts:
         linkedin = contact.get("linkedin_url") or contact.get("linkedin") or ""
-        if linkedin:
-            contacts_with_linkedin.append(contact)
-        else:
-            contacts_without_linkedin.append(contact)
+        has_phone = bool(
+            contact.get("phone") or contact.get("direct_phone")
+            or contact.get("mobile_phone") or contact.get("company_phone")
+        )
+        has_email = bool(contact.get("email"))
 
-    # Contacts without LinkedIn: trust ZoomInfo data source
-    for contact in contacts_without_linkedin:
-        contact["fact_check_score"] = 1.0
-        contact["fact_check_notes"] = "Verified by primary data source (ZoomInfo/Apollo/PDL)"
+        # Rule (a): LinkedIn is mandatory
+        if not linkedin:
+            contact["fact_check_score"] = 0.0
+            contact["fact_check_notes"] = "Filtered: no LinkedIn URL"
+            filtered_no_linkedin += 1
+            logger.info(
+                f"FILTERED (no LinkedIn): {contact.get('name')} — {contact.get('title')}"
+            )
+            continue
 
-    if not contacts_with_linkedin:
-        logger.info(f"Fact checker: no contacts with LinkedIn URLs, trusting {len(contacts)} contacts")
-        return contacts
+        # Rule (b): Must have at least one of phone or email
+        if not has_phone and not has_email:
+            contact["fact_check_score"] = 0.0
+            contact["fact_check_notes"] = "Filtered: has LinkedIn but no phone or email"
+            filtered_no_contact_info += 1
+            logger.info(
+                f"FILTERED (no phone/email): {contact.get('name')} — {contact.get('title')}"
+            )
+            continue
 
-    # Build contact list for LLM validation
+        qualified.append(contact)
+
+    logger.info(
+        f"Pre-LLM filter: {len(qualified)}/{len(contacts)} qualified "
+        f"(no-linkedin={filtered_no_linkedin}, no-phone-email={filtered_no_contact_info})"
+    )
+
+    if not qualified:
+        logger.warning("All contacts filtered out in pre-LLM stage")
+        return []
+
+    # ── LLM validation: verify current employment + decision maker role ───
     contact_list = []
-    for c in contacts_with_linkedin:
+    for c in qualified:
         linkedin = c.get("linkedin_url") or c.get("linkedin") or ""
         contact_list.append({
             "name": c.get("name", ""),
             "title": c.get("title", ""),
             "linkedin_url": linkedin,
+            "email": c.get("email", ""),
         })
 
     prompt = f"""Validate these contacts for {company_name} ({domain}).
 
-CRITICAL: Verify that each contact is a CURRENT employee of {company_name}.
-Use their LinkedIn URL and job title together to determine if they currently work at {company_name}.
+CRITICAL: For each contact, verify TWO things:
+1. They are a CURRENT employee of {company_name} (not former, not at a different company)
+2. They are a decision maker — their title indicates executive, VP, director, or senior leadership
 
-Check for these red flags:
-1. Title suggests they work at a DIFFERENT company (e.g. "CEO of Small IT Firm" listed under Microsoft)
-2. LinkedIn profile URL slug doesn't match the person's name (possible data mismatch)
-3. Title contains "Former", "Ex-", or "Previous" — they may have left {company_name}
-4. Generic titles that could belong to any company without verification
+Use the LinkedIn profile URL to cross-reference identity and current employment.
+A LinkedIn URL slug matching the person's name confirms they are a real person.
 
-LinkedIn URLs are provided — use the LinkedIn profile URL to cross-reference that the person
-is currently employed at {company_name}. A valid LinkedIn URL matching the person's name
-increases confidence they are a real, current employee.
+Red flags to check:
+- Title suggests they work at a DIFFERENT company (e.g. "CEO of Small IT Firm" listed under Microsoft)
+- LinkedIn profile URL slug doesn't match the person's name
+- Title contains "Former", "Ex-", "Previous", "Consultant", "Advisor" — they may not be a current employee
+- Title is too junior or not a decision maker (e.g. "Intern", "Analyst", "Associate")
 
 Contacts to validate:
 {json.dumps(contact_list, indent=2)}
@@ -719,26 +744,25 @@ Output JSON:
 }}
 
 Scoring guide:
-- 1.0: Title clearly matches {company_name} AND LinkedIn URL confirms identity (e.g. "CTO at {company_name}")
-- 0.7-0.9: Title is plausible for {company_name}, LinkedIn URL present and consistent
-- 0.5-0.7: Title is plausible but no LinkedIn URL to confirm current employment
-- 0.3-0.5: Title is ambiguous or mentions a different company
-- 0.0-0.2: Title clearly refers to a different company or person has left"""
+- 0.9-1.0: Current decision maker at {company_name}, LinkedIn confirms identity
+- 0.7-0.9: Title plausible for {company_name}, LinkedIn present and consistent
+- 0.4-0.7: Uncertain — title is ambiguous or not clearly a decision maker
+- 0.0-0.3: Not a current employee, not a decision maker, or works at different company"""
 
     result = await _call_openai_json(
         prompt,
         f"You are a corporate contact verification system for {company_name}. "
-        "Validate that contacts CURRENTLY work at this company based on their titles "
-        "and LinkedIn profile URLs. Use LinkedIn URLs to confirm identity and current employment. "
+        "Validate that contacts CURRENTLY work at this company as decision makers. "
+        "Use LinkedIn URLs to confirm identity and current employment. "
         "Be accurate — flag obvious mismatches but don't over-filter legitimate employees."
     )
 
     if not result or "contacts" not in result:
-        logger.warning("Fact checker returned no results, keeping contacts with score=0.7")
-        for contact in contacts_with_linkedin:
+        logger.warning("Fact checker LLM returned no results, keeping qualified contacts with score=0.7")
+        for contact in qualified:
             contact["fact_check_score"] = 0.7
             contact["fact_check_notes"] = "LinkedIn validation unavailable"
-        return contacts
+        return qualified
 
     # Map scores back to contacts
     score_map = {}
@@ -750,8 +774,8 @@ Scoring guide:
         }
 
     # Apply scores and filter
-    enriched = list(contacts_without_linkedin)  # Already scored 1.0
-    for contact in contacts_with_linkedin:
+    enriched = []
+    for contact in qualified:
         name_key = (contact.get("name") or "").lower().strip()
         if name_key in score_map:
             contact["fact_check_score"] = score_map[name_key]["fact_check_score"]
@@ -770,7 +794,9 @@ Scoring guide:
 
     logger.info(
         f"Fact checker: {len(enriched)}/{len(contacts)} contacts passed "
-        f"({len(contacts_with_linkedin)} validated via LinkedIn)"
+        f"({len(qualified)} had LinkedIn+contact info, "
+        f"{filtered_no_linkedin} dropped for no LinkedIn, "
+        f"{filtered_no_contact_info} dropped for no phone/email)"
     )
     return enriched
 
