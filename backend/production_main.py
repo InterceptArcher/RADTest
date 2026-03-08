@@ -60,6 +60,28 @@ ROLE_PRIORITY = {
     "other": 11,
 }
 
+
+def _contact_data_tier(contact: dict) -> int:
+    """Return data-completeness tier for display priority sorting.
+
+    Tier 0: Has all three — LinkedIn + phone + email (most complete)
+    Tier 1: ZoomInfo source (best data provider, even if missing a field)
+    Tier 2: Missing phone but has LinkedIn + email
+    Tier 3: Everything else (least complete)
+    """
+    has_linkedin = bool(contact.get("linkedin_url"))
+    has_phone = bool(contact.get("phone") or contact.get("direct_phone") or contact.get("mobile_phone"))
+    has_email = bool(contact.get("email"))
+    is_zoominfo = (contact.get("source") or "").lower() == "zoominfo"
+
+    if has_linkedin and has_phone and has_email:
+        return 0
+    if is_zoominfo:
+        return 1
+    if has_linkedin and has_email and not has_phone:
+        return 2
+    return 3
+
 # Create FastAPI app
 app = FastAPI(
     title="RADTest Backend (Production)",
@@ -2048,15 +2070,25 @@ async def process_company_profile(job_id: str, company_data: dict):
                 else:
                     stakeholder_map_data["otherContacts"].append(contact_entry)
 
-            # Fallback: if no primary (CTO/CIO/COO/CFO) contacts were found,
-            # promote the most senior available contacts to primary display.
-            if not stakeholder_map_data["stakeholders"] and stakeholder_map_data["otherContacts"]:
-                fallback_contacts = sorted(
-                    stakeholder_map_data["otherContacts"],
-                    key=lambda x: ROLE_PRIORITY.get(x.get("roleType", "other").lower(), 99)
+            # Sort each group by data completeness (tier), then role priority as tiebreaker.
+            # Tier 0 (all 3 fields) floats to top, tier 3 (least complete) sinks.
+            def _display_sort_key(entry):
+                raw = next((s for s in stakeholders_data if s.get("name") == entry.get("name")), {})
+                return (
+                    _contact_data_tier(raw),
+                    ROLE_PRIORITY.get(entry.get("roleType", "other").lower(), 99),
+                    entry.get("name", "").lower(),
                 )
-                stakeholder_map_data["stakeholders"] = fallback_contacts[:4]
-                stakeholder_map_data["otherContacts"] = fallback_contacts[4:]
+
+            stakeholder_map_data["stakeholders"].sort(key=_display_sort_key)
+            stakeholder_map_data["otherContacts"].sort(key=_display_sort_key)
+
+            # Fallback: if no primary (CTO/CIO/COO/CFO) contacts were found,
+            # promote the most complete + senior available contacts to primary display.
+            if not stakeholder_map_data["stakeholders"] and stakeholder_map_data["otherContacts"]:
+                # Already sorted by completeness+role above
+                stakeholder_map_data["stakeholders"] = stakeholder_map_data["otherContacts"][:4]
+                stakeholder_map_data["otherContacts"] = stakeholder_map_data["otherContacts"][4:]
                 logger.info(
                     f"No primary stakeholders (CTO/CIO/COO/CFO) found — "
                     f"promoted {len(stakeholder_map_data['stakeholders'])} fallback contacts to primary"
