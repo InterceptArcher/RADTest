@@ -1752,17 +1752,10 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Uses Claude claude-sonnet-4-6 with built-in web_search tool. Prioritizes
         # C-suite contacts. Verifies exact name match + current employment.
         if ANTHROPIC_API_KEY and stakeholders_data:
-            # Only search contacts that have phone or email (high-value ZoomInfo contacts)
-            # but still lack a LinkedIn URL after ZoomInfo enrich + Apollo backfill.
+            # Search ALL contacts still missing LinkedIn after ZoomInfo enrich + Apollo backfill.
             _contacts_still_no_li = [
                 s for s in stakeholders_data
-                if not s.get("linkedin_url")
-                and s.get("name")
-                and (
-                    s.get("phone") or s.get("direct_phone")
-                    or s.get("mobile_phone") or s.get("company_phone")
-                    or s.get("email")
-                )
+                if not s.get("linkedin_url") and s.get("name")
             ]
             if _contacts_still_no_li:
                 _attempted = len(_contacts_still_no_li)
@@ -1800,7 +1793,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                         {
                             "model": "claude-sonnet-4-6",
                             "strategy": "web_search tool — exact name + current employment verification",
-                            "filter": "contacts with phone or email but missing LinkedIn",
+                            "filter": "all contacts missing LinkedIn after ZoomInfo enrich + Apollo backfill",
                             "contacts_attempted": _attempted,
                             "priority": "C-Level → VP → Director → other (no cap)",
                             "contacts_searched": [
