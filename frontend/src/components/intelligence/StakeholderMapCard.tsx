@@ -563,7 +563,7 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
       {/* Expanded Content */}
       {expanded && (
         <div className="px-6 pb-6 border-t border-slate-100">
-          {/* Executive Profiles Section */}
+          {/* Executive Profiles Section — grouped by C-suite category */}
           {executiveCount > 0 && (
             <div className="mt-6">
               <div className="flex items-center justify-between mb-4">
@@ -574,18 +574,51 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
                   Executive Profiles
                 </h3>
                 <p className="text-xs text-slate-500">
-                  C-Suite decision makers
+                  C-Suite decision makers &amp; key reports
                 </p>
               </div>
-              <div className="space-y-4">
-                {stakeholders.map((stakeholder, index) => (
-                  <StakeholderDetailCard
-                    key={`exec-${stakeholder.name}-${index}`}
-                    stakeholder={stakeholder}
-                    supportingAsset={findSupportingAsset(stakeholder)}
-                    onGenerateOutreach={onGenerateOutreach}
-                  />
-                ))}
+              <div className="space-y-6">
+                {(() => {
+                  // Group stakeholders by csuiteCategory, preserving order
+                  const groups: { category: string; contacts: Stakeholder[] }[] = [];
+                  const seen = new Set<string>();
+                  stakeholders.forEach((s) => {
+                    const cat = s.csuiteCategory || s.roleType || 'Unknown';
+                    if (!seen.has(cat)) {
+                      seen.add(cat);
+                      groups.push({ category: cat, contacts: [] });
+                    }
+                    groups.find(g => g.category === cat)!.contacts.push(s);
+                  });
+
+                  return groups.map((group) => {
+                    const catConfig = roleTypeConfig[group.category as StakeholderRoleType] || roleTypeConfig.Unknown;
+                    return (
+                      <div key={`group-${group.category}`}>
+                        {/* Category header */}
+                        <div className="flex items-center space-x-2 mb-3">
+                          <div className={`px-2 py-0.5 rounded-md ${catConfig.bgColor}`}>
+                            <span className={`text-xs font-bold ${catConfig.color}`}>{group.category}</span>
+                          </div>
+                          <span className="text-xs text-slate-500">
+                            {catConfig.description} {group.contacts.length > 1 ? `(${group.contacts.length} contacts)` : ''}
+                          </span>
+                        </div>
+                        {/* Contacts in this category */}
+                        <div className="space-y-4">
+                          {group.contacts.map((stakeholder, index) => (
+                            <StakeholderDetailCard
+                              key={`exec-${group.category}-${stakeholder.name}-${index}`}
+                              stakeholder={stakeholder}
+                              supportingAsset={findSupportingAsset(stakeholder)}
+                              onGenerateOutreach={onGenerateOutreach}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </div>
           )}

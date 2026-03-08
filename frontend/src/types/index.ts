@@ -527,6 +527,8 @@ export interface Stakeholder {
   name: string;
   title: string;
   roleType: StakeholderRoleType;
+  /** C-suite category this contact is affiliated with (e.g. CTO for 'VP Engineering') */
+  csuiteCategory?: string;
   bio?: string;
   isNewHire: boolean;
   hireDate?: string;

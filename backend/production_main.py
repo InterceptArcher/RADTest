@@ -82,6 +82,167 @@ def _contact_data_tier(contact: dict) -> int:
         return 2
     return 3
 
+
+# Max contacts per C-suite category in executive profiles
+MAX_CONTACTS_PER_CSUITE = 3
+
+
+def _csuite_affiliation(title: str) -> str | None:
+    """Map a job title to a C-suite category using lax matching.
+
+    Returns the C-suite acronym (CTO, CIO, CFO, CMO, CEO, CISO, COO, CPO)
+    or None if no affiliation can be determined.
+
+    Lax rules: direct reports, "office of" roles, and functional-area
+    senior roles all affiliate with the relevant C-suite executive.
+    """
+    import re
+
+    if not title:
+        return None
+
+    t = title.lower().strip()
+
+    def _word(acronym):
+        return bool(re.search(r'\b' + re.escape(acronym) + r'\b', t))
+
+    # "Office of the C__" patterns — highest priority, explicit affiliation
+    office_patterns = {
+        "CEO": [r"office of the (?:ceo|chief executive)"],
+        "CTO": [r"office of the (?:cto|chief technology)"],
+        "CIO": [r"office of the (?:cio|chief information officer)"],
+        "CFO": [r"office of the (?:cfo|chief financial)"],
+        "CMO": [r"office of the (?:cmo|chief marketing)"],
+        "COO": [r"office of the (?:coo|chief operating)"],
+        "CISO": [r"office of the (?:ciso|chief (?:information )?security)"],
+    }
+    for category, patterns in office_patterns.items():
+        for pattern in patterns:
+            if re.search(pattern, t):
+                return category
+
+    # Direct C-suite title matches
+    if "chief technology officer" in t or _word("cto"):
+        return "CTO"
+    if "chief information officer" in t or _word("cio"):
+        return "CIO"
+    if "chief financial officer" in t or _word("cfo"):
+        return "CFO"
+    if "chief marketing officer" in t or _word("cmo"):
+        return "CMO"
+    if any(k in t for k in ["chief information security officer", "chief security officer"]) or _word("ciso"):
+        return "CISO"
+    if "chief operating officer" in t or _word("coo"):
+        return "COO"
+    if any(k in t for k in ["chief product officer", "chief people officer"]) or _word("cpo"):
+        return "CPO"
+    if "chief executive officer" in t or _word("ceo"):
+        return "CEO"
+    if any(k in t for k in ["founder", "co-founder"]):
+        return "CEO"
+    if "president" in t and "vice" not in t:
+        return "CEO"
+    if "chief of staff" in t:
+        return "CEO"
+
+    # CTO-adjacent: technology / engineering / software / R&D
+    cto_keywords = ["engineering", "technology", "software", "r&d", "research and development",
+                     "platform", "architecture", "devops", "infrastructure engineer"]
+    if any(k in t for k in cto_keywords):
+        if any(k in t for k in ["vp", "vice president", "svp", "evp", "director", "head of", "senior director"]):
+            return "CTO"
+
+    # CIO-adjacent: IT / information / data / analytics / digital
+    cio_keywords = ["information system", "information technology",
+                     "data & analytics", "data and analytics", "data analytics",
+                     "digital transformation", "enterprise system"]
+    if any(k in t for k in cio_keywords):
+        if any(k in t for k in ["vp", "vice president", "svp", "evp", "director", "head of", "senior director"]):
+            return "CIO"
+    if any(k in t for k in ["it director", "head of it", "vp of it", "vp it"]):
+        return "CIO"
+    if _word("it") and any(k in t for k in ["director", "head of", "vp"]):
+        return "CIO"
+    if any(k in t for k in ["vp of data", "vp data", "head of data"]):
+        return "CIO"
+
+    # CFO-adjacent: finance / accounting / treasury
+    cfo_keywords = ["finance", "financial", "accounting", "treasury", "fiscal",
+                     "controller", "comptroller", "treasurer"]
+    if any(k in t for k in ["controller", "comptroller", "treasurer"]):
+        return "CFO"
+    if any(k in t for k in cfo_keywords):
+        if any(k in t for k in ["vp", "vice president", "svp", "evp", "director", "head of", "senior director"]):
+            return "CFO"
+
+    # CMO-adjacent: marketing / brand / communications / growth
+    cmo_keywords = ["marketing", "brand", "communications", "growth",
+                     "demand gen", "demand generation", "digital marketing"]
+    if any(k in t for k in cmo_keywords):
+        if any(k in t for k in ["vp", "vice president", "svp", "evp", "director", "head of", "senior director"]):
+            return "CMO"
+
+    # CISO-adjacent: security / cybersecurity / risk
+    ciso_keywords = ["cybersecurity", "cyber security", "information security",
+                     "security operations", "security architecture"]
+    if any(k in t for k in ciso_keywords):
+        if any(k in t for k in ["vp", "vice president", "svp", "evp", "director", "head of", "senior director"]):
+            return "CISO"
+
+    # COO-adjacent: operations
+    if any(k in t for k in ["operations"]):
+        if any(k in t for k in ["vp", "vice president", "svp", "evp", "director", "head of", "senior director"]):
+            return "COO"
+
+    return None
+
+
+def _group_stakeholders_by_csuite(contacts: list) -> tuple:
+    """Group contacts by C-suite affiliation for executive profile display.
+
+    Returns (primary_contacts, other_contacts) where:
+    - primary_contacts: up to MAX_CONTACTS_PER_CSUITE per C-suite category,
+      sorted by data completeness, with csuiteCategory field added
+    - other_contacts: everyone else (no affiliation or overflow)
+    """
+    from collections import defaultdict
+
+    # Bucket contacts by their C-suite affiliation
+    buckets: dict[str, list] = defaultdict(list)
+    unaffiliated = []
+
+    for c in contacts:
+        affiliation = _csuite_affiliation(c.get("title", ""))
+        if affiliation:
+            buckets[affiliation].append(c)
+        else:
+            unaffiliated.append(c)
+
+    # For each category, pick top MAX_CONTACTS_PER_CSUITE by data completeness
+    primary = []
+    overflow = []
+
+    # Process categories in ROLE_PRIORITY order
+    for category in sorted(buckets.keys(), key=lambda cat: ROLE_PRIORITY.get(cat.lower(), 99)):
+        candidates = sorted(
+            buckets[category],
+            key=lambda x: (
+                _contact_data_tier(x),
+                ROLE_PRIORITY.get(x.get("role_type", "other").lower(), 99),
+                x.get("name", "").lower(),
+            ),
+        )
+        for i, c in enumerate(candidates):
+            entry = {**c, "csuiteCategory": category}
+            if i < MAX_CONTACTS_PER_CSUITE:
+                primary.append(entry)
+            else:
+                overflow.append(entry)
+
+    other = overflow + unaffiliated
+    return primary, other
+
+
 # Create FastAPI app
 app = FastAPI(
     title="RADTest Backend (Production)",
@@ -2021,9 +2182,9 @@ async def process_company_profile(job_id: str, company_data: dict):
         zoominfo_data = zoominfo_data or {}
 
         # Build stakeholder map from fetched stakeholders + AI-generated content.
-        # PRIMARY: CTO, CIO, COO, CFO — shown as full profile cards.
-        # SECONDARY: All other roles — shown as compact rows (otherContacts).
-        # FALLBACK: If no primary roles found, promote best available to primary.
+        # Contacts are grouped by C-suite affiliation (lax title matching).
+        # Up to 3 contacts per C-suite category, sorted by data completeness.
+        # Overflow and unaffiliated contacts go to otherContacts.
         stakeholder_map_data = {
             "stakeholders": [],
             "otherContacts": [],
@@ -2034,6 +2195,8 @@ async def process_company_profile(job_id: str, company_data: dict):
         if stakeholders_data:
             ai_stakeholder_profiles = validated_data.get("stakeholder_profiles", {})
 
+            # Build contact entries with all display fields
+            all_contact_entries = []
             for s in stakeholders_data:
                 role_type = s.get("role_type", "Unknown")
                 ai_profile = ai_stakeholder_profiles.get(role_type, {})
@@ -2063,34 +2226,45 @@ async def process_company_profile(job_id: str, company_data: dict):
                     "recommendedPlay": ai_profile.get("recommended_play", ""),
                     "conversationStarters": ai_profile.get("conversation_starters", ""),
                     "recommendedNextSteps": ai_profile.get("recommended_next_steps", []),
+                    # Pass raw fields through for _group_stakeholders_by_csuite sorting
+                    "email": s.get("email"),
+                    "phone": s.get("phone"),
+                    "linkedin_url": s.get("linkedin_url"),
+                    "source": s.get("source"),
+                    "direct_phone": s.get("direct_phone"),
+                    "mobile_phone": s.get("mobile_phone"),
                 }
+                all_contact_entries.append(contact_entry)
 
-                if role_type in PRIMARY_STAKEHOLDER_ROLES:
-                    stakeholder_map_data["stakeholders"].append(contact_entry)
-                else:
-                    stakeholder_map_data["otherContacts"].append(contact_entry)
+            # Group by C-suite affiliation: up to 3 per category, rest overflow
+            primary_contacts, other_contacts = _group_stakeholders_by_csuite(all_contact_entries)
 
-            # Sort each group by data completeness (tier), then role priority as tiebreaker.
-            # Tier 0 (all 3 fields) floats to top, tier 3 (least complete) sinks.
-            def _display_sort_key(entry):
-                raw = next((s for s in stakeholders_data if s.get("name") == entry.get("name")), {})
-                return (
-                    _contact_data_tier(raw),
-                    ROLE_PRIORITY.get(entry.get("roleType", "other").lower(), 99),
-                    entry.get("name", "").lower(),
-                )
+            stakeholder_map_data["stakeholders"] = primary_contacts
+            stakeholder_map_data["otherContacts"] = other_contacts
 
-            stakeholder_map_data["stakeholders"].sort(key=_display_sort_key)
-            stakeholder_map_data["otherContacts"].sort(key=_display_sort_key)
+            _csuite_cats = {}
+            for c in primary_contacts:
+                cat = c.get("csuiteCategory", "?")
+                _csuite_cats[cat] = _csuite_cats.get(cat, 0) + 1
+            logger.info(
+                f"Stakeholder grouping: {len(primary_contacts)} executive profiles "
+                f"({', '.join(f'{k}={v}' for k, v in _csuite_cats.items())}), "
+                f"{len(other_contacts)} other contacts"
+            )
 
-            # Fallback: if no primary (CTO/CIO/COO/CFO) contacts were found,
-            # promote the most complete + senior available contacts to primary display.
+            # Fallback: if no C-suite affiliated contacts, promote best available
             if not stakeholder_map_data["stakeholders"] and stakeholder_map_data["otherContacts"]:
-                # Already sorted by completeness+role above
-                stakeholder_map_data["stakeholders"] = stakeholder_map_data["otherContacts"][:4]
-                stakeholder_map_data["otherContacts"] = stakeholder_map_data["otherContacts"][4:]
+                fallback = sorted(
+                    stakeholder_map_data["otherContacts"],
+                    key=lambda x: (
+                        _contact_data_tier(x),
+                        ROLE_PRIORITY.get(x.get("roleType", "other").lower(), 99),
+                    ),
+                )
+                stakeholder_map_data["stakeholders"] = fallback[:4]
+                stakeholder_map_data["otherContacts"] = fallback[4:]
                 logger.info(
-                    f"No primary stakeholders (CTO/CIO/COO/CFO) found — "
+                    f"No C-suite affiliated contacts — "
                     f"promoted {len(stakeholder_map_data['stakeholders'])} fallback contacts to primary"
                 )
 
