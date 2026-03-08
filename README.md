@@ -21,6 +21,40 @@
 
 ---
 
+## Claude Web Search LinkedIn Finder — Step 2.86 (2026-03-08)
+
+Last-resort LinkedIn discovery using a Claude subagent with the `web_search_20250305` built-in tool. Fires after ZoomInfo enrich and Apollo `people/match` backfill for contacts that still lack a LinkedIn URL.
+
+### Contact Pipeline Flow (Complete)
+
+1. **ZoomInfo Contact Search** → returns executives with phone/email (no LinkedIn by design)
+2. **ZoomInfo Contact Enrich** → tries `linkedinUrl` (extended fields), falls back gracefully
+3. **Apollo `people/match` backfill** (Step 2.85) → matches by name+company for LinkedIn
+4. **Claude Web Search LinkedIn Finder** (Step 2.86) → Claude haiku-4-5 + web_search, last resort
+5. **LLM Contact Fact Checker** (Step 2.83) → pre-LLM hard filters then GPT-4o-mini validation
+6. **Final output** → contacts with LinkedIn + (phone OR email) that pass LLM verification
+
+### Step 2.86 Architecture
+
+- **Model**: `claude-haiku-4-5-20251001` with `web_search_20250305` tool (max 2 uses per contact)
+- **Priority**: C-Level first, then VP, Director, all others — top 10 contacts max
+- **Cross-verification rules**:
+  - Name on LinkedIn must **exactly** match the ZoomInfo contact name
+  - Person must **currently** work at the target company (not former employee)
+  - Title matching is approximate (some title variation allowed)
+- **Fallback safety**: exceptions per contact are caught individually; a failure on one contact does not block the rest
+- **Debug visibility**: Step `step-1g` in the debug panel shows attempted contacts, found URLs, duration, and verification rules applied
+
+### Rationale
+
+ZoomInfo contacts are the highest-value data source (real phone numbers, direct emails) but frequently lack LinkedIn URLs because ZoomInfo's Search endpoint explicitly withholds engagement data. Apollo `people/match` resolves many of these, but small/niche companies or executives with uncommon names often fail the automated lookup. The Claude web search step bridges this gap by using internet search to find and cross-verify the LinkedIn profile — allowing ZoomInfo contacts with phones to survive the strict pre-LLM filter that requires LinkedIn.
+
+### New Environment Variable Required
+
+`ANTHROPIC_API_KEY` must be set in Render environment variables. Without it, Step 2.86 is gracefully skipped (contacts continue through the pipeline).
+
+---
+
 ## Robust LinkedIn Retrieval & Strict Contact Validation (2026-03-04)
 
 Multi-source LinkedIn enrichment via ZoomInfo Enrich + Apollo + PDL with strict pre-LLM filtering and decision-maker verification.

@@ -129,6 +129,7 @@ ZOOMINFO_ACCESS_TOKEN = os.getenv("ZOOMINFO_ACCESS_TOKEN")
 ZOOMINFO_REFRESH_TOKEN = os.getenv("ZOOMINFO_REFRESH_TOKEN")
 ZOOMINFO_USERNAME = os.getenv("ZOOMINFO_USERNAME")
 ZOOMINFO_PASSWORD = os.getenv("ZOOMINFO_PASSWORD")
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY")
 
 # Debug: Log env var status at startup
 logger.info("=" * 50)
@@ -799,6 +800,125 @@ Scoring guide:
         f"{filtered_no_contact_info} dropped for no phone/email)"
     )
     return enriched
+
+
+async def _find_linkedin_via_claude_search(
+    company_name: str,
+    domain: str,
+    contacts: list,
+    max_contacts: int = 10,
+) -> dict:
+    """
+    Step 2.86 — Last-resort LinkedIn discovery using Claude with web_search.
+
+    Fires after ZoomInfo enrich and Apollo people/match backfill for contacts
+    that still lack a LinkedIn URL. Uses claude-haiku-4-5 with the built-in
+    web_search tool to search the internet and cross-verify.
+
+    Cross-verification rules:
+    - Name on LinkedIn must EXACTLY match the ZoomInfo contact name
+    - Person must CURRENTLY work at company_name (not former employee)
+    - Title matching is approximate (some variation allowed)
+
+    Priority order: C-Level → VP → Director → other (max_contacts cap applied
+    after sorting so C-suite is always attempted first).
+
+    Returns dict: {contact_name: linkedin_url} for confirmed matches only.
+    This value must be provided via environment variables: ANTHROPIC_API_KEY.
+    """
+    if not ANTHROPIC_API_KEY:
+        logger.info("ANTHROPIC_API_KEY not set — skipping Claude LinkedIn search (step 2.86)")
+        return {}
+    if not contacts:
+        return {}
+
+    try:
+        import anthropic as _anthropic
+    except ImportError:
+        logger.warning("anthropic package not installed — skipping Claude LinkedIn search")
+        return {}
+
+    import re as _re
+    _linkedin_pattern = _re.compile(
+        r'https?://(?:www\.)?linkedin\.com/in/[\w\-]+/?'
+    )
+
+    def _csuite_rank(contact: dict) -> int:
+        """Sort key: C-Level=0, VP=1, Director=2, everything else=3."""
+        mgmt = (contact.get("management_level") or "").lower()
+        title = (contact.get("title") or "").lower()
+        if "c-level" in mgmt or any(
+            k in title for k in [
+                "chief", " cto", " cfo", " cio", " coo", " ceo",
+                " cmo", " ciso", " cpo", " cro",
+            ]
+        ) or title.startswith(("cto", "cfo", "cio", "coo", "ceo", "cmo", "cpo")):
+            return 0
+        if "vp" in mgmt or "vice president" in title or title.startswith("vp "):
+            return 1
+        if "director" in mgmt or "director" in title:
+            return 2
+        return 3
+
+    to_search = sorted(contacts, key=_csuite_rank)[:max_contacts]
+    client = _anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+    found_urls: dict = {}
+
+    for contact in to_search:
+        name = (contact.get("name") or "").strip()
+        title = (contact.get("title") or "").strip()
+        if not name:
+            continue
+        try:
+            response = await client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=512,
+                tools=[{
+                    "type": "web_search_20250305",
+                    "name": "web_search",
+                    "max_uses": 2,
+                }],
+                messages=[{
+                    "role": "user",
+                    "content": (
+                        f"Find the LinkedIn profile URL for {name}, "
+                        f"who is {title} at {company_name} (domain: {domain}).\n\n"
+                        f"Requirements:\n"
+                        f"1. The full name on the LinkedIn profile must EXACTLY match: {name}\n"
+                        f"2. They must CURRENTLY work at {company_name} — not a former employee\n"
+                        f"3. The company domain is {domain}\n\n"
+                        f"Return ONLY the linkedin.com/in/... URL on the first line if confirmed.\n"
+                        f"If you cannot confirm both name AND current employment at {company_name}, "
+                        f"respond with exactly: NOT_FOUND"
+                    ),
+                }],
+            )
+
+            linkedin_url = None
+            for block in response.content:
+                if hasattr(block, "text"):
+                    text = block.text.strip()
+                    if "NOT_FOUND" in text.upper():
+                        break
+                    match = _linkedin_pattern.search(text)
+                    if match:
+                        linkedin_url = match.group(0).rstrip("/")
+                        break
+
+            if linkedin_url:
+                found_urls[name] = linkedin_url
+                logger.info(
+                    f"Claude LinkedIn search [2.86]: found {linkedin_url} for {name}"
+                )
+            else:
+                logger.info(
+                    f"Claude LinkedIn search [2.86]: NOT_FOUND for {name} at {company_name}"
+                )
+
+        except Exception as e:
+            logger.warning(f"Claude LinkedIn search failed for {name}: {e}")
+
+    return found_urls
 
 
 def _infer_role_type(title: str) -> str:
@@ -1613,6 +1733,77 @@ async def process_company_profile(job_id: str, company_data: dict):
                     )
                 except Exception as e:
                     logger.warning(f"LinkedIn enrichment via Apollo failed: {e}")
+
+        # Step 2.86: Claude Web Search LinkedIn Finder
+        # Last-resort LinkedIn discovery for contacts still missing LinkedIn after
+        # ZoomInfo enrich (step 1d) and Apollo people/match backfill (step 2.85).
+        # Uses Claude claude-haiku-4-5 with built-in web_search tool. Prioritizes
+        # C-suite contacts. Verifies exact name match + current employment.
+        if ANTHROPIC_API_KEY and stakeholders_data:
+            _contacts_still_no_li = [
+                s for s in stakeholders_data
+                if not s.get("linkedin_url") and s.get("name")
+            ]
+            if _contacts_still_no_li:
+                _attempted = min(len(_contacts_still_no_li), 10)
+                jobs_store[job_id]["current_step"] = (
+                    f"Claude web search: finding LinkedIn for {_attempted} contacts..."
+                )
+                _t_claude = time.monotonic()
+                try:
+                    _found_urls = await _find_linkedin_via_claude_search(
+                        company_name=company_data["company_name"],
+                        domain=company_data.get("domain", ""),
+                        contacts=_contacts_still_no_li,
+                        max_contacts=10,
+                    )
+                    _claude_duration = int((time.monotonic() - _t_claude) * 1000)
+                    _applied = 0
+                    for _c in stakeholders_data:
+                        _cname = (_c.get("name") or "").strip()
+                        if _cname in _found_urls and not _c.get("linkedin_url"):
+                            _c["linkedin_url"] = _found_urls[_cname]
+                            _applied += 1
+                    logger.info(
+                        f"Claude LinkedIn search [2.86]: {_applied}/{_attempted} "
+                        f"contacts got LinkedIn URLs ({_claude_duration}ms)"
+                    )
+                    jobs_store[job_id]["step_2_86_result"] = {
+                        "contacts_attempted": _attempted,
+                        "contacts_found": _applied,
+                        "duration_ms": _claude_duration,
+                        "results": [
+                            {"name": n, "linkedin_url": u}
+                            for n, u in _found_urls.items()
+                        ],
+                    }
+                    _log_api_call(
+                        jobs_store[job_id],
+                        "Claude Web Search LinkedIn Finder (Step 2.86)",
+                        "https://api.anthropic.com/v1/messages", "POST",
+                        {
+                            "model": "claude-haiku-4-5-20251001",
+                            "strategy": "web_search tool — exact name + current employment verification",
+                            "contacts_attempted": _attempted,
+                            "priority": "C-Level → VP → Director → other",
+                            "contacts_searched": [
+                                {"name": c.get("name"), "title": c.get("title")}
+                                for c in _contacts_still_no_li[:10]
+                            ],
+                        },
+                        {
+                            "linkedin_urls_found": _applied,
+                            "results": [
+                                {"name": n, "linkedin_url": u}
+                                for n, u in _found_urls.items()
+                            ],
+                        },
+                        200 if _found_urls else 204,
+                        _claude_duration,
+                    )
+                except Exception as e:
+                    logger.warning(f"Claude LinkedIn search step 2.86 failed: {e}")
+                    jobs_store[job_id]["step_2_86_result"] = {"error": str(e)}
 
         # Step 2.83: LLM Contact Fact Checker - Validate contacts against public knowledge
         jobs_store[job_id]["progress"] = 46
@@ -3828,6 +4019,52 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                         "Instead we use the GTM contact search with outputFields to retrieve phone data directly."
                     ) if not job_data.get("step_2_84_result", {}).get("error") else None,
                 }
+            },
+            {
+                "id": "step-1g",
+                "name": "Claude Web Search LinkedIn Finder",
+                "description": (
+                    "Last-resort LinkedIn discovery using Claude (claude-haiku-4-5) with built-in "
+                    "web_search tool. Fires only for contacts still missing LinkedIn after ZoomInfo "
+                    "enrich and Apollo people/match backfill. Prioritizes C-suite contacts (C-Level → "
+                    "VP → Director). Verifies exact name match and current employment at the target company."
+                ),
+                "status": (
+                    "skipped" if not ANTHROPIC_API_KEY
+                    else (
+                        "failed" if job_data.get("step_2_86_result", {}).get("error")
+                        else (
+                            "skipped" if not job_data.get("step_2_86_result")
+                            else "completed"
+                        )
+                    )
+                ),
+                "start_time": (base_time + timedelta(seconds=4)).isoformat() + "Z",
+                "end_time": (
+                    base_time + timedelta(
+                        seconds=4,
+                        milliseconds=job_data.get("step_2_86_result", {}).get("duration_ms", 0)
+                    )
+                ).isoformat() + "Z",
+                "duration": job_data.get("step_2_86_result", {}).get("duration_ms", 0),
+                "metadata": {
+                    "model": "claude-haiku-4-5-20251001",
+                    "tool": "web_search_20250305",
+                    "contacts_attempted": job_data.get("step_2_86_result", {}).get("contacts_attempted", 0),
+                    "contacts_found": job_data.get("step_2_86_result", {}).get("contacts_found", 0),
+                    "priority_order": "C-Level first, then VP, Director, other — max 10 contacts",
+                    "verification_rules": [
+                        "Name must EXACTLY match ZoomInfo contact name",
+                        "Must CURRENTLY work at target company (not former employee)",
+                        "Title matching is approximate (some variation allowed)",
+                    ],
+                    "results": job_data.get("step_2_86_result", {}).get("results", []),
+                    "error": job_data.get("step_2_86_result", {}).get("error"),
+                    "skipped_reason": (
+                        "ANTHROPIC_API_KEY not configured in environment"
+                        if not ANTHROPIC_API_KEY else None
+                    ),
+                },
             },
             {
                 "id": "step-2",

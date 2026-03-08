@@ -367,6 +367,213 @@ class TestMergeZoomInfoContactsLinkedIn:
         assert result[0].get("linkedin_url") == "https://linkedin.com/in/newperson"
 
 
+class TestClaudeLinkedInSearch:
+    """
+    Step 2.86 — Claude web search LinkedIn finder.
+    Fires after Apollo people/match backfill for contacts still missing LinkedIn.
+    Tests written FIRST (TDD). All tests must FAIL before implementation exists.
+    """
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_when_no_api_key(self):
+        """Returns {} immediately when ANTHROPIC_API_KEY is not configured."""
+        from production_main import _find_linkedin_via_claude_search
+        with patch("production_main.ANTHROPIC_API_KEY", None):
+            result = await _find_linkedin_via_claude_search(
+                "Test Corp", "test.com",
+                [{"name": "Jane Smith", "title": "CTO", "email": "j@test.com"}]
+            )
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_returns_empty_for_no_contacts(self):
+        """Returns {} when no contacts are provided."""
+        from production_main import _find_linkedin_via_claude_search
+        with patch("production_main.ANTHROPIC_API_KEY", "test-key"):
+            result = await _find_linkedin_via_claude_search("Corp", "corp.com", [])
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_prioritizes_csuite_before_director(self):
+        """C-Level contacts must be searched before VP, then Director."""
+        from production_main import _find_linkedin_via_claude_search
+
+        call_order = []
+
+        async def mock_create(**kwargs):
+            content = kwargs["messages"][0]["content"]
+            call_order.append(content)
+            mock_resp = MagicMock()
+            mock_block = MagicMock()
+            mock_block.text = "NOT_FOUND"
+            mock_resp.content = [mock_block]
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(side_effect=mock_create)
+
+        contacts = [
+            {"name": "Dir Person", "title": "Director of IT"},
+            {"name": "CTO Person", "title": "Chief Technology Officer"},
+            {"name": "VP Person", "title": "VP Engineering"},
+        ]
+
+        with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
+             patch("anthropic.AsyncAnthropic", return_value=mock_client):
+            await _find_linkedin_via_claude_search("Corp", "corp.com", contacts)
+
+        assert len(call_order) == 3
+        assert "CTO Person" in call_order[0], "C-suite must be searched first"
+        assert "VP Person" in call_order[1], "VP must be searched second"
+        assert "Dir Person" in call_order[2], "Director must be searched last"
+
+    @pytest.mark.asyncio
+    async def test_caps_at_max_contacts(self):
+        """Must not make more API calls than max_contacts."""
+        from production_main import _find_linkedin_via_claude_search
+
+        call_count = 0
+
+        async def mock_create(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = MagicMock()
+            mock_block = MagicMock()
+            mock_block.text = "NOT_FOUND"
+            mock_resp.content = [mock_block]
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(side_effect=mock_create)
+
+        contacts = [{"name": f"Person {i}", "title": "Director"} for i in range(15)]
+
+        with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
+             patch("anthropic.AsyncAnthropic", return_value=mock_client):
+            await _find_linkedin_via_claude_search(
+                "Corp", "corp.com", contacts, max_contacts=5
+            )
+
+        assert call_count == 5, f"Expected 5 API calls (max_contacts=5), got {call_count}"
+
+    @pytest.mark.asyncio
+    async def test_returns_url_when_claude_confirms(self):
+        """Returns LinkedIn URL when Claude finds and confirms the match."""
+        from production_main import _find_linkedin_via_claude_search
+
+        async def mock_create(**kwargs):
+            mock_resp = MagicMock()
+            mock_block = MagicMock()
+            mock_block.text = (
+                "Found the profile.\n"
+                "https://www.linkedin.com/in/janesmith\n"
+                "Jane Smith is currently CTO at Test Corp."
+            )
+            mock_resp.content = [mock_block]
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(side_effect=mock_create)
+
+        contacts = [{"name": "Jane Smith", "title": "CTO"}]
+
+        with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
+             patch("anthropic.AsyncAnthropic", return_value=mock_client):
+            result = await _find_linkedin_via_claude_search("Test Corp", "test.com", contacts)
+
+        assert "Jane Smith" in result
+        assert result["Jane Smith"] == "https://www.linkedin.com/in/janesmith"
+
+    @pytest.mark.asyncio
+    async def test_returns_nothing_when_not_found(self):
+        """Returns empty dict when Claude responds NOT_FOUND."""
+        from production_main import _find_linkedin_via_claude_search
+
+        async def mock_create(**kwargs):
+            mock_resp = MagicMock()
+            mock_block = MagicMock()
+            mock_block.text = "NOT_FOUND"
+            mock_resp.content = [mock_block]
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(side_effect=mock_create)
+
+        contacts = [{"name": "Jane Smith", "title": "CTO"}]
+
+        with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
+             patch("anthropic.AsyncAnthropic", return_value=mock_client):
+            result = await _find_linkedin_via_claude_search("Test Corp", "test.com", contacts)
+
+        assert "Jane Smith" not in result
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_skips_contacts_with_no_name(self):
+        """Contacts without a name are skipped without making an API call."""
+        from production_main import _find_linkedin_via_claude_search
+
+        call_count = 0
+
+        async def mock_create(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_resp = MagicMock()
+            mock_block = MagicMock()
+            mock_block.text = "NOT_FOUND"
+            mock_resp.content = [mock_block]
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(side_effect=mock_create)
+
+        contacts = [
+            {"name": "", "title": "CTO"},
+            {"title": "CFO"},  # no name key at all
+        ]
+
+        with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
+             patch("anthropic.AsyncAnthropic", return_value=mock_client):
+            result = await _find_linkedin_via_claude_search("Corp", "corp.com", contacts)
+
+        assert call_count == 0, "No API calls should be made for contacts without names"
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_handles_api_exception_gracefully(self):
+        """Exceptions from Claude API do not propagate — function returns partial results."""
+        from production_main import _find_linkedin_via_claude_search
+
+        call_count = 0
+
+        async def mock_create(**kwargs):
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                raise Exception("Simulated API error")
+            mock_resp = MagicMock()
+            mock_block = MagicMock()
+            mock_block.text = "https://www.linkedin.com/in/johndoe"
+            mock_resp.content = [mock_block]
+            return mock_resp
+
+        mock_client = MagicMock()
+        mock_client.messages.create = AsyncMock(side_effect=mock_create)
+
+        contacts = [
+            {"name": "Error Person", "title": "CTO"},
+            {"name": "John Doe", "title": "CFO"},
+        ]
+
+        with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
+             patch("anthropic.AsyncAnthropic", return_value=mock_client):
+            result = await _find_linkedin_via_claude_search("Corp", "corp.com", contacts)
+
+        # Error on first contact should not prevent second from succeeding
+        assert "John Doe" in result
+        assert "Error Person" not in result
+
+
 class TestContactEnrichEndpointLinkedIn:
     """GET /contacts/enrich/{domain} must return linkedinUrl for each contact."""
 
