@@ -806,7 +806,7 @@ async def _find_linkedin_via_claude_search(
     company_name: str,
     domain: str,
     contacts: list,
-    max_contacts: int = 10,
+    max_contacts: int = 15,
 ) -> dict:
     """
     Step 2.86 — Last-resort LinkedIn discovery using Claude with web_search.
@@ -815,10 +815,10 @@ async def _find_linkedin_via_claude_search(
     that still lack a LinkedIn URL. Uses claude-sonnet-4-6 with the built-in
     web_search tool to search the internet and cross-verify.
 
-    Cross-verification rules:
+    Cross-verification rules (intentionally lax — only two hard requirements):
     - Name on LinkedIn must EXACTLY match the ZoomInfo contact name
     - Person must CURRENTLY work at company_name (not former employee)
-    - Title matching is approximate (some variation allowed)
+    - Title/position is NOT checked — title differences are expected
 
     Priority order: C-Level → VP → Director → other (max_contacts cap applied
     after sorting so C-suite is always attempted first).
@@ -881,12 +881,12 @@ async def _find_linkedin_via_claude_search(
                 messages=[{
                     "role": "user",
                     "content": (
-                        f"Find the LinkedIn profile URL for {name}, "
-                        f"who is {title} at {company_name} (domain: {domain}).\n\n"
-                        f"Requirements:\n"
+                        f"Find the LinkedIn profile URL for {name} "
+                        f"who currently works at {company_name} (domain: {domain}).\n\n"
+                        f"Only TWO things matter:\n"
                         f"1. The full name on the LinkedIn profile must EXACTLY match: {name}\n"
-                        f"2. They must CURRENTLY work at {company_name} — not a former employee\n"
-                        f"3. The company domain is {domain}\n\n"
+                        f"2. They must CURRENTLY work at {company_name} — not a former employee\n\n"
+                        f"Do NOT check job title — title differences are expected and acceptable.\n\n"
                         f"Return ONLY the linkedin.com/in/... URL on the first line if confirmed.\n"
                         f"If you cannot confirm both name AND current employment at {company_name}, "
                         f"respond with exactly: NOT_FOUND"
@@ -1745,7 +1745,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                 if not s.get("linkedin_url") and s.get("name")
             ]
             if _contacts_still_no_li:
-                _attempted = min(len(_contacts_still_no_li), 10)
+                _attempted = min(len(_contacts_still_no_li), 15)
                 jobs_store[job_id]["current_step"] = (
                     f"Claude web search: finding LinkedIn for {_attempted} contacts..."
                 )
@@ -1755,7 +1755,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                         company_name=company_data["company_name"],
                         domain=company_data.get("domain", ""),
                         contacts=_contacts_still_no_li,
-                        max_contacts=10,
+                        max_contacts=15,
                     )
                     _claude_duration = int((time.monotonic() - _t_claude) * 1000)
                     _applied = 0
@@ -4052,11 +4052,11 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                     "tool": "web_search_20250305",
                     "contacts_attempted": job_data.get("step_2_86_result", {}).get("contacts_attempted", 0),
                     "contacts_found": job_data.get("step_2_86_result", {}).get("contacts_found", 0),
-                    "priority_order": "C-Level first, then VP, Director, other — max 10 contacts",
+                    "priority_order": "C-Level first, then VP, Director, other — max 15 contacts",
                     "verification_rules": [
                         "Name must EXACTLY match ZoomInfo contact name",
                         "Must CURRENTLY work at target company (not former employee)",
-                        "Title matching is approximate (some variation allowed)",
+                        "Title/position is NOT checked (differences expected)",
                     ],
                     "results": job_data.get("step_2_86_result", {}).get("results", []),
                     "error": job_data.get("step_2_86_result", {}).get("error"),
