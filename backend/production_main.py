@@ -806,8 +806,7 @@ async def _find_linkedin_via_claude_search(
     company_name: str,
     domain: str,
     contacts: list,
-    max_contacts: int = 15,
-) -> dict:
+) -> tuple:
     """
     Step 2.86 — Last-resort LinkedIn discovery using Claude with web_search.
 
@@ -820,23 +819,27 @@ async def _find_linkedin_via_claude_search(
     - Person must CURRENTLY work at company_name (not former employee)
     - Title/position is NOT checked — title differences are expected
 
-    Priority order: C-Level → VP → Director → other (max_contacts cap applied
-    after sorting so C-suite is always attempted first).
+    Priority order: C-Level → VP → Director → other. No cap — every qualifying
+    contact (has phone or email but no LinkedIn) is searched.
 
-    Returns dict: {contact_name: linkedin_url} for confirmed matches only.
+    Returns tuple: (found_urls: dict, all_results: list)
+    - found_urls: {contact_name: linkedin_url} for confirmed matches
+    - all_results: [{"name": ..., "title": ..., "linkedin_url": url or None}]
+      for every contact attempted (debug visibility)
+
     This value must be provided via environment variables: ANTHROPIC_API_KEY.
     """
     if not ANTHROPIC_API_KEY:
         logger.info("ANTHROPIC_API_KEY not set — skipping Claude LinkedIn search (step 2.86)")
-        return {}
+        return {}, []
     if not contacts:
-        return {}
+        return {}, []
 
     try:
         import anthropic as _anthropic
     except ImportError:
         logger.warning("anthropic package not installed — skipping Claude LinkedIn search")
-        return {}
+        return {}, []
 
     import re as _re
     _linkedin_pattern = _re.compile(
@@ -860,9 +863,10 @@ async def _find_linkedin_via_claude_search(
             return 2
         return 3
 
-    to_search = sorted(contacts, key=_csuite_rank)[:max_contacts]
+    to_search = sorted(contacts, key=_csuite_rank)
     client = _anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
     found_urls: dict = {}
+    all_results: list = []
 
     for contact in to_search:
         name = (contact.get("name") or "").strip()
@@ -914,11 +918,19 @@ async def _find_linkedin_via_claude_search(
                 logger.info(
                     f"Claude LinkedIn search [2.86]: NOT_FOUND for {name} at {company_name}"
                 )
+            all_results.append({
+                "name": name, "title": title,
+                "linkedin_url": linkedin_url,
+            })
 
         except Exception as e:
             logger.warning(f"Claude LinkedIn search failed for {name}: {e}")
+            all_results.append({
+                "name": name, "title": title,
+                "linkedin_url": None, "error": str(e),
+            })
 
-    return found_urls
+    return found_urls, all_results
 
 
 def _infer_role_type(title: str) -> str:
@@ -1740,22 +1752,29 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Uses Claude claude-sonnet-4-6 with built-in web_search tool. Prioritizes
         # C-suite contacts. Verifies exact name match + current employment.
         if ANTHROPIC_API_KEY and stakeholders_data:
+            # Only search contacts that have phone or email (high-value ZoomInfo contacts)
+            # but still lack a LinkedIn URL after ZoomInfo enrich + Apollo backfill.
             _contacts_still_no_li = [
                 s for s in stakeholders_data
-                if not s.get("linkedin_url") and s.get("name")
+                if not s.get("linkedin_url")
+                and s.get("name")
+                and (
+                    s.get("phone") or s.get("direct_phone")
+                    or s.get("mobile_phone") or s.get("company_phone")
+                    or s.get("email")
+                )
             ]
             if _contacts_still_no_li:
-                _attempted = min(len(_contacts_still_no_li), 15)
+                _attempted = len(_contacts_still_no_li)
                 jobs_store[job_id]["current_step"] = (
                     f"Claude web search: finding LinkedIn for {_attempted} contacts..."
                 )
                 _t_claude = time.monotonic()
                 try:
-                    _found_urls = await _find_linkedin_via_claude_search(
+                    _found_urls, _all_results = await _find_linkedin_via_claude_search(
                         company_name=company_data["company_name"],
                         domain=company_data.get("domain", ""),
                         contacts=_contacts_still_no_li,
-                        max_contacts=15,
                     )
                     _claude_duration = int((time.monotonic() - _t_claude) * 1000)
                     _applied = 0
@@ -1772,10 +1791,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                         "contacts_attempted": _attempted,
                         "contacts_found": _applied,
                         "duration_ms": _claude_duration,
-                        "results": [
-                            {"name": n, "linkedin_url": u}
-                            for n, u in _found_urls.items()
-                        ],
+                        "results": _all_results,
                     }
                     _log_api_call(
                         jobs_store[job_id],
@@ -1784,19 +1800,17 @@ async def process_company_profile(job_id: str, company_data: dict):
                         {
                             "model": "claude-sonnet-4-6",
                             "strategy": "web_search tool — exact name + current employment verification",
+                            "filter": "contacts with phone or email but missing LinkedIn",
                             "contacts_attempted": _attempted,
-                            "priority": "C-Level → VP → Director → other",
+                            "priority": "C-Level → VP → Director → other (no cap)",
                             "contacts_searched": [
                                 {"name": c.get("name"), "title": c.get("title")}
-                                for c in _contacts_still_no_li[:10]
+                                for c in _contacts_still_no_li
                             ],
                         },
                         {
                             "linkedin_urls_found": _applied,
-                            "results": [
-                                {"name": n, "linkedin_url": u}
-                                for n, u in _found_urls.items()
-                            ],
+                            "results": _all_results,
                         },
                         200 if _found_urls else 204,
                         _claude_duration,

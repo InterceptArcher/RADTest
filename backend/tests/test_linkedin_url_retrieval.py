@@ -376,22 +376,24 @@ class TestClaudeLinkedInSearch:
 
     @pytest.mark.asyncio
     async def test_returns_empty_when_no_api_key(self):
-        """Returns {} immediately when ANTHROPIC_API_KEY is not configured."""
+        """Returns ({}, []) immediately when ANTHROPIC_API_KEY is not configured."""
         from production_main import _find_linkedin_via_claude_search
         with patch("production_main.ANTHROPIC_API_KEY", None):
-            result = await _find_linkedin_via_claude_search(
+            found, all_results = await _find_linkedin_via_claude_search(
                 "Test Corp", "test.com",
                 [{"name": "Jane Smith", "title": "CTO", "email": "j@test.com"}]
             )
-        assert result == {}
+        assert found == {}
+        assert all_results == []
 
     @pytest.mark.asyncio
     async def test_returns_empty_for_no_contacts(self):
-        """Returns {} when no contacts are provided."""
+        """Returns ({}, []) when no contacts are provided."""
         from production_main import _find_linkedin_via_claude_search
         with patch("production_main.ANTHROPIC_API_KEY", "test-key"):
-            result = await _find_linkedin_via_claude_search("Corp", "corp.com", [])
-        assert result == {}
+            found, all_results = await _find_linkedin_via_claude_search("Corp", "corp.com", [])
+        assert found == {}
+        assert all_results == []
 
     @pytest.mark.asyncio
     async def test_prioritizes_csuite_before_director(self):
@@ -428,8 +430,8 @@ class TestClaudeLinkedInSearch:
         assert "Dir Person" in call_order[2], "Director must be searched last"
 
     @pytest.mark.asyncio
-    async def test_caps_at_max_contacts(self):
-        """Must not make more API calls than max_contacts."""
+    async def test_searches_all_contacts_no_cap(self):
+        """All contacts are searched — no max_contacts cap."""
         from production_main import _find_linkedin_via_claude_search
 
         call_count = 0
@@ -446,15 +448,13 @@ class TestClaudeLinkedInSearch:
         mock_client = MagicMock()
         mock_client.messages.create = AsyncMock(side_effect=mock_create)
 
-        contacts = [{"name": f"Person {i}", "title": "Director"} for i in range(15)]
+        contacts = [{"name": f"Person {i}", "title": "Director"} for i in range(20)]
 
         with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
              patch("anthropic.AsyncAnthropic", return_value=mock_client):
-            await _find_linkedin_via_claude_search(
-                "Corp", "corp.com", contacts, max_contacts=5
-            )
+            await _find_linkedin_via_claude_search("Corp", "corp.com", contacts)
 
-        assert call_count == 5, f"Expected 5 API calls (max_contacts=5), got {call_count}"
+        assert call_count == 20, f"Expected all 20 contacts searched, got {call_count}"
 
     @pytest.mark.asyncio
     async def test_returns_url_when_claude_confirms(self):
@@ -479,14 +479,16 @@ class TestClaudeLinkedInSearch:
 
         with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
              patch("anthropic.AsyncAnthropic", return_value=mock_client):
-            result = await _find_linkedin_via_claude_search("Test Corp", "test.com", contacts)
+            found, all_results = await _find_linkedin_via_claude_search("Test Corp", "test.com", contacts)
 
-        assert "Jane Smith" in result
-        assert result["Jane Smith"] == "https://www.linkedin.com/in/janesmith"
+        assert "Jane Smith" in found
+        assert found["Jane Smith"] == "https://www.linkedin.com/in/janesmith"
+        assert len(all_results) == 1
+        assert all_results[0]["linkedin_url"] == "https://www.linkedin.com/in/janesmith"
 
     @pytest.mark.asyncio
     async def test_returns_nothing_when_not_found(self):
-        """Returns empty dict when Claude responds NOT_FOUND."""
+        """Returns empty dict when Claude responds NOT_FOUND, but all_results still has the entry."""
         from production_main import _find_linkedin_via_claude_search
 
         async def mock_create(**kwargs):
@@ -503,10 +505,12 @@ class TestClaudeLinkedInSearch:
 
         with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
              patch("anthropic.AsyncAnthropic", return_value=mock_client):
-            result = await _find_linkedin_via_claude_search("Test Corp", "test.com", contacts)
+            found, all_results = await _find_linkedin_via_claude_search("Test Corp", "test.com", contacts)
 
-        assert "Jane Smith" not in result
-        assert result == {}
+        assert found == {}
+        assert len(all_results) == 1
+        assert all_results[0]["name"] == "Jane Smith"
+        assert all_results[0]["linkedin_url"] is None
 
     @pytest.mark.asyncio
     async def test_skips_contacts_with_no_name(self):
@@ -534,10 +538,11 @@ class TestClaudeLinkedInSearch:
 
         with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
              patch("anthropic.AsyncAnthropic", return_value=mock_client):
-            result = await _find_linkedin_via_claude_search("Corp", "corp.com", contacts)
+            found, all_results = await _find_linkedin_via_claude_search("Corp", "corp.com", contacts)
 
         assert call_count == 0, "No API calls should be made for contacts without names"
-        assert result == {}
+        assert found == {}
+        assert all_results == []
 
     @pytest.mark.asyncio
     async def test_handles_api_exception_gracefully(self):
@@ -567,11 +572,18 @@ class TestClaudeLinkedInSearch:
 
         with patch("production_main.ANTHROPIC_API_KEY", "test-key"), \
              patch("anthropic.AsyncAnthropic", return_value=mock_client):
-            result = await _find_linkedin_via_claude_search("Corp", "corp.com", contacts)
+            found, all_results = await _find_linkedin_via_claude_search("Corp", "corp.com", contacts)
 
         # Error on first contact should not prevent second from succeeding
-        assert "John Doe" in result
-        assert "Error Person" not in result
+        assert "John Doe" in found
+        assert "Error Person" not in found
+        # all_results should have both — error contact with null, success with URL
+        assert len(all_results) == 2
+        error_entry = next(r for r in all_results if r["name"] == "Error Person")
+        assert error_entry["linkedin_url"] is None
+        assert "error" in error_entry
+        success_entry = next(r for r in all_results if r["name"] == "John Doe")
+        assert success_entry["linkedin_url"] == "https://www.linkedin.com/in/johndoe"
 
 
 class TestContactEnrichEndpointLinkedIn:
