@@ -812,7 +812,7 @@ async def _find_linkedin_via_claude_search(
     Step 2.86 — Last-resort LinkedIn discovery using Claude with web_search.
 
     Fires after ZoomInfo enrich and Apollo people/match backfill for contacts
-    that still lack a LinkedIn URL. Uses claude-haiku-4-5 with the built-in
+    that still lack a LinkedIn URL. Uses claude-sonnet-4-6 with the built-in
     web_search tool to search the internet and cross-verify.
 
     Cross-verification rules:
@@ -871,7 +871,7 @@ async def _find_linkedin_via_claude_search(
             continue
         try:
             response = await client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model="claude-sonnet-4-6",
                 max_tokens=512,
                 tools=[{
                     "type": "web_search_20250305",
@@ -1737,7 +1737,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         # Step 2.86: Claude Web Search LinkedIn Finder
         # Last-resort LinkedIn discovery for contacts still missing LinkedIn after
         # ZoomInfo enrich (step 1d) and Apollo people/match backfill (step 2.85).
-        # Uses Claude claude-haiku-4-5 with built-in web_search tool. Prioritizes
+        # Uses Claude claude-sonnet-4-6 with built-in web_search tool. Prioritizes
         # C-suite contacts. Verifies exact name match + current employment.
         if ANTHROPIC_API_KEY and stakeholders_data:
             _contacts_still_no_li = [
@@ -1782,7 +1782,7 @@ async def process_company_profile(job_id: str, company_data: dict):
                         "Claude Web Search LinkedIn Finder (Step 2.86)",
                         "https://api.anthropic.com/v1/messages", "POST",
                         {
-                            "model": "claude-haiku-4-5-20251001",
+                            "model": "claude-sonnet-4-6",
                             "strategy": "web_search tool — exact name + current employment verification",
                             "contacts_attempted": _attempted,
                             "priority": "C-Level → VP → Director → other",
@@ -4024,7 +4024,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 "id": "step-1g",
                 "name": "Claude Web Search LinkedIn Finder",
                 "description": (
-                    "Last-resort LinkedIn discovery using Claude (claude-haiku-4-5) with built-in "
+                    "Last-resort LinkedIn discovery using Claude (claude-sonnet-4-6) with built-in "
                     "web_search tool. Fires only for contacts still missing LinkedIn after ZoomInfo "
                     "enrich and Apollo people/match backfill. Prioritizes C-suite contacts (C-Level → "
                     "VP → Director). Verifies exact name match and current employment at the target company."
@@ -4048,7 +4048,7 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 ).isoformat() + "Z",
                 "duration": job_data.get("step_2_86_result", {}).get("duration_ms", 0),
                 "metadata": {
-                    "model": "claude-haiku-4-5-20251001",
+                    "model": "claude-sonnet-4-6",
                     "tool": "web_search_20250305",
                     "contacts_attempted": job_data.get("step_2_86_result", {}).get("contacts_attempted", 0),
                     "contacts_found": job_data.get("step_2_86_result", {}).get("contacts_found", 0),
