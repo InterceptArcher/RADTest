@@ -4,9 +4,8 @@ uvicorn[standard]==0.27.0
 pydantic==2.5.3
 pydantic-settings==2.1.0
 
-# HTTP client - anthropic>=0.40.0 requires httpx>=0.25.0 (socket_options added in 0.25)
-# gql 3.5.0 and supabase 2.3.4 are both compatible with httpx 0.27.x
-httpx==0.27.2
+# HTTP client - constrained by supabase 2.3.4 (<0.26) and anthropic (>=0.25 for socket_options)
+httpx==0.25.2
 
 # GraphQL client (for Railway API)
 gql==3.5.0
