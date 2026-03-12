@@ -410,3 +410,81 @@ def test_template_prefers_true_csuite_title_over_vp():
 
     assert "Actual CTO" in template_data
     assert "VP Eng" not in template_data
+
+
+def test_template_fallback_dict_stakeholder_profiles():
+    """When stakeholder_map is empty, _format_for_template should fall back to
+    stakeholder_profiles as a dict (keyed by role type) from the LLM council."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+
+    data = {
+        "company_name": "Acme Corp",
+        "validated_data": {
+            "company_name": "Acme Corp",
+            "industry": "Technology",
+            "employee_count": 500,
+            "stakeholder_map": {},  # empty — no contacts from APIs
+            "stakeholder_profiles": {
+                "CTO": {
+                    "name": "Jane CTO",
+                    "title": "Chief Technology Officer",
+                    "bio": "Leads technology strategy",
+                    "strategic_priorities": ["Cloud migration", "AI adoption"],
+                },
+                "CFO": {
+                    "name": "Bob CFO",
+                    "title": "Chief Financial Officer",
+                    "bio": "Oversees financial operations",
+                },
+            },
+        },
+        "confidence_score": 0.85,
+    }
+    creator = GammaSlideshowCreator(gamma_api_key="test")
+    template_data = creator._format_for_template(data)
+
+    assert "Jane CTO" in template_data, "Dict stakeholder_profiles CTO should appear"
+    assert "Bob CFO" in template_data, "Dict stakeholder_profiles CFO should appear"
+
+
+def test_template_exact_role_match_beats_generic_csuite():
+    """A contact whose title exactly matches the C-suite category should be
+    preferred over one with a generic C-suite title but different role."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+
+    stakeholders = [
+        # CEO who was somehow bucketed into CTO category — wrong match
+        {
+            "name": "Wrong CEO",
+            "title": "Chief Executive Officer",
+            "csuiteCategory": "CTO",
+            "email": "ceo@acme.com",
+            "direct_phone": "+1-555-1111",
+            "linkedin_url": "https://linkedin.com/in/ceo",
+            "contact": {
+                "email": "ceo@acme.com",
+                "directPhone": "+1-555-1111",
+                "linkedinUrl": "https://linkedin.com/in/ceo",
+            },
+        },
+        # Actual CTO — exact role match for CTO category
+        {
+            "name": "Right CTO",
+            "title": "Chief Technology Officer",
+            "csuiteCategory": "CTO",
+            "email": "cto@acme.com",
+            "direct_phone": "+1-555-2222",
+            "linkedin_url": "https://linkedin.com/in/cto",
+            "contact": {
+                "email": "cto@acme.com",
+                "directPhone": "+1-555-2222",
+                "linkedinUrl": "https://linkedin.com/in/cto",
+            },
+        },
+    ]
+    data = _make_company_data(stakeholders, [])
+    creator = GammaSlideshowCreator(gamma_api_key="test")
+    template_data = creator._format_for_template(data)
+
+    assert "Right CTO" in template_data, "Exact CTO title should win CTO slot"
+    assert "Wrong CEO" not in template_data, "CEO title should not take CTO slot"

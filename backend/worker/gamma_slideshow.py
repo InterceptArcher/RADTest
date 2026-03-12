@@ -491,18 +491,40 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
         _CSUITE_TITLES = {'chief', 'ceo', 'cto', 'cfo', 'cio', 'ciso', 'coo', 'cpo', 'cmo',
                           'president', 'founder', 'co-founder'}
 
-        def _contact_quality(s):
-            """Score a contact for sales outreach quality (higher = better)."""
+        # Mapping from csuiteCategory to title keywords that indicate an exact role match
+        _EXACT_ROLE_KEYWORDS = {
+            'CEO': ['ceo', 'chief executive'],
+            'CTO': ['cto', 'chief technology'],
+            'CIO': ['cio', 'chief information officer'],
+            'CISO': ['ciso', 'chief information security', 'chief security officer'],
+            'CFO': ['cfo', 'chief financial'],
+            'COO': ['coo', 'chief operating'],
+            'CMO': ['cmo', 'chief marketing'],
+            'CPO': ['cpo', 'chief product', 'chief people'],
+        }
+
+        def _contact_quality(s, category=''):
+            """Score a contact for sales outreach quality (higher = better).
+
+            Scoring:
+              +5  exact C-suite title match for the category (e.g. CTO title in CTO slot)
+              +3  any C-suite-level title (chief/president/founder)
+              +2  has email (critical for outreach)
+              +2  has any phone number
+              +2  has linkedin profile
+            Contacts with all three contact channels (email+phone+linkedin) are strongly
+            preferred, matching the rule: ideally linkedin, phone, AND email present.
+            """
             score = 0
             _c = s.get('contact') or {}
             if not isinstance(_c, dict):
                 _c = {}
 
-            # Has email?
+            # Has email? (+2 — essential for outreach)
             if s.get('email') or _c.get('email'):
-                score += 1
+                score += 2
 
-            # Has any phone?
+            # Has any phone? (+2 — high-value for direct contact)
             has_phone = any([
                 s.get('direct_phone'), s.get('mobile_phone'), s.get('company_phone'),
                 s.get('phone'), s.get('directPhone'), s.get('companyPhone'),
@@ -510,20 +532,28 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                 _c.get('companyPhone'), _c.get('phone'),
             ])
             if has_phone:
-                score += 1
+                score += 2
 
-            # Has linkedin?
+            # Has linkedin? (+2 — essential for professional outreach)
             if s.get('linkedin_url') or s.get('linkedinUrl') or _c.get('linkedinUrl'):
-                score += 1
+                score += 2
 
-            # True C-suite title bonus (sales teams want to reach the actual CxO)
+            # Exact role match: title contains the specific C-suite abbreviation
+            # for the category this contact is being evaluated for (e.g. "CTO" in CTO slot)
             title_lower = (s.get('title') or '').lower()
+            if category and category in _EXACT_ROLE_KEYWORDS:
+                if any(kw in title_lower for kw in _EXACT_ROLE_KEYWORDS[category]):
+                    score += 5
+
+            # General C-suite title bonus (any chief/president/founder)
             if any(kw in title_lower for kw in _CSUITE_TITLES):
                 score += 3
 
             return score
 
         # 1. Executive stakeholders — pick 1 best per csuiteCategory
+        # Rule: 1 slide per C-suite role, pick the contact whose title most closely
+        # matches the role AND has the most complete contact info (linkedin+phone+email)
         best_per_role = {}  # csuiteCategory -> best contact
         if stakeholder_map and stakeholder_map.get('stakeholders'):
             for s in stakeholder_map['stakeholders']:
@@ -533,7 +563,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                 if not cat:
                     continue
                 existing = best_per_role.get(cat)
-                if not existing or _contact_quality(s) > _contact_quality(existing):
+                if not existing or _contact_quality(s, cat) > _contact_quality(existing, cat):
                     best_per_role[cat] = s
 
         executive_stakeholders = list(best_per_role.values())
@@ -553,6 +583,16 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             stakeholder_profiles = validated_data.get('stakeholder_profiles', [])
             if isinstance(stakeholder_profiles, list):
                 executive_stakeholders = [s for s in stakeholder_profiles if isinstance(s, dict)]
+            elif isinstance(stakeholder_profiles, dict):
+                # LLM council returns {role_type: profile_dict} — convert to list
+                for role_type, profile in stakeholder_profiles.items():
+                    if isinstance(profile, dict):
+                        entry = dict(profile)
+                        if not entry.get('title'):
+                            entry['title'] = role_type
+                        if not entry.get('csuiteCategory'):
+                            entry['csuiteCategory'] = role_type
+                        executive_stakeholders.append(entry)
 
         all_stakeholders = executive_stakeholders + relevant_other_contacts
 

@@ -2354,49 +2354,13 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["current_step"] = "Storing validated data..."
         await store_validated_data(company_data["company_name"], validated_data)
 
-        # Step 6: Generate slideshow
-        jobs_store[job_id]["progress"] = 90
-        jobs_store[job_id]["current_step"] = "Generating slideshow..."
-        logger.info(f"🎨 Starting slideshow generation for {company_data['company_name']}")
-
-        # CRITICAL: Wrap in try-except so job continues even if slideshow fails
-        try:
-            # Inject salesperson_name so it reaches the gamma slideshow
-            validated_data["salesperson_name"] = company_data.get("salesperson_name", "")
-            slideshow_result = await generate_slideshow(company_data["company_name"], validated_data)
-
-            # Log slideshow result for debugging
-            if slideshow_result.get("success"):
-                logger.info(f"✅ Slideshow generated successfully: {slideshow_result.get('slideshow_url')}")
-            else:
-                logger.error(f"❌ Slideshow generation failed: {slideshow_result.get('error', 'Unknown error')}")
-                logger.error(f"   This will result in NO slideshow URL in the response")
-
-        except Exception as e:
-            # If slideshow generation crashes, log error but continue job
-            logger.error(f"❌ EXCEPTION during slideshow generation: {type(e).__name__}: {e}")
-            import traceback
-            logger.error(f"   Traceback: {traceback.format_exc()}")
-            slideshow_result = {
-                "success": False,
-                "slideshow_url": None,
-                "slideshow_id": None,
-                "error": f"Slideshow generation crashed: {str(e)}"
-            }
-            logger.error(f"   Job will continue without slideshow")
-
-        # Store complete slideshow data (even if it failed)
-        jobs_store[job_id]["slideshow_data"] = slideshow_result
-
-        jobs_store[job_id]["progress"] = 95
-        jobs_store[job_id]["current_step"] = "Assembling final results..."
-
         # Defensive: ensure raw data sources are dicts (not None)
         apollo_data = apollo_data or {}
         pdl_data = pdl_data or {}
         zoominfo_data = zoominfo_data or {}
 
-        # Build stakeholder map from fetched stakeholders + AI-generated content.
+        # Build stakeholder map from fetched stakeholders + AI-generated content
+        # BEFORE slideshow generation so Gamma has access to all contact data.
         # Contacts are grouped by C-suite affiliation (lax title matching).
         # Up to 3 contacts per C-suite category, sorted by data completeness.
         # Overflow and unaffiliated contacts go to otherContacts.
@@ -2484,6 +2448,51 @@ async def process_company_profile(job_id: str, company_data: dict):
                     f"No C-suite affiliated contacts — "
                     f"promoted {len(stakeholder_map_data['stakeholders'])} fallback contacts to primary"
                 )
+
+        # Inject stakeholder_map into validated_data so Gamma slideshow can access it
+        validated_data["stakeholder_map"] = stakeholder_map_data
+        logger.info(
+            f"Injected stakeholder_map into validated_data: "
+            f"{len(stakeholder_map_data.get('stakeholders', []))} executives, "
+            f"{len(stakeholder_map_data.get('otherContacts', []))} other contacts"
+        )
+
+        # Step 6: Generate slideshow
+        jobs_store[job_id]["progress"] = 90
+        jobs_store[job_id]["current_step"] = "Generating slideshow..."
+        logger.info(f"🎨 Starting slideshow generation for {company_data['company_name']}")
+
+        # CRITICAL: Wrap in try-except so job continues even if slideshow fails
+        try:
+            # Inject salesperson_name so it reaches the gamma slideshow
+            validated_data["salesperson_name"] = company_data.get("salesperson_name", "")
+            slideshow_result = await generate_slideshow(company_data["company_name"], validated_data)
+
+            # Log slideshow result for debugging
+            if slideshow_result.get("success"):
+                logger.info(f"✅ Slideshow generated successfully: {slideshow_result.get('slideshow_url')}")
+            else:
+                logger.error(f"❌ Slideshow generation failed: {slideshow_result.get('error', 'Unknown error')}")
+                logger.error(f"   This will result in NO slideshow URL in the response")
+
+        except Exception as e:
+            # If slideshow generation crashes, log error but continue job
+            logger.error(f"❌ EXCEPTION during slideshow generation: {type(e).__name__}: {e}")
+            import traceback
+            logger.error(f"   Traceback: {traceback.format_exc()}")
+            slideshow_result = {
+                "success": False,
+                "slideshow_url": None,
+                "slideshow_id": None,
+                "error": f"Slideshow generation crashed: {str(e)}"
+            }
+            logger.error(f"   Job will continue without slideshow")
+
+        # Store complete slideshow data (even if it failed)
+        jobs_store[job_id]["slideshow_data"] = slideshow_result
+
+        jobs_store[job_id]["progress"] = 95
+        jobs_store[job_id]["current_step"] = "Assembling final results..."
 
         # Backfill validated_data with raw API sources for any fields the LLM Council missed.
         # This ensures _build_executive_snapshot, build_buying_signals, and other downstream
@@ -3528,6 +3537,15 @@ async def generate_slideshow_endpoint(job_id: str):
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse validated_data JSON: {e}")
                 validated_data = {}
+
+        # Inject stakeholder_map into validated_data if it exists at top level of result
+        # but not inside validated_data (historical data shape from before the fix)
+        if not validated_data.get("stakeholder_map") and result.get("stakeholder_map"):
+            validated_data["stakeholder_map"] = result["stakeholder_map"]
+            logger.info(
+                f"Injected stakeholder_map from result into validated_data for regeneration: "
+                f"{len(result['stakeholder_map'].get('stakeholders', []))} executives"
+            )
 
         company_data = {
             "company_name": result.get("company_name"),
