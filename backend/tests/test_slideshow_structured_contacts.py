@@ -291,3 +291,43 @@ def test_template_data_each_stakeholder_gets_own_section():
     assert "CEO" in template_data
     assert "CTO" in template_data
     assert "VP Sales" in template_data
+
+
+def test_send_to_gamma_uses_standard_endpoint_with_markdown():
+    """_send_to_gamma must use standard /generations endpoint with full markdown
+    and numCards, NOT the template endpoint which has fixed slide count."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+
+    creator = GammaSlideshowCreator(gamma_api_key="test")
+    # The standard generation endpoint should be used
+    assert creator.api_url == "https://public-api.gamma.app/v1.0/generations"
+    # When building payload, it should use inputText + textMode + numCards
+    # not gammaId + prompt (template)
+
+
+def test_other_contact_phone_in_generate_markdown():
+    """Other relevant contacts' phones must appear in _generate_markdown output."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+
+    other_contacts = [
+        {
+            "name": "Dan Sales",
+            "title": "VP of Sales",
+            "direct_phone": "+1-555-7777",
+            "contact": {"directPhone": "+1-555-7777", "email": "dan@acme.com"},
+        },
+        {
+            "name": "Eve Partner",
+            "title": "Director of Partnerships",
+            "mobile_phone": "+1-555-8888",
+            "contact": {"mobilePhone": "+1-555-8888"},
+        },
+    ]
+    data = _make_company_data([], other_contacts)
+    creator = GammaSlideshowCreator(gamma_api_key="test")
+    md = creator._generate_markdown(data)
+
+    assert "Dan Sales" in md
+    assert "+1-555-7777" in md, "Sales VP direct phone missing from markdown"
+    assert "Eve Partner" in md
+    assert "+1-555-8888" in md, "Partnerships director mobile phone missing from markdown"

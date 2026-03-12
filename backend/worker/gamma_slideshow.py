@@ -160,7 +160,15 @@ class GammaSlideshowCreator:
             # Last. Feedback
             num_cards = 4 + stakeholder_count + 1 + persona_count + 1
 
-            # Send to Gamma API
+            logger.info(
+                f"Slideshow slide breakdown: {exec_count} executives + "
+                f"{relevant_other_count} relevant other contacts = "
+                f"{stakeholder_count} stakeholder slides, "
+                f"{persona_count} persona slides, "
+                f"{num_cards} total cards requested"
+            )
+
+            # Send to Gamma API (standard endpoint with full markdown + numCards)
             result = await self._send_to_gamma(markdown_content, num_cards, company_data, user_email)
 
             logger.info(f"Slideshow created successfully: {result.get('url')}")
@@ -1844,34 +1852,23 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             "Content-Type": "application/json"
         }
 
-        # Choose endpoint and payload based on whether template is used
-        if self.template_id:
-            # Use template endpoint: /v1.0/generations/from-template
-            # Send structured data instead of markdown to preserve template design
-            api_endpoint = self.template_url
+        # ALWAYS use the standard generation endpoint with full markdown.
+        # The template endpoint (/from-template) has a FIXED number of slides
+        # per role — it cannot duplicate slides for multiple contacts.
+        # The standard endpoint respects numCards and creates one slide per
+        # markdown section, ensuring every stakeholder gets their own slide.
+        api_endpoint = self.api_url
+        payload = {
+            "inputText": markdown_content,
+            "textMode": "preserve",
+            "format": "presentation"
+        }
 
-            # Create concise, structured data that preserves template formatting
-            structured_data = self._format_for_template(company_data, user_email)
+        if num_cards and 5 <= num_cards <= 100:
+            payload["numCards"] = num_cards
+            logger.info(f"Requesting {num_cards} cards")
 
-            payload = {
-                "gammaId": self.template_id,
-                "prompt": structured_data
-            }
-            logger.info(f"Using template endpoint with gammaId: {self.template_id}")
-            logger.info(f"Sending structured data (length: {len(structured_data)} chars)")
-        else:
-            # Use standard generation endpoint: /v1.0/generations
-            api_endpoint = self.api_url
-            payload = {
-                "inputText": markdown_content,
-                "textMode": "preserve",
-                "format": "presentation"
-            }
-
-            # Add numCards for standard generation (not supported by template endpoint)
-            if num_cards and 5 <= num_cards <= 100:
-                payload["numCards"] = num_cards
-                logger.info(f"Requesting {num_cards} cards")
+        logger.info(f"Using standard generation endpoint (full markdown with per-stakeholder slides)")
 
         logger.info(f"Payload keys: {list(payload.keys())}")
 
