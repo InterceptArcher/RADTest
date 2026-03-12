@@ -462,50 +462,124 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                     data += f"{i}. {sol}\n"
                 data += "\n"
 
-        # Stakeholders - comprehensive from both formats
+        # Stakeholders — same logic as _generate_markdown:
+        # 1. All executives from stakeholder_map.stakeholders
+        # 2. Relevant other contacts (sales/partnerships/strategy/comms) from otherContacts
         stakeholder_map = validated_data.get('stakeholder_map', {})
-        stakeholder_profiles = validated_data.get('stakeholder_profiles', [])
 
-        # Extract stakeholders from stakeholder_map if available
+        _RELEVANT_ROLES_TPL = {
+            'sales', 'partnership', 'partnerships', 'strategy',
+            'strategic', 'communication', 'communications',
+            'business development', 'channel', 'alliances',
+            'account', 'revenue',
+        }
+
+        # 1. Executive stakeholders
+        executive_stakeholders = []
         if stakeholder_map and stakeholder_map.get('stakeholders'):
-            stakeholders = stakeholder_map['stakeholders']
-        elif stakeholder_profiles:
-            stakeholders = stakeholder_profiles
-        else:
-            stakeholders = []
+            executive_stakeholders = [
+                s for s in stakeholder_map['stakeholders']
+                if isinstance(s, dict)
+            ]
 
-        if stakeholders:
-            data += "=== KEY STAKEHOLDERS ===\n\n"
-            for idx, stakeholder in enumerate(stakeholders, 1):
-                # Basic info
+        # 2. Relevant other contacts filtered by role
+        relevant_other_contacts = []
+        if stakeholder_map and stakeholder_map.get('otherContacts'):
+            for contact in stakeholder_map['otherContacts']:
+                if not isinstance(contact, dict):
+                    continue
+                combined = f"{(contact.get('title') or '')} {(contact.get('department') or '')} {(contact.get('roleType') or '')}".lower()
+                if any(role in combined for role in _RELEVANT_ROLES_TPL):
+                    relevant_other_contacts.append(contact)
+
+        # Fallback to legacy stakeholder_profiles
+        if not executive_stakeholders and not relevant_other_contacts:
+            stakeholder_profiles = validated_data.get('stakeholder_profiles', [])
+            if isinstance(stakeholder_profiles, list):
+                executive_stakeholders = [s for s in stakeholder_profiles if isinstance(s, dict)]
+
+        all_stakeholders = executive_stakeholders + relevant_other_contacts
+
+        def _tpl_phone(val):
+            """Coerce phone value to clean string or empty."""
+            if not val:
+                return ''
+            s = str(val).strip()
+            if s in ('None', 'N/A', 'null', '') or '****' in s:
+                return ''
+            return s
+
+        if all_stakeholders:
+            data += "=== KEY STAKEHOLDERS (ONE SLIDE PER CONTACT) ===\n\n"
+            for idx, stakeholder in enumerate(all_stakeholders, 1):
                 name = stakeholder.get('name', stakeholder.get('fullName', 'Not available'))
                 title = stakeholder.get('title', stakeholder.get('role', 'Not available'))
                 email = stakeholder.get('email', stakeholder.get('contact', {}).get('email', 'Not available'))
-                phone = stakeholder.get('phone', stakeholder.get('mobile', stakeholder.get('contact', {}).get('phone', 'Not available')))
                 linkedin = stakeholder.get('linkedin', stakeholder.get('linkedinUrl', stakeholder.get('linkedin_url', stakeholder.get('contact', {}).get('linkedinUrl', 'Not available'))))
 
-                data += f"[{idx}] {name}\n"
+                # Determine category label
+                persona = stakeholder.get('csuiteCategory', '')
+                if not persona:
+                    title_upper = (title or '').upper()
+                    for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO', 'CEO', 'CMO']:
+                        if p in title_upper:
+                            persona = p
+                            break
+                category = f"{persona} Stakeholder" if persona else "Key Contact"
+
+                data += f"--- STAKEHOLDER SLIDE {idx}: {name} ---\n"
+                data += f"Category: {category}\n"
+                data += f"Name: {name}\n"
                 data += f"Title: {title}\n"
 
-                # Department/Seniority if available
                 if stakeholder.get('department'):
                     data += f"Department: {stakeholder['department']}\n"
                 if stakeholder.get('seniority'):
                     data += f"Seniority: {stakeholder['seniority']}\n"
 
-                # Contact info
                 data += f"Email: {email}\n"
-                if phone and phone != 'Not available':
+
+                # Phone numbers — same robust extraction as _generate_markdown
+                _contact = stakeholder.get('contact') or {}
+                if not isinstance(_contact, dict):
+                    _contact = {}
+
+                direct_phone = (_tpl_phone(stakeholder.get('direct_phone'))
+                                or _tpl_phone(stakeholder.get('directPhone'))
+                                or _tpl_phone(_contact.get('directPhone')))
+                mobile = (_tpl_phone(stakeholder.get('mobile_phone'))
+                          or _tpl_phone(stakeholder.get('mobile'))
+                          or _tpl_phone(_contact.get('mobilePhone')))
+                company_phone = (_tpl_phone(stakeholder.get('company_phone'))
+                                 or _tpl_phone(stakeholder.get('companyPhone'))
+                                 or _tpl_phone(_contact.get('companyPhone')))
+                phone = (_tpl_phone(stakeholder.get('phone'))
+                         or _tpl_phone(stakeholder.get('phone_number'))
+                         or _tpl_phone(_contact.get('phone')))
+
+                shown_phones = set()
+                if direct_phone:
+                    data += f"Direct Phone: {direct_phone}\n"
+                    shown_phones.add(direct_phone)
+                if mobile and mobile not in shown_phones:
+                    data += f"Mobile Phone: {mobile}\n"
+                    shown_phones.add(mobile)
+                if company_phone and company_phone not in shown_phones:
+                    data += f"Company Phone: {company_phone}\n"
+                    shown_phones.add(company_phone)
+                if phone and phone not in shown_phones:
                     data += f"Phone: {phone}\n"
+                    shown_phones.add(phone)
+                if not shown_phones:
+                    data += "Phone: Currently unavailable\n"
+
                 if linkedin and linkedin != 'Not available':
                     data += f"LinkedIn: {linkedin}\n"
 
-                # Bio/About
                 bio = stakeholder.get('bio', stakeholder.get('about', stakeholder.get('description', '')))
                 if bio:
                     data += f"About: {bio}\n"
 
-                # Strategic Priorities
                 priorities = stakeholder.get('strategic_priorities', stakeholder.get('strategicPriorities', []))
                 if priorities:
                     data += "Strategic Priorities:\n"
@@ -520,22 +594,13 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                         else:
                             data += f"  {i}. {p}\n"
 
-                # Communication Preference
                 comm_pref = stakeholder.get('communication_preference', stakeholder.get('communicationPreference', ''))
                 if comm_pref:
                     data += f"Preferred Contact: {comm_pref}\n"
 
-                # Recommended Play
                 rec_play = stakeholder.get('recommended_play', stakeholder.get('recommendedPlay', ''))
                 if rec_play:
                     data += f"Recommended Approach: {rec_play}\n"
-
-                # Data quality indicator if available
-                if stakeholder.get('confidence') or stakeholder.get('email_verified'):
-                    confidence = stakeholder.get('confidence', 0)
-                    verified = stakeholder.get('email_verified', False)
-                    if confidence > 80 or verified:
-                        data += f"✓ Verified Contact\n"
 
                 data += "\n"
 

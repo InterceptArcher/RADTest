@@ -182,3 +182,112 @@ def test_channel_alliances_role_included():
 
     assert "Channel Person" in md
     assert "Alliance Person" in md
+
+
+def test_template_data_includes_all_executive_stakeholders():
+    """_format_for_template must include EVERY executive from stakeholder_map.stakeholders."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+
+    stakeholders = [
+        {"name": "Alice CEO", "title": "Chief Executive Officer", "csuiteCategory": "CEO"},
+        {"name": "Bob CTO", "title": "Chief Technology Officer", "csuiteCategory": "CTO"},
+        {"name": "Carol CFO", "title": "Chief Financial Officer", "csuiteCategory": "CFO"},
+        {"name": "Dave CIO", "title": "Chief Information Officer", "csuiteCategory": "CIO"},
+        {"name": "Eve CMO", "title": "Chief Marketing Officer", "csuiteCategory": "CMO"},
+    ]
+    data = _make_company_data(stakeholders, [])
+    creator = GammaSlideshowCreator(gamma_api_key="test")
+    template_data = creator._format_for_template(data)
+
+    for s in stakeholders:
+        assert s["name"] in template_data, f"{s['name']} missing from template data"
+
+
+def test_template_data_includes_relevant_other_contacts():
+    """_format_for_template must include sales/partnerships/strategy/comms contacts."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+
+    other_contacts = [
+        {"name": "Dan Sales", "title": "VP of Sales"},
+        {"name": "Eve Partner", "title": "Director of Partnerships"},
+        {"name": "Frank Strategy", "title": "Head of Strategy"},
+        {"name": "Grace Comms", "title": "VP Communications"},
+    ]
+    data = _make_company_data([], other_contacts)
+    creator = GammaSlideshowCreator(gamma_api_key="test")
+    template_data = creator._format_for_template(data)
+
+    for c in other_contacts:
+        assert c["name"] in template_data, f"{c['name']} missing from template data"
+
+
+def test_template_data_excludes_irrelevant_contacts():
+    """_format_for_template must NOT include engineers, analysts, etc."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+
+    other_contacts = [
+        {"name": "Included VP Sales", "title": "VP of Sales"},
+        {"name": "Excluded Engineer", "title": "Senior Software Engineer"},
+        {"name": "Excluded Analyst", "title": "Financial Analyst"},
+    ]
+    data = _make_company_data([], other_contacts)
+    creator = GammaSlideshowCreator(gamma_api_key="test")
+    template_data = creator._format_for_template(data)
+
+    assert "Included VP Sales" in template_data
+    assert "Excluded Engineer" not in template_data
+    assert "Excluded Analyst" not in template_data
+
+
+def test_template_data_shows_phone_numbers():
+    """_format_for_template must show phone numbers for contacts that have them."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+
+    stakeholders = [
+        {
+            "name": "Jane Doe",
+            "title": "CTO",
+            "csuiteCategory": "CTO",
+            "direct_phone": "+1-555-0001",
+            "mobile_phone": "+1-555-0002",
+        },
+    ]
+    other_contacts = [
+        {
+            "name": "Dan Sales",
+            "title": "VP of Sales",
+            "direct_phone": "+1-555-9999",
+        },
+    ]
+    data = _make_company_data(stakeholders, other_contacts)
+    creator = GammaSlideshowCreator(gamma_api_key="test")
+    template_data = creator._format_for_template(data)
+
+    assert "+1-555-0001" in template_data, "Executive direct phone should appear"
+    assert "+1-555-0002" in template_data, "Executive mobile phone should appear"
+    assert "+1-555-9999" in template_data, "Other contact phone should appear"
+
+
+def test_template_data_each_stakeholder_gets_own_section():
+    """Each stakeholder in _format_for_template should have a clearly separated section."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+
+    stakeholders = [
+        {"name": "Alice CEO", "title": "CEO", "csuiteCategory": "CEO"},
+        {"name": "Bob CTO", "title": "CTO", "csuiteCategory": "CTO"},
+    ]
+    other_contacts = [
+        {"name": "Dan Sales", "title": "VP Sales"},
+    ]
+    data = _make_company_data(stakeholders, other_contacts)
+    creator = GammaSlideshowCreator(gamma_api_key="test")
+    template_data = creator._format_for_template(data)
+
+    # Each contact should appear as a separate stakeholder section
+    assert "Alice CEO" in template_data
+    assert "Bob CTO" in template_data
+    assert "Dan Sales" in template_data
+    # Each should have title shown
+    assert "CEO" in template_data
+    assert "CTO" in template_data
+    assert "VP Sales" in template_data
