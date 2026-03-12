@@ -470,9 +470,14 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                     data += f"{i}. {sol}\n"
                 data += "\n"
 
-        # Stakeholders — same logic as _generate_markdown:
-        # 1. All executives from stakeholder_map.stakeholders
-        # 2. Relevant other contacts (sales/partnerships/strategy/comms) from otherContacts
+        # Stakeholders for template: 1 BEST contact per C-suite role + relevant others.
+        # Template has fixed slides per role — can't duplicate. So we pick the
+        # highest-quality contact for each csuiteCategory.
+        #
+        # Quality ranking (higher = better):
+        #   +3 for true C-suite title (Chief X Officer, CEO, CTO, etc.)
+        #   +1 for each of: linkedin, any phone, email
+        # Ties broken by list order (earlier = higher priority from upstream sort).
         stakeholder_map = validated_data.get('stakeholder_map', {})
 
         _RELEVANT_ROLES_TPL = {
@@ -482,13 +487,56 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             'account', 'revenue',
         }
 
-        # 1. Executive stakeholders
-        executive_stakeholders = []
+        # C-suite title keywords that indicate a true chief officer
+        _CSUITE_TITLES = {'chief', 'ceo', 'cto', 'cfo', 'cio', 'ciso', 'coo', 'cpo', 'cmo',
+                          'president', 'founder', 'co-founder'}
+
+        def _contact_quality(s):
+            """Score a contact for sales outreach quality (higher = better)."""
+            score = 0
+            _c = s.get('contact') or {}
+            if not isinstance(_c, dict):
+                _c = {}
+
+            # Has email?
+            if s.get('email') or _c.get('email'):
+                score += 1
+
+            # Has any phone?
+            has_phone = any([
+                s.get('direct_phone'), s.get('mobile_phone'), s.get('company_phone'),
+                s.get('phone'), s.get('directPhone'), s.get('companyPhone'),
+                _c.get('directPhone'), _c.get('mobilePhone'),
+                _c.get('companyPhone'), _c.get('phone'),
+            ])
+            if has_phone:
+                score += 1
+
+            # Has linkedin?
+            if s.get('linkedin_url') or s.get('linkedinUrl') or _c.get('linkedinUrl'):
+                score += 1
+
+            # True C-suite title bonus (sales teams want to reach the actual CxO)
+            title_lower = (s.get('title') or '').lower()
+            if any(kw in title_lower for kw in _CSUITE_TITLES):
+                score += 3
+
+            return score
+
+        # 1. Executive stakeholders — pick 1 best per csuiteCategory
+        best_per_role = {}  # csuiteCategory -> best contact
         if stakeholder_map and stakeholder_map.get('stakeholders'):
-            executive_stakeholders = [
-                s for s in stakeholder_map['stakeholders']
-                if isinstance(s, dict)
-            ]
+            for s in stakeholder_map['stakeholders']:
+                if not isinstance(s, dict):
+                    continue
+                cat = s.get('csuiteCategory', '')
+                if not cat:
+                    continue
+                existing = best_per_role.get(cat)
+                if not existing or _contact_quality(s) > _contact_quality(existing):
+                    best_per_role[cat] = s
+
+        executive_stakeholders = list(best_per_role.values())
 
         # 2. Relevant other contacts filtered by role
         relevant_other_contacts = []
@@ -1852,23 +1900,33 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             "Content-Type": "application/json"
         }
 
-        # ALWAYS use the standard generation endpoint with full markdown.
-        # The template endpoint (/from-template) has a FIXED number of slides
-        # per role — it cannot duplicate slides for multiple contacts.
-        # The standard endpoint respects numCards and creates one slide per
-        # markdown section, ensuring every stakeholder gets their own slide.
-        api_endpoint = self.api_url
-        payload = {
-            "inputText": markdown_content,
-            "textMode": "preserve",
-            "format": "presentation"
-        }
+        # Choose endpoint and payload based on whether template is used
+        if self.template_id:
+            # Use template endpoint: /v1.0/generations/from-template
+            # Template has 1 slide per C-suite role — we pick the best contact per role.
+            api_endpoint = self.template_url
 
-        if num_cards and 5 <= num_cards <= 100:
-            payload["numCards"] = num_cards
-            logger.info(f"Requesting {num_cards} cards")
+            structured_data = self._format_for_template(company_data, user_email)
 
-        logger.info(f"Using standard generation endpoint (full markdown with per-stakeholder slides)")
+            payload = {
+                "gammaId": self.template_id,
+                "prompt": structured_data
+            }
+            logger.info(f"Using template endpoint with gammaId: {self.template_id}")
+            logger.info(f"Sending structured data (length: {len(structured_data)} chars)")
+        else:
+            # Use standard generation endpoint: /v1.0/generations
+            api_endpoint = self.api_url
+            payload = {
+                "inputText": markdown_content,
+                "textMode": "preserve",
+                "format": "presentation"
+            }
+
+            # Add numCards for standard generation (not supported by template endpoint)
+            if num_cards and 5 <= num_cards <= 100:
+                payload["numCards"] = num_cards
+                logger.info(f"Requesting {num_cards} cards")
 
         logger.info(f"Payload keys: {list(payload.keys())}")
 
