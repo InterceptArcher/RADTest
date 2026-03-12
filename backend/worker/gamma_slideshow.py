@@ -103,26 +103,47 @@ class GammaSlideshowCreator:
             # Generate markdown content with user email for attribution
             markdown_content = self._generate_markdown(company_data, user_email)
 
-            # Count stakeholders to estimate number of cards needed
-            # Prefer stakeholder_map.stakeholders (C-suite grouped, up to 3 per category)
+            # Count ALL contacts that will appear in the slideshow:
+            # executive stakeholders + relevant other contacts (sales/partnerships/strategy/comms)
             vdata = company_data.get('validated_data', {})
             smap = vdata.get('stakeholder_map', {})
-            if smap and smap.get('stakeholders'):
-                stakeholders = smap['stakeholders']
+
+            # Executive stakeholders
+            exec_stakeholders = smap.get('stakeholders', []) if smap else []
+            if isinstance(exec_stakeholders, dict):
+                exec_count = len(exec_stakeholders)
+            elif isinstance(exec_stakeholders, list):
+                exec_count = len(exec_stakeholders)
             else:
-                stakeholders = vdata.get('stakeholder_profiles', [])
-            if isinstance(stakeholders, dict):
-                stakeholder_count = len(stakeholders)
-            elif isinstance(stakeholders, list):
-                stakeholder_count = len(stakeholders)
-            else:
-                stakeholder_count = 1
+                exec_count = 0
+
+            # Relevant other contacts (must match the same filter in _generate_markdown)
+            _RELEVANT_ROLES_COUNT = {
+                'sales', 'partnership', 'partnerships', 'strategy',
+                'strategic', 'communication', 'communications',
+                'business development', 'channel', 'alliances',
+                'account', 'revenue',
+            }
+            other_contacts_list = smap.get('otherContacts', []) if smap else []
+            relevant_other_count = 0
+            if isinstance(other_contacts_list, list):
+                for oc in other_contacts_list:
+                    if isinstance(oc, dict):
+                        combined = f"{(oc.get('title') or '')} {(oc.get('department') or '')} {(oc.get('roleType') or '')}".lower()
+                        if any(role in combined for role in _RELEVANT_ROLES_COUNT):
+                            relevant_other_count += 1
+
+            stakeholder_count = exec_count + relevant_other_count
+            if stakeholder_count == 0:
+                # Fallback to legacy
+                legacy = vdata.get('stakeholder_profiles', [])
+                stakeholder_count = len(legacy) if isinstance(legacy, (list, dict)) else 1
 
             # Count unique persona types for supporting assets slides
             persona_types = set()
-            if isinstance(stakeholders, list):
-                for s in stakeholders:
-                    role = s.get('title', '').upper()
+            if isinstance(exec_stakeholders, list):
+                for s in exec_stakeholders:
+                    role = (s.get('title') or '').upper()
                     for persona in ['CIO', 'CTO', 'CISO', 'COO', 'CFO', 'CPO']:
                         if persona in role:
                             persona_types.add(persona)
@@ -133,7 +154,7 @@ class GammaSlideshowCreator:
             # 2. Executive Snapshot
             # 3. Buying Signals
             # 4. Opportunity themes
-            # 5+. Stakeholder profiles (one per stakeholder)
+            # 5+. Stakeholder profiles (one per executive + relevant other contact)
             # Next. Recommended sales program
             # Next+. Supporting Assets (one per persona type)
             # Last. Feedback
@@ -1302,30 +1323,52 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 else:
                     markdown += "**Start date:** Currently unavailable\n\n"
 
-                # Phone numbers - check top-level fields AND nested "contact" dict
-                # Top-level: direct_phone, mobile_phone, company_phone, phone
-                # Nested contact dict: directPhone, mobilePhone, companyPhone, phone
-                _contact = stakeholder.get('contact', {}) or {}
-                direct_phone = (stakeholder.get('direct_phone') or stakeholder.get('directPhone')
-                                or _contact.get('directPhone') or '')
-                mobile = (stakeholder.get('mobile_phone') or stakeholder.get('mobile')
-                          or _contact.get('mobilePhone') or '')
-                company_phone = (stakeholder.get('company_phone') or stakeholder.get('companyPhone')
-                                 or _contact.get('companyPhone') or '')
-                phone = (stakeholder.get('phone') or stakeholder.get('phone_number')
-                         or _contact.get('phone') or '')
+                # Phone numbers - check top-level fields AND nested "contact" dict.
+                # Top-level fields use snake_case: direct_phone, mobile_phone, company_phone
+                # Nested contact dict uses camelCase: directPhone, mobilePhone, companyPhone
+                # Either source may have None values, so coerce to str and strip.
+                _contact = stakeholder.get('contact') or {}
+                if not isinstance(_contact, dict):
+                    _contact = {}
 
-                # Display all available phone numbers
-                has_any_phone = direct_phone or mobile or company_phone or phone
+                def _phone(val):
+                    """Coerce phone value to clean string or empty."""
+                    if not val:
+                        return ''
+                    s = str(val).strip()
+                    # Filter out masked/placeholder values
+                    if s in ('None', 'N/A', 'null', '') or '****' in s:
+                        return ''
+                    return s
+
+                direct_phone = (_phone(stakeholder.get('direct_phone'))
+                                or _phone(stakeholder.get('directPhone'))
+                                or _phone(_contact.get('directPhone')))
+                mobile = (_phone(stakeholder.get('mobile_phone'))
+                          or _phone(stakeholder.get('mobile'))
+                          or _phone(_contact.get('mobilePhone')))
+                company_phone = (_phone(stakeholder.get('company_phone'))
+                                 or _phone(stakeholder.get('companyPhone'))
+                                 or _phone(_contact.get('companyPhone')))
+                phone = (_phone(stakeholder.get('phone'))
+                         or _phone(stakeholder.get('phone_number'))
+                         or _phone(_contact.get('phone')))
+
+                # Display all available phone numbers (no duplicates)
+                shown_phones = set()
                 if direct_phone:
                     markdown += f"**Direct Phone:** {direct_phone}\n\n"
-                if mobile:
+                    shown_phones.add(direct_phone)
+                if mobile and mobile not in shown_phones:
                     markdown += f"**Mobile Phone:** {mobile}\n\n"
-                if company_phone and company_phone != direct_phone:
+                    shown_phones.add(mobile)
+                if company_phone and company_phone not in shown_phones:
                     markdown += f"**Company Phone:** {company_phone}\n\n"
-                if phone and phone not in (direct_phone, mobile, company_phone):
+                    shown_phones.add(company_phone)
+                if phone and phone not in shown_phones:
                     markdown += f"**Phone:** {phone}\n\n"
-                if not has_any_phone:
+                    shown_phones.add(phone)
+                if not shown_phones:
                     markdown += "**Phone:** Currently unavailable\n\n"
 
                 # Email - check top-level and nested contact dict
