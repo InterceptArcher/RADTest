@@ -1381,8 +1381,8 @@ class TestIntentTopicsLookup:
                 await client.enrich_intent(domain="acme.com")
 
         assert len(intent_payload_captured) > 0
-        # ZoomInfo Intent Enrich API uses "topic" (singular), not "topics"
-        topics_sent = intent_payload_captured[0]["data"]["attributes"].get("topic", [])
+        # ZoomInfo Intent Enrich API uses "topics" (plural) — "topic" singular returns PFAPI0005
+        topics_sent = intent_payload_captured[0]["data"]["attributes"].get("topics", [])
         assert topics_sent == valid_topics, (
             f"Topics in payload must match lookup result. Expected: {valid_topics}, got: {topics_sent}"
         )
@@ -1897,17 +1897,20 @@ class TestCompanyEnrichOutputFieldsFallback:
     """Test that company enrich falls back to base fields when extended fields are disallowed."""
 
     def test_base_company_output_fields_exist(self):
-        """BASE_COMPANY_OUTPUT_FIELDS constant exists with the 11 safe fields."""
+        """BASE_COMPANY_OUTPUT_FIELDS constant exists with standard fields."""
         from zoominfo_client import BASE_COMPANY_OUTPUT_FIELDS
         assert "id" in BASE_COMPANY_OUTPUT_FIELDS
         assert "name" in BASE_COMPANY_OUTPUT_FIELDS
         assert "website" in BASE_COMPANY_OUTPUT_FIELDS
         assert "revenue" in BASE_COMPANY_OUTPUT_FIELDS
         assert "employeeCount" in BASE_COMPANY_OUTPUT_FIELDS
-        # Extended fields should NOT be in base
+        # Industry/description are standard fields available on all tiers
+        assert "industry" in BASE_COMPANY_OUTPUT_FIELDS
+        assert "subIndustry" in BASE_COMPANY_OUTPUT_FIELDS
+        assert "description" in BASE_COMPANY_OUTPUT_FIELDS
+        # Leadership fields remain in extended only (may be tier-restricted)
         assert "ceoName" not in BASE_COMPANY_OUTPUT_FIELDS
         assert "companyType" not in BASE_COMPANY_OUTPUT_FIELDS
-        assert "industry" not in BASE_COMPANY_OUTPUT_FIELDS
 
     def test_extended_company_output_fields_include_base(self):
         """EXTENDED_COMPANY_OUTPUT_FIELDS includes base + leadership/industry fields."""

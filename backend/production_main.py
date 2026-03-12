@@ -1843,6 +1843,24 @@ async def process_company_profile(job_id: str, company_data: dict):
                         "duration_ms": _identity_duration,
                     }
 
+                    # Store enriched contacts for debug panel (unmasked phones)
+                    jobs_store[job_id]["enriched_identity_contacts"] = [
+                        {
+                            "name": c.get("name"),
+                            "title": c.get("title"),
+                            "email": c.get("email"),
+                            "direct_phone": c.get("direct_phone"),
+                            "mobile_phone": c.get("mobile_phone"),
+                            "company_phone": c.get("company_phone"),
+                            "phone": c.get("phone"),
+                            "person_id": c.get("person_id"),
+                            "contact_accuracy_score": c.get("contact_accuracy_score"),
+                            "source": c.get("source", "identity_lookup"),
+                            "enriched": c.get("enriched", False),
+                        }
+                        for c in zi_lookup_contacts
+                    ]
+
                     # Log as real API call
                     _log_api_call(
                         jobs_store[job_id],
@@ -4261,15 +4279,31 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                 )).isoformat() + "Z",
                 "duration": job_data.get("step_2_84_result", {}).get("duration_ms", 0),
                 "metadata": {
-                    "source": "ZoomInfo GTM Contact Search",
-                    "strategy": "Email lookup → firstName+lastName fallback (concurrent)",
+                    "source": "ZoomInfo GTM Contact Search + Contact Enrich",
+                    "strategy": "Email lookup → firstName+lastName fallback → enrich for real phones (concurrent)",
                     "contacts_looked_up": job_data.get("step_2_84_result", {}).get("contacts_looked_up", 0),
                     "contacts_found_in_zoominfo": job_data.get("step_2_84_result", {}).get("contacts_found", 0),
                     "contacts_with_phones_added": job_data.get("step_2_84_result", {}).get("contacts_with_phones", 0),
                     "error": job_data.get("step_2_84_result", {}).get("error"),
+                    "enriched_contacts": [
+                        {
+                            "name": c.get("name"),
+                            "title": c.get("title"),
+                            "email": c.get("email"),
+                            "direct_phone": c.get("direct_phone") or "N/A",
+                            "mobile_phone": c.get("mobile_phone") or "N/A",
+                            "company_phone": c.get("company_phone") or "N/A",
+                            "phone": c.get("phone") or "N/A",
+                            "person_id": c.get("person_id"),
+                            "accuracy_score": c.get("contact_accuracy_score"),
+                            "enriched": c.get("enriched", False),
+                            "source": c.get("source", "identity_lookup"),
+                        }
+                        for c in job_data.get("enriched_identity_contacts", [])
+                    ],
                     "note": (
-                        "Apollo/Hunter contacts lack ZoomInfo personId so the enrich endpoint cannot be used. "
-                        "Instead we use the GTM contact search with outputFields to retrieve phone data directly."
+                        "Apollo/Hunter contacts are searched in ZoomInfo by email/name, then enriched via "
+                        "Contact Enrich API using person_id to retrieve real (unmasked) phone numbers."
                     ) if not job_data.get("step_2_84_result", {}).get("error") else None,
                 }
             },

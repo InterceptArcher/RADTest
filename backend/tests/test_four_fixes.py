@@ -110,24 +110,19 @@ def test_identity_lookup_no_rpp_in_attributes():
     assert "companyPastOrPresent" in source, "Should filter for current employees"
 
 
-# ── Issue 4: Intent enrich uses "topic" (singular) ──────────────────────
+# ── Issue 4: Intent enrich uses "topics" (plural) per ZoomInfo GTM API ───
 
-def test_intent_enrich_uses_topic_singular():
-    """ZoomInfo Intent Enrich API requires 'topic' (singular), not 'topics'."""
+def test_intent_enrich_uses_topics_plural():
+    """ZoomInfo Intent Enrich API requires 'topics' (plural) field name."""
     from worker.zoominfo_client import ZoomInfoClient
     import inspect
 
     source = inspect.getsource(ZoomInfoClient.enrich_intent)
 
-    # The payload should use "topic" (singular) for the field name
-    assert '"topic":' in source or "'topic':" in source, \
-        "Intent enrich should use 'topic' (singular) per ZoomInfo API docs"
-
-    # Should NOT use "topics" as a key in the payload attributes
-    # (it's fine to use "topics" as a variable name, just not as a dict key)
-    # Check that the attrs dict uses "topic" not "topics"
-    assert '"topic": topics_to_use' in source, \
-        "Intent enrich attrs should map 'topic' key to topics_to_use value"
+    # The payload should use "topics" (plural) for the field name
+    # "topic" (singular) returns PFAPI0005 "Invalid field requested"
+    assert '"topics": topics_to_use' in source, \
+        "Intent enrich attrs should map 'topics' key to topics_to_use value"
 
 
 def test_intent_topics_fallback_to_defaults():

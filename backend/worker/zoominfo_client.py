@@ -76,18 +76,20 @@ BASE_COMPANY_OUTPUT_FIELDS = [
     "country",
     "phone",
     "ticker",
+    # Industry/description are standard fields available on all subscription tiers.
+    # Including them in base ensures they survive PFAPI0009 fallback.
+    "industry",
+    "subIndustry",
+    "description",
+    "yearFounded",
 ]
 
-# Extended output fields — include leadership/industry fields that may be disallowed
+# Extended output fields — include leadership fields that may be disallowed
 # on some subscription tiers (PFAPI0009).  enrich_company() tries extended first,
 # falls back to base if the API rejects them.
 EXTENDED_COMPANY_OUTPUT_FIELDS = BASE_COMPANY_OUTPUT_FIELDS + [
     "ceoName",
     "companyType",
-    "industry",
-    "subIndustry",
-    "description",
-    "yearFounded",
     "linkedInUrl",
 ]
 
@@ -510,33 +512,71 @@ class ZoomInfoClient:
                     logger.warning("ZoomInfo intent topics lookup 401 — re-authenticating")
                     self._token_expires_at = 0
                     await self._authenticate()
+                    # headers property rebuilds with new token
                     response = await client.get(url, headers=self.headers)
-                response.raise_for_status()
+                if not response.is_success:
+                    body_text = response.text[:500]
+                    logger.warning(
+                        "ZoomInfo intent topics lookup HTTP %d: %s",
+                        response.status_code, body_text,
+                    )
+                    response.raise_for_status()
                 data = response.json()
 
             topics: List[str] = []
-            # Response may be {"data": [{"name": "..."}, ...]} or a plain list
+            # Log raw response structure for debugging
+            if isinstance(data, dict):
+                logger.info(
+                    "ZoomInfo intent topics response keys: %s, sample data: %s",
+                    list(data.keys()), str(data)[:300],
+                )
+            elif isinstance(data, list):
+                logger.info(
+                    "ZoomInfo intent topics response is list of %d items, sample: %s",
+                    len(data), str(data[:2])[:300],
+                )
+
+            # Parse topics from multiple possible response formats
             raw_list = data.get("data", data) if isinstance(data, dict) else data
             if isinstance(raw_list, list):
                 for item in raw_list:
                     if isinstance(item, str) and item:
                         topics.append(item)
                     elif isinstance(item, dict):
-                        name = item.get("name") or item.get("topic") or item.get("value") or ""
+                        # Try multiple possible field names
+                        name = (
+                            item.get("name") or item.get("topic") or
+                            item.get("value") or item.get("topicName") or
+                            item.get("attributes", {}).get("name", "") if isinstance(item.get("attributes"), dict) else ""
+                        )
                         if name:
                             topics.append(str(name))
+            elif isinstance(raw_list, dict):
+                # Some APIs return {"topics": [...]} or {"values": [...]}
+                for key in ("topics", "values", "items", "results"):
+                    nested = raw_list.get(key, [])
+                    if isinstance(nested, list) and nested:
+                        for item in nested:
+                            if isinstance(item, str) and item:
+                                topics.append(item)
+                            elif isinstance(item, dict):
+                                name = item.get("name") or item.get("topic") or item.get("value") or ""
+                                if name:
+                                    topics.append(str(name))
+                        if topics:
+                            break
 
             if topics:
                 self._valid_topics_cache = topics
                 logger.info(
                     "ZoomInfo intent topics lookup: %d valid topics fetched (sample: %s)",
-                    len(topics), topics[:3],
+                    len(topics), topics[:5],
                 )
             else:
                 logger.warning(
-                    "ZoomInfo intent topics lookup returned 0 topics — "
-                    "falling back to DEFAULT_INTENT_TOPICS. "
-                    "Raw response keys: %s", list(data.keys()) if isinstance(data, dict) else type(data).__name__,
+                    "ZoomInfo intent topics lookup returned 0 parseable topics. "
+                    "Falling back to DEFAULT_INTENT_TOPICS. "
+                    "Raw response: %s", str(data)[:500],
                 )
                 self._valid_topics_cache = list(DEFAULT_INTENT_TOPICS)
             return self._valid_topics_cache
@@ -547,9 +587,6 @@ class ZoomInfoClient:
                 "Falling back to DEFAULT_INTENT_TOPICS.",
                 e,
             )
-            # Fall back to DEFAULT_INTENT_TOPICS — the previous PFAPI0006 error
-            # was caused by using "topics" (plural) instead of "topic" (singular)
-            # in the enrich payload, NOT by invalid topic names.
             self._valid_topics_cache = list(DEFAULT_INTENT_TOPICS)
             return self._valid_topics_cache
 
@@ -885,9 +922,12 @@ class ZoomInfoClient:
                     if data_list:
                         raw = data_list[0]
                         normalized = self._normalize_company_data(raw)
+                        tier_label = "extended" if output_fields is EXTENDED_COMPANY_OUTPUT_FIELDS else "base"
                         logger.info(
-                            "ZoomInfo company enrich success (fields=%d) company_id=%s",
-                            len(output_fields), normalized.get("company_id")
+                            "ZoomInfo company enrich success (tier=%s, fields=%d) company_id=%s ceo=%r company_type=%r description=%r",
+                            tier_label, len(output_fields), normalized.get("company_id"),
+                            normalized.get("ceo", "")[:30], normalized.get("company_type", ""),
+                            (normalized.get("description", "") or "")[:50],
                         )
                         return {"success": True, "data": raw, "normalized": normalized, "error": None}
                     logger.debug(
@@ -1451,8 +1491,8 @@ class ZoomInfoClient:
         # Ordered attribute sets: companyId (most reliable) → companyWebsite fallback.
         attrs_to_try: List[Dict[str, Any]] = []
         if company_id:
-            attrs_to_try.append({"companyId": company_id, "topic": topics_to_use})
-        attrs_to_try.append({"companyWebsite": primary_website, "topic": topics_to_use})
+            attrs_to_try.append({"companyId": company_id, "topics": topics_to_use})
+        attrs_to_try.append({"companyWebsite": primary_website, "topics": topics_to_use})
 
         last_error: Optional[str] = None
         for attrs in attrs_to_try:
@@ -1480,11 +1520,14 @@ class ZoomInfoClient:
                     "ZoomInfo intent enrich %s for attrs=%s",
                     detail, list(attrs.keys())
                 )
-                # If topics are still rejected, clear the cache so next run re-fetches
-                if "invalid topics" in detail.lower() or "invalid number of topics" in detail.lower():
+                # If topics are rejected (PFAPI0006), clear cache and try with
+                # a minimal set of known-good topics from ZoomInfo's taxonomy
+                if "invalid topics" in detail.lower() or "PFAPI0006" in detail:
                     logger.warning(
-                        "ZoomInfo Buyer Intent topics rejected even after lookup — "
-                        "clearing topic cache. Buyer Intent may not be enabled."
+                        "ZoomInfo Buyer Intent topics rejected (PFAPI0006) — "
+                        "topic names may not match ZoomInfo's taxonomy. "
+                        "Clearing cache. Rejected topics sample: %s",
+                        topics_to_use[:3],
                     )
                     self._valid_topics_cache = None
                     break
