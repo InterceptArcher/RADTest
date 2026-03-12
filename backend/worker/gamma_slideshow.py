@@ -104,7 +104,13 @@ class GammaSlideshowCreator:
             markdown_content = self._generate_markdown(company_data, user_email)
 
             # Count stakeholders to estimate number of cards needed
-            stakeholders = company_data.get('validated_data', {}).get('stakeholder_profiles', [])
+            # Prefer stakeholder_map.stakeholders (C-suite grouped, up to 3 per category)
+            vdata = company_data.get('validated_data', {})
+            smap = vdata.get('stakeholder_map', {})
+            if smap and smap.get('stakeholders'):
+                stakeholders = smap['stakeholders']
+            else:
+                stakeholders = vdata.get('stakeholder_profiles', [])
             if isinstance(stakeholders, dict):
                 stakeholder_count = len(stakeholders)
             elif isinstance(stakeholders, list):
@@ -586,7 +592,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
         2. Executive Snapshot
         3. Buying Signals
         4. Opportunity themes
-        5+. Stakeholder Map: Role Profiles (one per stakeholder)
+        5+. Stakeholder Profiles (one dedicated slide per contact from stakeholder_map)
         Next. Recommended sales program
         Next+. Supporting Assets (one per persona: CIO/CTO/CISO/COO/CFO/CPO)
         Last: Feedback and Questions
@@ -1151,9 +1157,9 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
 
         # ============================================================
-        # SLIDES 5+: Stakeholder Map: Strategic Role Profiles (ONE PER CONTACT)
-        # NOTE: stakeholder_profiles now contains up to 3 STRATEGIC REAL contacts
-        # selected by LLM Council as most important roles for HP to target
+        # SLIDES 5+: Individual Stakeholder Profiles (ONE SLIDE PER CONTACT)
+        # Sources from stakeholder_map.stakeholders (C-suite grouped, up to 3 per category)
+        # Each executive contact gets their own dedicated slide
         # ============================================================
 
         all_stakeholders = []
@@ -1166,15 +1172,15 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             markdown += "Please verify the company name and try again, or conduct manual research through LinkedIn, company website, and other professional networks.\n\n"
             markdown += "---\n\n"
         else:
-            # Get strategic stakeholders (ALREADY filtered to up to 3 by LLM Council in orchestrator)
-            # These are REAL contacts only, matched to strategic roles
-            stakeholders = validated_data.get('stakeholder_profiles') or validated_data.get('stakeholders', [])
-
-            # Use strategic stakeholders directly (NO hunter contacts, NO CEO fallback)
-            # These are REAL contacts that match the 3 strategic roles
+            # Prefer stakeholder_map.stakeholders (C-suite grouped, up to 3 per category)
+            # Each contact gets their own dedicated slide
+            stakeholder_map = validated_data.get('stakeholder_map', {})
+            if stakeholder_map and stakeholder_map.get('stakeholders'):
+                stakeholders = stakeholder_map['stakeholders']
+            else:
+                stakeholders = validated_data.get('stakeholder_profiles') or validated_data.get('stakeholders', [])
 
             if isinstance(stakeholders, list):
-                # Ensure all items are dicts, filter out any non-dict items
                 all_stakeholders = [s for s in stakeholders if isinstance(s, dict)]
             elif isinstance(stakeholders, dict):
                 for role, profile in stakeholders.items():
@@ -1189,21 +1195,22 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 markdown += f"**Stakeholder data unavailable at the time.** Contact information for {company_name} could not be retrieved. Manual research recommended.\n\n"
                 markdown += "---\n\n"
 
-            # Generate a slide for EACH stakeholder
+            # Generate a dedicated slide for EACH stakeholder
             for stakeholder in all_stakeholders:
                 name = stakeholder.get('name', 'Contact Name')
                 title = stakeholder.get('title', stakeholder.get('role_type', stakeholder.get('position', 'Executive')))
 
-                # Determine persona type from title
-                persona = "Executive"
-                title_upper = title.upper()
-                for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO', 'CEO']:
-                    if p in title_upper:
-                        persona = p
-                        break
+                # Determine persona type from csuiteCategory (set by affiliation grouping) or title
+                persona = stakeholder.get('csuiteCategory', '')
+                if not persona:
+                    persona = "Executive"
+                    title_upper = title.upper()
+                    for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO', 'CEO']:
+                        if p in title_upper:
+                            persona = p
+                            break
 
-                markdown += f"# Stakeholder Map: Role Profiles\n\n"
-                markdown += f"## Persona: {persona}\n\n"
+                markdown += f"# {name} – {persona} Stakeholder Profile\n\n"
 
                 # Contact Information (at top)
                 markdown += f"**Contact:** {name}\n\n"

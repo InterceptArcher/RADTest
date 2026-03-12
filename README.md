@@ -21,6 +21,23 @@
 
 ---
 
+## Individual Stakeholder Slides in Gamma (2026-03-11)
+
+Each executive contact in `stakeholder_map.stakeholders` now gets their own dedicated slide in the Gamma slideshow, instead of being grouped together on a single "in scope" listing slide.
+
+### What Changed
+
+- **One slide per contact**: If CTO has 3 affiliated contacts (e.g., CTO, VP Engineering, Head of Platform), each gets a full profile slide with contact details, bio, strategic priorities, communication preferences, and conversation starters.
+- **C-suite category label on slide title**: Each slide is titled `{Name} – {Category} Stakeholder Profile` (e.g., "Alice Chen – CTO Stakeholder Profile") using the `csuiteCategory` field from the affiliation grouping.
+- **stakeholder_map preferred**: Gamma now sources from `stakeholder_map.stakeholders` (C-suite grouped, up to 3 per category) rather than the legacy `stakeholder_profiles` list. Falls back to `stakeholder_profiles` if no map is present.
+- **Slide count updated**: The Gamma API card count calculation reflects the actual number of individual stakeholder contacts.
+
+### Rationale
+
+Grouping multiple contacts onto a single slide compressed important details (phone, email, LinkedIn, bio, strategic priorities) and made it harder for sales reps to use the deck as a reference during outreach. Giving each contact their own slide ensures all enriched data is visible and actionable, matching the per-contact detail level already available in the web UI.
+
+---
+
 ## Claude Web Search LinkedIn Finder — Step 2.86 (2026-03-08)
 
 Last-resort LinkedIn discovery using a Claude subagent with the `web_search_20250305` built-in tool. Fires after ZoomInfo enrich and Apollo `people/match` backfill for contacts that still lack a LinkedIn URL.
