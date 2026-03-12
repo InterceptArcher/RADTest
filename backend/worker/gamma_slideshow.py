@@ -1191,21 +1191,55 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             markdown += "Please verify the company name and try again, or conduct manual research through LinkedIn, company website, and other professional networks.\n\n"
             markdown += "---\n\n"
         else:
-            # Prefer stakeholder_map.stakeholders (C-suite grouped, up to 3 per category)
-            # Each contact gets their own dedicated slide
+            # Pull executive stakeholders (C-suite grouped) + relevant other contacts.
+            # Structure:
+            #   1. All executive profiles from stakeholder_map.stakeholders
+            #      (grouped under their C-suite category: CTO, CFO, CEO, etc.)
+            #   2. Relevant other contacts from stakeholder_map.otherContacts
+            #      whose title matches sales, partnerships, strategy, or communications
             stakeholder_map = validated_data.get('stakeholder_map', {})
-            if stakeholder_map and stakeholder_map.get('stakeholders'):
-                stakeholders = stakeholder_map['stakeholders']
-            else:
-                stakeholders = validated_data.get('stakeholder_profiles') or validated_data.get('stakeholders', [])
 
-            if isinstance(stakeholders, list):
-                all_stakeholders = [s for s in stakeholders if isinstance(s, dict)]
-            elif isinstance(stakeholders, dict):
-                for role, profile in stakeholders.items():
-                    if isinstance(profile, dict):
-                        profile['role_type'] = role
-                        all_stakeholders.append(profile)
+            # 1. Executive stakeholders (already C-suite grouped)
+            executive_stakeholders = []
+            if stakeholder_map and stakeholder_map.get('stakeholders'):
+                executive_stakeholders = [
+                    s for s in stakeholder_map['stakeholders']
+                    if isinstance(s, dict)
+                ]
+
+            # 2. Relevant other contacts — filter by role keywords
+            _RELEVANT_ROLES = {
+                'sales', 'partnership', 'partnerships', 'strategy',
+                'strategic', 'communication', 'communications',
+                'business development', 'channel', 'alliances',
+                'account', 'revenue',
+            }
+            relevant_other_contacts = []
+            if stakeholder_map and stakeholder_map.get('otherContacts'):
+                for contact in stakeholder_map['otherContacts']:
+                    if not isinstance(contact, dict):
+                        continue
+                    contact_title = (contact.get('title') or '').lower()
+                    contact_dept = (contact.get('department') or '').lower()
+                    contact_role = (contact.get('roleType') or '').lower()
+                    combined = f"{contact_title} {contact_dept} {contact_role}"
+                    if any(role in combined for role in _RELEVANT_ROLES):
+                        # Tag as non-executive for slide heading
+                        contact['_slideCategory'] = 'Relevant Contact'
+                        relevant_other_contacts.append(contact)
+
+            # Fallback: if no stakeholder_map, try legacy stakeholder_profiles
+            if not executive_stakeholders and not relevant_other_contacts:
+                stakeholders = validated_data.get('stakeholder_profiles') or validated_data.get('stakeholders', [])
+                if isinstance(stakeholders, list):
+                    executive_stakeholders = [s for s in stakeholders if isinstance(s, dict)]
+                elif isinstance(stakeholders, dict):
+                    for role, profile in stakeholders.items():
+                        if isinstance(profile, dict):
+                            profile['role_type'] = role
+                            executive_stakeholders.append(profile)
+
+            all_stakeholders = executive_stakeholders + relevant_other_contacts
 
             # If still no stakeholders, show minimal unavailable message
             if not all_stakeholders:
@@ -1222,14 +1256,24 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 # Determine persona type from csuiteCategory (set by affiliation grouping) or title
                 persona = stakeholder.get('csuiteCategory', '')
                 if not persona:
-                    persona = "Executive"
-                    title_upper = title.upper()
-                    for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO', 'CEO']:
-                        if p in title_upper:
-                            persona = p
-                            break
+                    # Check if this is a relevant non-executive contact
+                    if stakeholder.get('_slideCategory'):
+                        persona = stakeholder['_slideCategory']
+                    else:
+                        persona = "Executive"
+                        title_upper = title.upper()
+                        for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO', 'CEO', 'CMO']:
+                            if p in title_upper:
+                                persona = p
+                                break
 
-                markdown += f"# {name} – {persona} Stakeholder Profile\n\n"
+                # Use C-suite category for executives, title-based label for others
+                if persona in ('Relevant Contact',):
+                    slide_label = title or "Key Contact"
+                else:
+                    slide_label = f"{persona} Stakeholder Profile"
+
+                markdown += f"# {name} – {slide_label}\n\n"
 
                 # Contact Information (at top)
                 markdown += f"**Contact:** {name}\n\n"
@@ -1259,27 +1303,30 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                     markdown += "**Start date:** Currently unavailable\n\n"
 
                 # Phone numbers - check top-level fields AND nested "contact" dict
-                # Top-level: direct_phone, mobile_phone, phone (set for sorting)
+                # Top-level: direct_phone, mobile_phone, company_phone, phone
                 # Nested contact dict: directPhone, mobilePhone, companyPhone, phone
                 _contact = stakeholder.get('contact', {}) or {}
-                phone = (stakeholder.get('phone') or stakeholder.get('phone_number')
-                         or _contact.get('phone') or _contact.get('companyPhone') or '')
-                mobile = (stakeholder.get('mobile_phone') or stakeholder.get('mobile')
-                          or _contact.get('mobilePhone') or '')
                 direct_phone = (stakeholder.get('direct_phone') or stakeholder.get('directPhone')
                                 or _contact.get('directPhone') or '')
+                mobile = (stakeholder.get('mobile_phone') or stakeholder.get('mobile')
+                          or _contact.get('mobilePhone') or '')
+                company_phone = (stakeholder.get('company_phone') or stakeholder.get('companyPhone')
+                                 or _contact.get('companyPhone') or '')
+                phone = (stakeholder.get('phone') or stakeholder.get('phone_number')
+                         or _contact.get('phone') or '')
 
+                # Display all available phone numbers
+                has_any_phone = direct_phone or mobile or company_phone or phone
                 if direct_phone:
                     markdown += f"**Direct Phone:** {direct_phone}\n\n"
-                else:
-                    markdown += "**Direct Phone:** Currently unavailable\n\n"
-
                 if mobile:
                     markdown += f"**Mobile Phone:** {mobile}\n\n"
-                elif phone and not direct_phone:
-                    markdown += f"**Mobile Phone:** {phone}\n\n"
-                else:
-                    markdown += "**Mobile Phone:** Currently unavailable\n\n"
+                if company_phone and company_phone != direct_phone:
+                    markdown += f"**Company Phone:** {company_phone}\n\n"
+                if phone and phone not in (direct_phone, mobile, company_phone):
+                    markdown += f"**Phone:** {phone}\n\n"
+                if not has_any_phone:
+                    markdown += "**Phone:** Currently unavailable\n\n"
 
                 # Email - check top-level and nested contact dict
                 email = (stakeholder.get('email') or _contact.get('email') or '')
