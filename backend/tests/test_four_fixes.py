@@ -130,15 +130,64 @@ def test_intent_enrich_uses_topic_singular():
         "Intent enrich attrs should map 'topic' key to topics_to_use value"
 
 
-def test_intent_topics_fallback_no_default_topics():
-    """When topic lookup fails, should NOT fall back to DEFAULT_INTENT_TOPICS."""
-    from worker.zoominfo_client import ZoomInfoClient
+def test_intent_topics_fallback_to_defaults():
+    """When topic lookup fails, should fall back to DEFAULT_INTENT_TOPICS."""
+    from worker.zoominfo_client import ZoomInfoClient, DEFAULT_INTENT_TOPICS
     import inspect
 
     source = inspect.getsource(ZoomInfoClient._fetch_valid_intent_topics)
 
-    # The except block should NOT assign DEFAULT_INTENT_TOPICS to cache
-    # (they cause PFAPI0006 because they don't match ZoomInfo's taxonomy)
-    # Look for the actual assignment pattern, not just mentions in comments
-    assert "list(DEFAULT_INTENT_TOPICS)" not in source, \
-        "Should not fall back to list(DEFAULT_INTENT_TOPICS) on failure"
+    # The except block SHOULD fall back to DEFAULT_INTENT_TOPICS.
+    # The previous PFAPI0006 was caused by wrong field name ("topics" vs "topic"),
+    # not by the topic names themselves.
+    assert "DEFAULT_INTENT_TOPICS" in source, \
+        "Should fall back to DEFAULT_INTENT_TOPICS on lookup failure"
+    assert len(DEFAULT_INTENT_TOPICS) > 0, "DEFAULT_INTENT_TOPICS should not be empty"
+
+
+# ── Issue: Apollo/Hunter contacts enriched via ZoomInfo Contact Enrich ────
+
+def test_step_284_enriches_found_contacts():
+    """Step 2.84 should enrich identity-lookup results via enrich_contacts for real phones."""
+    import inspect
+    import importlib
+    mod = importlib.import_module("production_main")
+
+    source = inspect.getsource(mod.process_company_profile)
+
+    # After lookup_contacts_by_identity, should call enrich_contacts with person_ids
+    assert "enrich_contacts" in source, \
+        "Step 2.84 should call enrich_contacts to get real phone numbers"
+    assert "enrichable_ids" in source or "person_id" in source, \
+        "Should extract person_ids from lookup results for enrichment"
+
+
+# ── Issue: ZoomInfo base data extraction includes company_type, description ──
+
+def test_extract_base_data_includes_zoominfo_company_fields():
+    """extract_base_data should extract company_type, description from zoominfo_data."""
+    from llm_council import extract_base_data
+
+    zoominfo_data = {
+        "company_name": "Acme Corp",
+        "company_type": "Public",
+        "ceo": "John Smith",
+        "description": "Acme Corp is a leading technology company.",
+        "industry": "Technology",
+        "sub_industry": "Enterprise Software",
+        "ticker": "ACME",
+        "phone": "+1-555-0000",
+    }
+
+    result = extract_base_data(
+        company_data={"company_name": "Acme Corp", "domain": "acme.com"},
+        apollo_data={},
+        pdl_data={},
+        zoominfo_data=zoominfo_data,
+    )
+
+    assert result.get("company_type") == "Public", "Should extract company_type from ZoomInfo"
+    assert result.get("ceo") == "John Smith", "Should extract CEO from ZoomInfo"
+    assert "leading technology" in result.get("description", ""), "Should extract description from ZoomInfo"
+    assert result.get("sub_industry") == "Enterprise Software", "Should extract sub_industry from ZoomInfo"
+    assert result.get("ticker") == "ACME", "Should extract ticker from ZoomInfo"

@@ -21,6 +21,19 @@
 
 ---
 
+## Three Fixes: Company Fields, Intent Enrichment, Contact Enrich Pipeline (2026-03-12)
+
+### Fix 1: Missing Company Overview Fields (CEO, Company Type, Description, etc.)
+Root cause: `extract_base_data()` in the LLM Council fallback did not extract `company_type`, `description`, `sub_industry`, `ticker`, or `phone` from ZoomInfo data. When the LLM Council produced sparse results, these fields were lost. Now extracted from ZoomInfo in the base data fallback. Also added `description`, `company_overview`, `ticker`, `phone` to the validated_data backfill list.
+
+### Fix 2: Intent Enrichment "No valid topics available" Error
+Previous fix changed the topic lookup fallback to return an empty list, which broke intent enrichment entirely. Root cause was actually the API field name: ZoomInfo Intent Enrich requires `"topic"` (singular), not `"topics"` (plural). Restored DEFAULT_INTENT_TOPICS as fallback when lookup fails — with the corrected field name, these topics are now accepted by the API.
+
+### Fix 3: Apollo/Hunter Contacts Fed Into ZoomInfo Contact Enrich
+The identity lookup (Step 2.84) found contacts via ZoomInfo search but got only masked phone numbers (`****`). Now after finding contacts with `person_id`s, feeds them into `enrich_contacts()` (Step 2.84b) to retrieve real direct/mobile/company phone numbers — the same enrich pipeline used for ZoomInfo's own search results.
+
+---
+
 ## Four Pipeline Fixes: Phones, Cross-Reference, Company Fields, Intent (2026-03-12)
 
 ### Fix 1: Phone Numbers Missing from Gamma Slideshow

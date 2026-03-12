@@ -1137,7 +1137,7 @@ class TestLookupContactsByIdentity:
 
         call_count = [0]
 
-        async def always_return_same(endpoint, payload):
+        async def always_return_same(endpoint, payload, _is_retry=False, params=None):
             call_count[0] += 1
             return {"data": [same_contact]}
 
@@ -1381,7 +1381,8 @@ class TestIntentTopicsLookup:
                 await client.enrich_intent(domain="acme.com")
 
         assert len(intent_payload_captured) > 0
-        topics_sent = intent_payload_captured[0]["data"]["attributes"].get("topics", [])
+        # ZoomInfo Intent Enrich API uses "topic" (singular), not "topics"
+        topics_sent = intent_payload_captured[0]["data"]["attributes"].get("topic", [])
         assert topics_sent == valid_topics, (
             f"Topics in payload must match lookup result. Expected: {valid_topics}, got: {topics_sent}"
         )

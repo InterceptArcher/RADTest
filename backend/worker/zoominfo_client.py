@@ -535,22 +535,22 @@ class ZoomInfoClient:
             else:
                 logger.warning(
                     "ZoomInfo intent topics lookup returned 0 topics — "
-                    "Buyer Intent may not be enabled on this subscription. "
+                    "falling back to DEFAULT_INTENT_TOPICS. "
                     "Raw response keys: %s", list(data.keys()) if isinstance(data, dict) else type(data).__name__,
                 )
-                self._valid_topics_cache = []
+                self._valid_topics_cache = list(DEFAULT_INTENT_TOPICS)
             return self._valid_topics_cache
 
         except Exception as e:
             logger.warning(
                 "ZoomInfo intent topics lookup failed (%s). "
-                "Intent enrichment will be skipped — DEFAULT_INTENT_TOPICS are not "
-                "reliable because they may not match ZoomInfo's taxonomy.",
+                "Falling back to DEFAULT_INTENT_TOPICS.",
                 e,
             )
-            # Do NOT fall back to DEFAULT_INTENT_TOPICS — they cause PFAPI0006.
-            # Return empty so enrich_intent skips gracefully.
-            self._valid_topics_cache = []
+            # Fall back to DEFAULT_INTENT_TOPICS — the previous PFAPI0006 error
+            # was caused by using "topics" (plural) instead of "topic" (singular)
+            # in the enrich payload, NOT by invalid topic names.
+            self._valid_topics_cache = list(DEFAULT_INTENT_TOPICS)
             return self._valid_topics_cache
 
     async def _ensure_valid_token(self) -> None:

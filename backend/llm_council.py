@@ -972,6 +972,18 @@ def extract_base_data(company_data: Dict, apollo_data: Dict, pdl_data: Dict, hun
             result["founded_year"] = zoominfo_data["founded_year"]
         if zoominfo_data.get("ceo"):
             result["ceo"] = title_case_name(zoominfo_data["ceo"])
+        if zoominfo_data.get("company_type"):
+            result["company_type"] = zoominfo_data["company_type"]
+        if zoominfo_data.get("description"):
+            result["description"] = zoominfo_data["description"]
+            if not result.get("company_overview"):
+                result["company_overview"] = zoominfo_data["description"]
+        if zoominfo_data.get("sub_industry"):
+            result["sub_industry"] = zoominfo_data["sub_industry"]
+        if zoominfo_data.get("ticker"):
+            result["ticker"] = zoominfo_data["ticker"]
+        if zoominfo_data.get("phone"):
+            result["phone"] = zoominfo_data["phone"]
         if zoominfo_data.get("linkedin_url"):
             result["linkedin_url"] = zoominfo_data["linkedin_url"]
         # Growth metrics (ZoomInfo exclusive)

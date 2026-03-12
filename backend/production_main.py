@@ -1797,6 +1797,41 @@ async def process_company_profile(job_id: str, company_data: dict):
                         domain=company_data["domain"]
                     )
                     zi_lookup_contacts = lookup_result.get("people", []) if lookup_result.get("success") else []
+
+                    # Step 2.84b: Enrich found contacts to get real phone numbers.
+                    # The search endpoint returns masked phones (****) — the enrich
+                    # endpoint returns actual direct/mobile/company phone numbers.
+                    enrichable_ids = [
+                        c["person_id"] for c in zi_lookup_contacts
+                        if c.get("person_id")
+                    ]
+                    if enrichable_ids:
+                        logger.info(
+                            f"ZoomInfo contact enrich: enriching {len(enrichable_ids)} "
+                            f"Apollo/Hunter cross-referenced contacts for real phone numbers"
+                        )
+                        enrich_result = await zi_client.enrich_contacts(enrichable_ids)
+                        enriched_people = enrich_result.get("people", []) if enrich_result.get("success") else []
+                        # Merge enriched phone data back into lookup results by person_id
+                        enriched_by_pid = {p["person_id"]: p for p in enriched_people if p.get("person_id")}
+                        for contact in zi_lookup_contacts:
+                            pid = contact.get("person_id")
+                            if pid and pid in enriched_by_pid:
+                                ep = enriched_by_pid[pid]
+                                # Overwrite phone fields with enriched values (real numbers)
+                                for phone_field in ("phone", "direct_phone", "mobile_phone", "company_phone"):
+                                    if ep.get(phone_field):
+                                        contact[phone_field] = ep[phone_field]
+                                if ep.get("contact_accuracy_score"):
+                                    contact["contact_accuracy_score"] = ep["contact_accuracy_score"]
+                                if ep.get("email") and not contact.get("email"):
+                                    contact["email"] = ep["email"]
+                                contact["enriched"] = True
+                        logger.info(
+                            f"ZoomInfo contact enrich: {len(enriched_people)}/{len(enrichable_ids)} "
+                            f"contacts enriched with real phone numbers"
+                        )
+
                     contacts_with_phones = [c for c in zi_lookup_contacts if c.get("direct_phone") or c.get("mobile_phone")]
                     _identity_duration = int((time.monotonic() - _t_identity) * 1000)
 
@@ -2278,6 +2313,7 @@ async def process_company_profile(job_id: str, company_data: dict):
             "headquarters", "founded_year", "ceo", "company_type", "target_market",
             "linkedin_url", "geographic_reach", "founders", "customer_segments",
             "products", "technologies", "technology", "competitors",
+            "description", "company_overview", "ticker", "phone",
         ]
         _raw_sources = [apollo_data, pdl_data, zoominfo_data]
         for _field in _backfill_fields:
