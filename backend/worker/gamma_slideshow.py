@@ -224,7 +224,7 @@ Employee Range: {validated_data.get('employees_range', validated_data.get('emplo
 Annual Revenue: {validated_data.get('annual_revenue', validated_data.get('revenue', 'Not available'))}
 Revenue Range: {validated_data.get('revenue_range', 'Not available')}
 Estimated Revenue: {validated_data.get('estimated_revenue', 'Not available')}
-Estimated IT Budget: {validated_data.get('estimated_it_spend', validated_data.get('it_budget', 'Contact for estimate'))}
+Estimated IT Budget: {self._estimate_it_budget(validated_data)}
 
 Contact Information:
 - Phone: {validated_data.get('phone', 'Not available')}
@@ -577,6 +577,40 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             'reason': 'Sufficient data available'
         }
 
+    @staticmethod
+    def _estimate_it_budget(validated_data: Dict[str, Any]) -> str:
+        """Estimate annual IT budget from validated data.
+
+        Uses the same logic as _build_executive_snapshot in production_main:
+        1. Check for explicit estimated_it_spend / it_budget fields
+        2. Fall back to employee-count-based estimate ($10K-$20K per employee)
+        """
+        it_spend = (
+            validated_data.get("estimated_it_spend")
+            or validated_data.get("it_budget")
+        )
+        if it_spend:
+            # Already a string like "$5.0M - $10.0M annually"
+            s = str(it_spend).strip()
+            return s if s.startswith("$") else f"${s}"
+
+        employee_count = validated_data.get("employee_count")
+        if employee_count:
+            try:
+                emp_num = int(
+                    str(employee_count).replace(",", "").replace("+", "").split("-")[0]
+                )
+                low = emp_num * 10000
+                high = emp_num * 20000
+                if high >= 1_000_000:
+                    return f"${low / 1_000_000:.1f}M - ${high / 1_000_000:.1f}M annually"
+                else:
+                    return f"${low / 1_000:.0f}K - ${high / 1_000:.0f}K annually"
+            except (ValueError, TypeError):
+                pass
+
+        return "Not available"
+
     def _generate_markdown(self, company_data: Dict[str, Any], user_email: str = None) -> str:
         """
         Generate markdown content from company data following HP RAD Intelligence template.
@@ -707,24 +741,9 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         industry = validated_data.get('industry', 'Technology')
         markdown += f"**Industry:** {industry}\n\n"
 
-        # Estimated Annual IT Budget
-        it_spend = validated_data.get('estimated_it_spend') or validated_data.get('it_budget') or validated_data.get('inferred_revenue', '')
-        if it_spend:
-            markdown += f"**Estimated Annual IT Budget:** ${it_spend}\n\n"
-        else:
-            # Try to estimate from employee count
-            employee_count = validated_data.get('employee_count', 0)
-            if employee_count:
-                try:
-                    emp_num = int(str(employee_count).replace(',', '').split('-')[0])
-                    # Rough estimate: $10k-50k per employee for IT
-                    low = emp_num * 10000
-                    high = emp_num * 50000
-                    markdown += f"**Estimated Annual IT Budget:** ${low//1000000}M-${high//1000000}M (estimated based on {employee_count} employees)\n\n"
-                except:
-                    markdown += "**Estimated Annual IT Budget:** Contact for estimate\n\n"
-            else:
-                markdown += "**Estimated Annual IT Budget:** Contact for estimate\n\n"
+        # Estimated Annual IT Budget — use same logic as executive snapshot
+        it_spend = self._estimate_it_budget(validated_data)
+        markdown += f"**Estimated Annual IT Budget:** {it_spend}\n\n"
 
         # Contact Information - DISPLAY PHONE NUMBERS
         markdown += "**Contact Information:**\n\n"
