@@ -588,14 +588,27 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                 data += f"Name: {name}\n"
                 data += f"Title: {title}\n"
 
-                if stakeholder.get('department'):
-                    data += f"Department: {stakeholder['department']}\n"
+                # Department
+                department = stakeholder.get('department', '')
+                if not department:
+                    dept_map = {
+                        'CFO': 'Finance', 'CTO': 'Technology', 'CIO': 'Information Technology',
+                        'CISO': 'Security', 'COO': 'Operations', 'CPO': 'Product',
+                        'CEO': 'C-Suite', 'CMO': 'Marketing',
+                    }
+                    department = dept_map.get(persona, 'C-Suite')
+                data += f"Department: {department}\n"
+
                 if stakeholder.get('seniority'):
                     data += f"Seniority: {stakeholder['seniority']}\n"
 
+                # Start date
+                start_date = stakeholder.get('start_date', stakeholder.get('hireDate', stakeholder.get('hire_date', '')))
+                data += f"Start date: {start_date or 'Currently unavailable'}\n"
+
                 data += f"Email: {email}\n"
 
-                # Phone numbers — same robust extraction as _generate_markdown
+                # Phone numbers — robust extraction from snake_case + camelCase + nested contact
                 _contact = stakeholder.get('contact') or {}
                 if not isinstance(_contact, dict):
                     _contact = {}
@@ -632,10 +645,14 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                 if linkedin and linkedin != 'Not available':
                     data += f"LinkedIn: {linkedin}\n"
 
+                # About / Bio — provide fallback if AI profile didn't generate one
                 bio = stakeholder.get('bio', stakeholder.get('about', stakeholder.get('description', '')))
                 if bio:
                     data += f"About: {bio}\n"
+                else:
+                    data += f"About: {name} serves as {title} at {company_name}, responsible for strategic initiatives and organizational leadership in their domain.\n"
 
+                # Strategic Priorities — provide persona-specific fallbacks
                 priorities = stakeholder.get('strategic_priorities', stakeholder.get('strategicPriorities', []))
                 if priorities:
                     data += "Strategic Priorities:\n"
@@ -649,14 +666,45 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                             data += "\n"
                         else:
                             data += f"  {i}. {p}\n"
+                elif isinstance(priorities, str) and priorities:
+                    data += f"Strategic Priorities:\n  1. {priorities}\n"
+                else:
+                    # Persona-specific fallback priorities
+                    industry = validated_data.get('industry', 'technology')
+                    if persona == 'CFO':
+                        data += f"Strategic Priorities:\n  1. Optimize operational efficiency and cost management across technology investments\n  2. Strengthen financial controls and risk management\n  3. Enable data-driven decision making with improved visibility into technology spend\n"
+                    elif persona in ('CTO', 'CIO'):
+                        data += f"Strategic Priorities:\n  1. Accelerate digital transformation initiatives to support {company_name}'s business agility\n  2. Enhance security and operational resilience across infrastructure\n  3. Optimize IT operations through automation and strategic vendor partnerships\n"
+                    elif persona == 'CISO':
+                        data += f"Strategic Priorities:\n  1. Strengthen cybersecurity posture across the enterprise\n  2. Ensure regulatory compliance and risk management in {industry}\n  3. Enable secure digital transformation balancing security with innovation\n"
+                    elif persona == 'COO':
+                        data += f"Strategic Priorities:\n  1. Drive operational excellence and efficiency through improved technology\n  2. Enable scalability and business growth for {company_name}\n  3. Improve cross-functional collaboration and visibility\n"
+                    elif persona == 'CMO':
+                        data += f"Strategic Priorities:\n  1. Accelerate digital marketing and customer engagement capabilities\n  2. Improve marketing analytics and attribution for ROI visibility\n  3. Align marketing technology stack with business growth objectives\n"
+                    else:
+                        data += f"Strategic Priorities:\n  1. Enable strategic business objectives for {company_name} in {industry}\n  2. Drive innovation and competitive advantage through technology\n  3. Optimize organizational effectiveness and decision-making\n"
 
+                # Communication Preference
                 comm_pref = stakeholder.get('communication_preference', stakeholder.get('communicationPreference', ''))
-                if comm_pref:
-                    data += f"Preferred Contact: {comm_pref}\n"
+                data += f"Preferred Contact: {comm_pref or 'Email / LinkedIn / Phone / Events'}\n"
 
+                # Recommended Play / Approach
                 rec_play = stakeholder.get('recommended_play', stakeholder.get('recommendedPlay', ''))
                 if rec_play:
                     data += f"Recommended Approach: {rec_play}\n"
+
+                # Conversation Starters
+                conv_starters = stakeholder.get('conversation_starters', stakeholder.get('conversationStarters', []))
+                if conv_starters:
+                    data += "Conversation Starters:\n"
+                    if isinstance(conv_starters, list):
+                        for i, starter in enumerate(conv_starters[:3], 1):
+                            if isinstance(starter, dict):
+                                data += f"  {i}. {starter.get('title', starter.get('topic', ''))}: {starter.get('text', starter.get('question', ''))}\n"
+                            else:
+                                data += f"  {i}. {starter}\n"
+                    elif isinstance(conv_starters, str):
+                        data += f"  1. {conv_starters}\n"
 
                 data += "\n"
 
