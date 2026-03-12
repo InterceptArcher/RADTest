@@ -985,6 +985,114 @@ Scoring guide:
     return enriched
 
 
+async def claude_company_intel(company_name: str, domain: str) -> Dict[str, Any]:
+    """
+    Step 2.9 — Claude web search for company intelligence fields.
+
+    Uses Claude claude-sonnet-4-6 with built-in web_search tool to look up company
+    fields that API sources (ZoomInfo, Apollo, PDL) often don't provide:
+    ceo, company_type, customer_segments, products, competitors.
+
+    Results are fed into the LLM Council aggregator so it has real datapoints
+    instead of guessing.
+
+    This value must be provided via environment variables: ANTHROPIC_API_KEY.
+    """
+    if not ANTHROPIC_API_KEY:
+        logger.info("ANTHROPIC_API_KEY not set — skipping Claude company intel (step 2.9)")
+        return {}
+
+    try:
+        import anthropic as _anthropic
+    except ImportError:
+        logger.warning("anthropic package not installed — skipping Claude company intel")
+        return {}
+
+    try:
+        client = _anthropic.AsyncAnthropic(api_key=ANTHROPIC_API_KEY)
+        response = await client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=1024,
+            tools=[{
+                "type": "web_search_20250305",
+                "name": "web_search",
+                "max_uses": 5,
+            }],
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"Research the company {company_name} (website: {domain}) and provide "
+                    f"the following information. Search the web to find accurate, current data.\n\n"
+                    f"Return ONLY valid JSON with these exact keys:\n"
+                    f'{{\n'
+                    f'  "ceo": "Full Name of current CEO",\n'
+                    f'  "company_type": "Public" or "Private" or "Subsidiary" or "Government" or "Non-Profit",\n'
+                    f'  "customer_segments": ["segment1", "segment2", ...],\n'
+                    f'  "products": ["product1", "product2", ...],\n'
+                    f'  "competitors": ["competitor1", "competitor2", ...]\n'
+                    f'}}\n\n'
+                    f"Rules:\n"
+                    f"- For CEO: provide the current CEO's full name. If no CEO, provide the highest-ranking executive.\n"
+                    f"- For company_type: determine if the company is publicly traded, private, a subsidiary, etc.\n"
+                    f"- For customer_segments: list 3-6 key market segments or customer types they serve.\n"
+                    f"- For products: list 3-8 main products or services they offer. Use actual product names.\n"
+                    f"- For competitors: list 3-6 direct competitors in their market.\n"
+                    f"- Return ONLY the JSON object, no other text."
+                ),
+            }],
+        )
+
+        # Extract JSON from response
+        result_text = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                result_text += block.text.strip()
+
+        if not result_text:
+            logger.warning("Claude company intel returned empty response for %s", company_name)
+            return {}
+
+        # Parse JSON — handle cases where Claude wraps in markdown code block
+        import json as _json
+        cleaned = result_text.strip()
+        if cleaned.startswith("```"):
+            # Strip markdown code fences
+            lines = cleaned.split("\n")
+            lines = [l for l in lines if not l.strip().startswith("```")]
+            cleaned = "\n".join(lines)
+
+        parsed = _json.loads(cleaned)
+        if not isinstance(parsed, dict):
+            logger.warning("Claude company intel returned non-dict for %s: %s", company_name, type(parsed))
+            return {}
+
+        # Validate and extract only expected fields
+        result = {}
+        if parsed.get("ceo") and isinstance(parsed["ceo"], str):
+            result["ceo"] = parsed["ceo"].strip()
+        if parsed.get("company_type") and isinstance(parsed["company_type"], str):
+            result["company_type"] = parsed["company_type"].strip()
+        if parsed.get("customer_segments") and isinstance(parsed["customer_segments"], list):
+            result["customer_segments"] = [s.strip() for s in parsed["customer_segments"] if isinstance(s, str)]
+        if parsed.get("products") and isinstance(parsed["products"], list):
+            result["products"] = [p.strip() for p in parsed["products"] if isinstance(p, str)]
+        if parsed.get("competitors") and isinstance(parsed["competitors"], list):
+            result["competitors"] = [c.strip() for c in parsed["competitors"] if isinstance(c, str)]
+
+        logger.info(
+            "Claude company intel for %s: ceo=%r, type=%r, segments=%d, products=%d, competitors=%d",
+            company_name, result.get("ceo", ""), result.get("company_type", ""),
+            len(result.get("customer_segments", [])),
+            len(result.get("products", [])),
+            len(result.get("competitors", [])),
+        )
+        return result
+
+    except Exception as e:
+        logger.warning("Claude company intel failed for %s: %s", company_name, e)
+        return {}
+
+
 async def _find_linkedin_via_claude_search(
     company_name: str,
     domain: str,
@@ -2176,6 +2284,60 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["current_step"] = "Storing raw data..."
         await store_raw_data(company_data["company_name"], apollo_data, pdl_data, hunter_data)
 
+        # Step 3.5: Claude web search for company intelligence
+        # ZoomInfo can't return ceo/company_type on this subscription tier,
+        # and customer_segments/products/competitors don't exist in any API.
+        # Use Claude with web_search to gather these fields as input for the council.
+        jobs_store[job_id]["progress"] = 55
+        jobs_store[job_id]["current_step"] = "Claude web search: gathering company intelligence..."
+        _t_intel = time.monotonic()
+        claude_intel = await claude_company_intel(
+            company_name=company_data["company_name"],
+            domain=company_data.get("domain", ""),
+        )
+        _intel_duration = int((time.monotonic() - _t_intel) * 1000)
+        if claude_intel:
+            # Inject into zoominfo_data so the council aggregator sees these fields
+            for field in ("ceo", "company_type", "customer_segments", "products", "competitors"):
+                if claude_intel.get(field) and not zoominfo_data.get(field):
+                    zoominfo_data[field] = claude_intel[field]
+            logger.info(
+                "Claude company intel injected %d fields into zoominfo_data for council",
+                len(claude_intel),
+            )
+        jobs_store[job_id]["step_3_5_result"] = {
+            "fields_found": list(claude_intel.keys()) if claude_intel else [],
+            "duration_ms": _intel_duration,
+            "ceo": claude_intel.get("ceo", ""),
+            "company_type": claude_intel.get("company_type", ""),
+            "customer_segments_count": len(claude_intel.get("customer_segments", [])),
+            "products_count": len(claude_intel.get("products", [])),
+            "competitors_count": len(claude_intel.get("competitors", [])),
+        }
+        _log_api_call(
+            jobs_store[job_id],
+            "Claude Web Search — Company Intelligence",
+            "https://api.anthropic.com/v1/messages", "POST",
+            {
+                "model": "claude-sonnet-4-6",
+                "tool": "web_search_20250305",
+                "company": company_data["company_name"],
+                "domain": company_data.get("domain", ""),
+                "fields_requested": ["ceo", "company_type", "customer_segments", "products", "competitors"],
+            },
+            {
+                "fields_found": list(claude_intel.keys()) if claude_intel else [],
+                "ceo": claude_intel.get("ceo", ""),
+                "company_type": claude_intel.get("company_type", ""),
+                "customer_segments": claude_intel.get("customer_segments", []),
+                "products": claude_intel.get("products", []),
+                "competitors": claude_intel.get("competitors", []),
+            },
+            200 if claude_intel else 204,
+            _intel_duration,
+            is_sensitive=True, masked_fields=["authorization"],
+        )
+
         # Step 4: Validate with LLM Council (28 specialists + 1 aggregator)
         jobs_store[job_id]["progress"] = 60
         jobs_store[job_id]["current_step"] = "Running LLM Council (28 specialists)..."
@@ -2456,10 +2618,10 @@ async def process_company_profile(job_id: str, company_data: dict):
             "founders": validated_data.get("founders") or apollo_data.get("founders") or pdl_data.get("founders") or [],
             "ceo": validated_data.get("ceo") or apollo_data.get("ceo") or pdl_data.get("ceo") or zoominfo_data.get("ceo"),
             "target_market": validated_data.get("target_market") or apollo_data.get("target_market") or pdl_data.get("target_market"),
-            "customer_segments": validated_data.get("customer_segments") or apollo_data.get("customer_segments") or pdl_data.get("customer_segments") or [],
-            "products": validated_data.get("products") or apollo_data.get("products") or pdl_data.get("products") or [],
+            "customer_segments": validated_data.get("customer_segments") or apollo_data.get("customer_segments") or pdl_data.get("customer_segments") or zoominfo_data.get("customer_segments") or [],
+            "products": validated_data.get("products") or apollo_data.get("products") or pdl_data.get("products") or zoominfo_data.get("products") or [],
             "technologies": validated_data.get("technologies") or validated_data.get("technology") or apollo_data.get("technologies") or apollo_data.get("technology") or pdl_data.get("technologies") or pdl_data.get("technology") or [],
-            "competitors": validated_data.get("competitors") or apollo_data.get("competitors") or pdl_data.get("competitors") or [],
+            "competitors": validated_data.get("competitors") or apollo_data.get("competitors") or pdl_data.get("competitors") or zoominfo_data.get("competitors") or [],
             "company_type": validated_data.get("company_type") or apollo_data.get("company_type") or pdl_data.get("company_type") or zoominfo_data.get("company_type"),
             "description": validated_data.get("description") or validated_data.get("company_overview") or apollo_data.get("description") or pdl_data.get("description") or zoominfo_data.get("description"),
             "company_overview": validated_data.get("company_overview") or validated_data.get("description") or apollo_data.get("description") or pdl_data.get("description") or zoominfo_data.get("description"),
@@ -4347,6 +4509,39 @@ def generate_debug_data(job_id: str, job_data: dict) -> dict:
                     ],
                     "results": job_data.get("step_2_86_result", {}).get("results", []),
                     "error": job_data.get("step_2_86_result", {}).get("error"),
+                    "skipped_reason": (
+                        "ANTHROPIC_API_KEY not configured in environment"
+                        if not ANTHROPIC_API_KEY else None
+                    ),
+                },
+            },
+            {
+                "id": "step-1h",
+                "name": "Claude Web Search — Company Intelligence",
+                "description": (
+                    "Using Claude claude-sonnet-4-6 with web_search to gather company fields that "
+                    "API sources don't provide: CEO, company type, customer segments, products, "
+                    "competitors. Results are fed into the LLM Council aggregator."
+                ),
+                "status": (
+                    "completed" if job_data.get("step_3_5_result", {}).get("fields_found")
+                    else ("skipped" if not ANTHROPIC_API_KEY else "failed")
+                ),
+                "start_time": (base_time + timedelta(seconds=5)).isoformat() + "Z",
+                "end_time": (base_time + timedelta(
+                    seconds=5,
+                    milliseconds=job_data.get("step_3_5_result", {}).get("duration_ms", 0)
+                )).isoformat() + "Z",
+                "duration": job_data.get("step_3_5_result", {}).get("duration_ms", 0),
+                "metadata": {
+                    "model": "claude-sonnet-4-6",
+                    "tool": "web_search_20250305",
+                    "fields_found": job_data.get("step_3_5_result", {}).get("fields_found", []),
+                    "ceo": job_data.get("step_3_5_result", {}).get("ceo", ""),
+                    "company_type": job_data.get("step_3_5_result", {}).get("company_type", ""),
+                    "customer_segments_count": job_data.get("step_3_5_result", {}).get("customer_segments_count", 0),
+                    "products_count": job_data.get("step_3_5_result", {}).get("products_count", 0),
+                    "competitors_count": job_data.get("step_3_5_result", {}).get("competitors_count", 0),
                     "skipped_reason": (
                         "ANTHROPIC_API_KEY not configured in environment"
                         if not ANTHROPIC_API_KEY else None
