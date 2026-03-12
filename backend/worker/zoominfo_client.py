@@ -76,20 +76,21 @@ BASE_COMPANY_OUTPUT_FIELDS = [
     "country",
     "phone",
     "ticker",
-    # Industry/description are standard fields available on all subscription tiers.
-    # Including them in base ensures they survive PFAPI0009 fallback.
+]
+
+# Extended output fields — include leadership/industry fields that may be disallowed
+# on some subscription tiers (PFAPI0009).  enrich_company() tries extended first,
+# falls back to base if the API rejects them.
+# NOTE: industry, subIndustry, yearFounded, ceoName, companyType are confirmed
+# DISALLOWED on the current subscription (PFAPI0009).  They must stay in EXTENDED
+# so the BASE fallback still succeeds and returns a valid company_id.
+EXTENDED_COMPANY_OUTPUT_FIELDS = BASE_COMPANY_OUTPUT_FIELDS + [
+    "ceoName",
+    "companyType",
     "industry",
     "subIndustry",
     "description",
     "yearFounded",
-]
-
-# Extended output fields — include leadership fields that may be disallowed
-# on some subscription tiers (PFAPI0009).  enrich_company() tries extended first,
-# falls back to base if the API rejects them.
-EXTENDED_COMPANY_OUTPUT_FIELDS = BASE_COMPANY_OUTPUT_FIELDS + [
-    "ceoName",
-    "companyType",
     "linkedInUrl",
 ]
 

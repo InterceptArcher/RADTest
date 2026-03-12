@@ -1897,20 +1897,20 @@ class TestCompanyEnrichOutputFieldsFallback:
     """Test that company enrich falls back to base fields when extended fields are disallowed."""
 
     def test_base_company_output_fields_exist(self):
-        """BASE_COMPANY_OUTPUT_FIELDS constant exists with standard fields."""
+        """BASE_COMPANY_OUTPUT_FIELDS has only the 11 safe fields that work on all tiers."""
         from zoominfo_client import BASE_COMPANY_OUTPUT_FIELDS
         assert "id" in BASE_COMPANY_OUTPUT_FIELDS
         assert "name" in BASE_COMPANY_OUTPUT_FIELDS
         assert "website" in BASE_COMPANY_OUTPUT_FIELDS
         assert "revenue" in BASE_COMPANY_OUTPUT_FIELDS
         assert "employeeCount" in BASE_COMPANY_OUTPUT_FIELDS
-        # Industry/description are standard fields available on all tiers
-        assert "industry" in BASE_COMPANY_OUTPUT_FIELDS
-        assert "subIndustry" in BASE_COMPANY_OUTPUT_FIELDS
-        assert "description" in BASE_COMPANY_OUTPUT_FIELDS
-        # Leadership fields remain in extended only (may be tier-restricted)
+        # These fields are DISALLOWED on current subscription (PFAPI0009)
+        # They must stay in EXTENDED only so BASE fallback succeeds
         assert "ceoName" not in BASE_COMPANY_OUTPUT_FIELDS
         assert "companyType" not in BASE_COMPANY_OUTPUT_FIELDS
+        assert "industry" not in BASE_COMPANY_OUTPUT_FIELDS
+        assert "subIndustry" not in BASE_COMPANY_OUTPUT_FIELDS
+        assert "yearFounded" not in BASE_COMPANY_OUTPUT_FIELDS
 
     def test_extended_company_output_fields_include_base(self):
         """EXTENDED_COMPANY_OUTPUT_FIELDS includes base + leadership/industry fields."""
