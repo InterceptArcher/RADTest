@@ -500,10 +500,17 @@ class ZoomInfoClient:
             return self._valid_topics_cache
 
         await self._ensure_valid_token()
+        await self.rate_limiter.acquire()
         url = f"{self.base_url}{ENDPOINTS['intent_topics_lookup']}"
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
                 response = await client.get(url, headers=self.headers)
+                # Retry once on 401 (expired token)
+                if response.status_code == 401 and self._auto_auth:
+                    logger.warning("ZoomInfo intent topics lookup 401 — re-authenticating")
+                    self._token_expires_at = 0
+                    await self._authenticate()
+                    response = await client.get(url, headers=self.headers)
                 response.raise_for_status()
                 data = response.json()
 
@@ -519,19 +526,31 @@ class ZoomInfoClient:
                         if name:
                             topics.append(str(name))
 
-            self._valid_topics_cache = topics
-            logger.info(
-                "ZoomInfo intent topics lookup: %d valid topics fetched", len(topics)
-            )
-            return topics
+            if topics:
+                self._valid_topics_cache = topics
+                logger.info(
+                    "ZoomInfo intent topics lookup: %d valid topics fetched (sample: %s)",
+                    len(topics), topics[:3],
+                )
+            else:
+                logger.warning(
+                    "ZoomInfo intent topics lookup returned 0 topics — "
+                    "Buyer Intent may not be enabled on this subscription. "
+                    "Raw response keys: %s", list(data.keys()) if isinstance(data, dict) else type(data).__name__,
+                )
+                self._valid_topics_cache = []
+            return self._valid_topics_cache
 
         except Exception as e:
             logger.warning(
                 "ZoomInfo intent topics lookup failed (%s). "
-                "Falling back to DEFAULT_INTENT_TOPICS.",
+                "Intent enrichment will be skipped — DEFAULT_INTENT_TOPICS are not "
+                "reliable because they may not match ZoomInfo's taxonomy.",
                 e,
             )
-            self._valid_topics_cache = list(DEFAULT_INTENT_TOPICS)
+            # Do NOT fall back to DEFAULT_INTENT_TOPICS — they cause PFAPI0006.
+            # Return empty so enrich_intent skips gracefully.
+            self._valid_topics_cache = []
             return self._valid_topics_cache
 
     async def _ensure_valid_token(self) -> None:
@@ -1318,6 +1337,8 @@ class ZoomInfoClient:
             website_candidates = ZoomInfoClient._website_candidates(domain)
 
             # Email-based lookup is most precise — try first
+            # NOTE: rpp must be passed as query param page[size], NOT in attributes
+            # (same as search_contacts._search). companyPastOrPresent ensures current employees only.
             if email:
                 payloads_to_try.append({
                     "data": {
@@ -1325,7 +1346,7 @@ class ZoomInfoClient:
                         "attributes": {
                             "companyWebsite": website_candidates,
                             "email": email,
-                            "rpp": 1,
+                            "companyPastOrPresent": "present",
                         }
                     }
                 })
@@ -1339,7 +1360,7 @@ class ZoomInfoClient:
                             "companyWebsite": website_candidates,
                             "firstName": first_name,
                             "lastName": last_name,
-                            "rpp": 1,
+                            "companyPastOrPresent": "present",
                         }
                     }
                 })
@@ -1348,9 +1369,11 @@ class ZoomInfoClient:
                 logger.debug("ZoomInfo identity lookup: skipping contact with no email/name")
                 return None
 
+            query_params = {"page[size]": 1}
+
             for payload in payloads_to_try:
                 try:
-                    response = await self._make_request(ENDPOINTS["contact_search"], payload)
+                    response = await self._make_request(ENDPOINTS["contact_search"], payload, params=query_params)
                     data_list = self._extract_data_list(response)
                     if data_list:
                         return self._normalize_contact(data_list[0])
@@ -1428,8 +1451,8 @@ class ZoomInfoClient:
         # Ordered attribute sets: companyId (most reliable) → companyWebsite fallback.
         attrs_to_try: List[Dict[str, Any]] = []
         if company_id:
-            attrs_to_try.append({"companyId": company_id, "topics": topics_to_use})
-        attrs_to_try.append({"companyWebsite": primary_website, "topics": topics_to_use})
+            attrs_to_try.append({"companyId": company_id, "topic": topics_to_use})
+        attrs_to_try.append({"companyWebsite": primary_website, "topic": topics_to_use})
 
         last_error: Optional[str] = None
         for attrs in attrs_to_try:

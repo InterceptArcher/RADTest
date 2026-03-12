@@ -21,6 +21,22 @@
 
 ---
 
+## Four Pipeline Fixes: Phones, Cross-Reference, Company Fields, Intent (2026-03-12)
+
+### Fix 1: Phone Numbers Missing from Gamma Slideshow
+Phone numbers from ZoomInfo were stored in a nested `contact` dict (`contact.directPhone`, `contact.mobilePhone`) but Gamma only checked top-level fields. Now checks both top-level and nested `contact` dict, plus `company_phone`/`companyPhone`. Also added `company_phone` to the top-level contact entry for consistency.
+
+### Fix 2: Apollo/Hunter ZoomInfo Cross-Reference Returning 0 Contacts
+The identity lookup (`lookup_contacts_by_identity`) was sending `rpp: 1` inside the JSON body `attributes`, but ZoomInfo's Contact Search requires pagination via query param `page[size]`. This caused every lookup to fail with HTTP 400. Fixed by moving pagination to query params and adding `companyPastOrPresent: "present"` filter.
+
+### Fix 3: Missing Company Overview Fields (CEO, Company Type, etc.)
+Added `description` and `company_overview` to the result dict with full fallback chain (validated_data → apollo → pdl → zoominfo). These fields were in `validated_data` but not exposed at the top level of the result object where the frontend reads them.
+
+### Fix 4: ZoomInfo Intent Enrichment PFAPI0006 Error
+Two bugs: (a) The intent enrich payload used `"topics"` (plural) but the ZoomInfo Enrich Intent API requires `"topic"` (singular). (b) When the intent topics lookup failed, it fell back to hardcoded DEFAULT_INTENT_TOPICS which don't match ZoomInfo's taxonomy — causing PFAPI0006 "Invalid topics requested". Now returns empty list on lookup failure so intent enrichment is skipped gracefully instead of sending invalid topics. Added 401 retry and better logging to the lookup.
+
+---
+
 ## Individual Stakeholder Slides in Gamma (2026-03-11)
 
 Each executive contact in `stakeholder_map.stakeholders` now gets their own dedicated slide in the Gamma slideshow, instead of being grouped together on a single "in scope" listing slide.

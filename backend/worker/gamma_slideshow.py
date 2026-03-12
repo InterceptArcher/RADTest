@@ -1239,13 +1239,16 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 else:
                     markdown += "**Start date:** Currently unavailable\n\n"
 
-                # Phone numbers - check ALL possible field variations from all sources
-                # ZoomInfo: phone, mobile_phone, direct_phone
-                # Apollo: phone, phone_number
-                # PDL: phone, mobile_phone
-                phone = stakeholder.get('phone', stakeholder.get('phone_number', stakeholder.get('phoneNumber', '')))
-                mobile = stakeholder.get('mobile', stakeholder.get('mobile_phone', stakeholder.get('mobilePhone', '')))
-                direct_phone = stakeholder.get('direct_phone', stakeholder.get('directPhone', ''))
+                # Phone numbers - check top-level fields AND nested "contact" dict
+                # Top-level: direct_phone, mobile_phone, phone (set for sorting)
+                # Nested contact dict: directPhone, mobilePhone, companyPhone, phone
+                _contact = stakeholder.get('contact', {}) or {}
+                phone = (stakeholder.get('phone') or stakeholder.get('phone_number')
+                         or _contact.get('phone') or _contact.get('companyPhone') or '')
+                mobile = (stakeholder.get('mobile_phone') or stakeholder.get('mobile')
+                          or _contact.get('mobilePhone') or '')
+                direct_phone = (stakeholder.get('direct_phone') or stakeholder.get('directPhone')
+                                or _contact.get('directPhone') or '')
 
                 if direct_phone:
                     markdown += f"**Direct Phone:** {direct_phone}\n\n"
@@ -1259,15 +1262,16 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 else:
                     markdown += "**Mobile Phone:** Currently unavailable\n\n"
 
-                # Email
-                email = stakeholder.get('email', stakeholder.get('value', ''))
+                # Email - check top-level and nested contact dict
+                email = (stakeholder.get('email') or _contact.get('email') or '')
                 if email:
                     markdown += f"**Email:** {email}\n\n"
                 else:
                     markdown += "**Email:** Currently unavailable\n\n"
 
-                # LinkedIn
-                linkedin = stakeholder.get('linkedin', '')
+                # LinkedIn - check top-level and nested contact dict
+                linkedin = (stakeholder.get('linkedin') or stakeholder.get('linkedin_url')
+                            or _contact.get('linkedinUrl') or '')
                 if linkedin:
                     markdown += f"**LinkedIn:** {linkedin}\n\n"
                 else:

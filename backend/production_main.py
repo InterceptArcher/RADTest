@@ -2227,12 +2227,14 @@ async def process_company_profile(job_id: str, company_data: dict):
                     "conversationStarters": ai_profile.get("conversation_starters", ""),
                     "recommendedNextSteps": ai_profile.get("recommended_next_steps", []),
                     # Pass raw fields through for _group_stakeholders_by_csuite sorting
+                    # and for Gamma slideshow phone/email/linkedin extraction
                     "email": s.get("email"),
                     "phone": s.get("phone"),
                     "linkedin_url": s.get("linkedin_url"),
                     "source": s.get("source"),
                     "direct_phone": s.get("direct_phone"),
                     "mobile_phone": s.get("mobile_phone"),
+                    "company_phone": s.get("company_phone"),
                 }
                 all_contact_entries.append(contact_entry)
 
@@ -2405,6 +2407,8 @@ async def process_company_profile(job_id: str, company_data: dict):
             "technologies": validated_data.get("technologies") or validated_data.get("technology") or apollo_data.get("technologies") or apollo_data.get("technology") or pdl_data.get("technologies") or pdl_data.get("technology") or [],
             "competitors": validated_data.get("competitors") or apollo_data.get("competitors") or pdl_data.get("competitors") or [],
             "company_type": validated_data.get("company_type") or apollo_data.get("company_type") or pdl_data.get("company_type") or zoominfo_data.get("company_type"),
+            "description": validated_data.get("description") or validated_data.get("company_overview") or apollo_data.get("description") or pdl_data.get("description") or zoominfo_data.get("description"),
+            "company_overview": validated_data.get("company_overview") or validated_data.get("description") or apollo_data.get("description") or pdl_data.get("description") or zoominfo_data.get("description"),
             "linkedin_url": validated_data.get("linkedin_url") or apollo_data.get("linkedin_url") or pdl_data.get("linkedin_url") or zoominfo_data.get("linkedin_url"),
             "phone": zoominfo_data.get("phone") or validated_data.get("phone") or apollo_data.get("phone") or pdl_data.get("phone"),
             "ticker": zoominfo_data.get("ticker") or validated_data.get("ticker"),
