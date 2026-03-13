@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useJobs } from '@/hooks/useJobs';
+import { useSellers } from '@/hooks/useSellers';
 import { apiClient } from '@/lib/api';
 import { sanitizeDomain } from '@/lib/validation';
 
@@ -11,6 +12,7 @@ interface FormData {
   website: string;
   salespersonName: string;
   email: string;
+  sellerId: string;
 }
 
 interface FormErrors {
@@ -23,11 +25,13 @@ interface FormErrors {
 export default function AddCompanyForm() {
   const router = useRouter();
   const { addJob } = useJobs();
+  const { sellers, addSellerJob } = useSellers();
   const [formData, setFormData] = useState<FormData>({
     companyName: '',
     website: '',
     salespersonName: '',
     email: '',
+    sellerId: '',
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -67,6 +71,8 @@ export default function AddCompanyForm() {
 
     try {
       const domain = sanitizeDomain(formData.website);
+      const selectedSeller = sellers.find((s) => s.id === formData.sellerId);
+
       const response = await apiClient.submitProfileRequest({
         company_name: formData.companyName,
         domain: domain,
@@ -79,12 +85,22 @@ export default function AddCompanyForm() {
         domain: domain,
         requested_by: formData.email,
         salesperson_name: formData.salespersonName || undefined,
-      });
+      }, formData.sellerId || undefined, selectedSeller?.name);
 
-      // Reset form
-      setFormData({ companyName: '', website: '', salespersonName: '', email: '' });
+      if (formData.sellerId) {
+        await addSellerJob({
+          job_id: response.job_id,
+          seller_id: formData.sellerId,
+          company_name: formData.companyName,
+          domain: domain,
+          status: 'pending',
+          requested_by: formData.email,
+          salesperson_name: formData.salespersonName || undefined,
+          created_at: new Date().toISOString(),
+        });
+      }
 
-      // Navigate to jobs
+      setFormData({ companyName: '', website: '', salespersonName: '', email: '', sellerId: '' });
       router.push('/dashboard/jobs');
     } catch (error) {
       console.error('Failed to submit:', error);
@@ -98,159 +114,114 @@ export default function AddCompanyForm() {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-5">
-      {/* Company Name */}
-      <div>
-        <label
-          htmlFor="companyName"
-          className="block text-sm font-medium text-slate-700 mb-2"
-        >
-          Company Name
-        </label>
-        <input
-          type="text"
-          id="companyName"
-          value={formData.companyName}
-          onChange={(e) =>
-            setFormData({ ...formData, companyName: e.target.value })
-          }
-          placeholder="e.g., Microsoft Corporation"
-          className={`input-field ${
-            errors.companyName
-              ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
-              : ''
-          }`}
-        />
-        {errors.companyName && (
-          <p className="mt-2 text-sm text-red-600 flex items-center">
-            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            {errors.companyName}
-          </p>
-        )}
-      </div>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Section 1: Company Details */}
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-semibold text-[#282727] uppercase tracking-wider mb-2">Company Details</legend>
+        <div>
+          <label htmlFor="companyName" className="block text-sm font-medium text-[#282727] mb-1">
+            Company Name <span className="text-primary-500">*</span>
+          </label>
+          <input
+            type="text"
+            id="companyName"
+            value={formData.companyName}
+            onChange={(e) => setFormData({ ...formData, companyName: e.target.value })}
+            placeholder="e.g., Microsoft Corporation"
+            className={`input-field ${errors.companyName ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500' : ''}`}
+          />
+          {errors.companyName && (
+            <p className="mt-1 text-[11px] text-red-600">{errors.companyName}</p>
+          )}
+        </div>
 
-      {/* Website */}
-      <div>
-        <label
-          htmlFor="website"
-          className="block text-sm font-medium text-slate-700 mb-2"
-        >
-          Company Website
-        </label>
-        <input
-          type="text"
-          id="website"
-          value={formData.website}
-          onChange={(e) =>
-            setFormData({ ...formData, website: e.target.value })
-          }
-          placeholder="e.g., microsoft.com"
-          className={`input-field ${
-            errors.website
-              ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
-              : ''
-          }`}
-        />
-        {errors.website && (
-          <p className="mt-2 text-sm text-red-600 flex items-center">
-            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            {errors.website}
-          </p>
-        )}
-      </div>
+        <div>
+          <label htmlFor="website" className="block text-sm font-medium text-[#282727] mb-1">
+            Website <span className="text-primary-500">*</span>
+          </label>
+          <input
+            type="text"
+            id="website"
+            value={formData.website}
+            onChange={(e) => setFormData({ ...formData, website: e.target.value })}
+            placeholder="e.g., microsoft.com"
+            className={`input-field ${errors.website ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500' : ''}`}
+          />
+          {errors.website && (
+            <p className="mt-1 text-[11px] text-red-600">{errors.website}</p>
+          )}
+        </div>
+      </fieldset>
 
-      {/* Salesperson */}
-      <div>
-        <label
-          htmlFor="salespersonName"
-          className="block text-sm font-medium text-slate-700 mb-2"
-        >
-          Salesperson
-        </label>
-        <input
-          type="text"
-          id="salespersonName"
-          value={formData.salespersonName}
-          onChange={(e) =>
-            setFormData({ ...formData, salespersonName: e.target.value })
-          }
-          placeholder="e.g., Jane Smith"
-          className="input-field"
-        />
-      </div>
+      <div className="border-t border-slate-200" />
 
-      {/* Email */}
-      <div>
-        <label
-          htmlFor="email"
-          className="block text-sm font-medium text-slate-700 mb-2"
-        >
-          Your Email
-        </label>
-        <input
-          type="email"
-          id="email"
-          value={formData.email}
-          onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-          placeholder="e.g., you@company.com"
-          className={`input-field ${
-            errors.email
-              ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500'
-              : ''
-          }`}
-        />
-        {errors.email && (
-          <p className="mt-2 text-sm text-red-600 flex items-center">
-            <svg className="w-4 h-4 mr-1" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
-            </svg>
-            {errors.email}
-          </p>
-        )}
-      </div>
+      {/* Section 2: Assignment */}
+      <fieldset className="space-y-3">
+        <legend className="text-sm font-semibold text-[#282727] uppercase tracking-wider mb-2">Assignment</legend>
+        <div>
+          <label htmlFor="sellerId" className="block text-sm font-medium text-[#282727] mb-1">
+            Seller <span className="text-[#939393] font-normal">(optional)</span>
+          </label>
+          <select
+            id="sellerId"
+            value={formData.sellerId}
+            onChange={(e) => setFormData({ ...formData, sellerId: e.target.value })}
+            className="input-field"
+          >
+            <option value="">None (Local Only)</option>
+            {sellers.map((seller) => (
+              <option key={seller.id} value={seller.id}>{seller.name}</option>
+            ))}
+          </select>
+        </div>
 
-      {/* Submit Button */}
+        <div>
+          <label htmlFor="salespersonName" className="block text-sm font-medium text-[#282727] mb-1">
+            Salesperson <span className="text-[#939393] font-normal">(optional)</span>
+          </label>
+          <input
+            type="text"
+            id="salespersonName"
+            value={formData.salespersonName}
+            onChange={(e) => setFormData({ ...formData, salespersonName: e.target.value })}
+            placeholder="e.g., Jane Smith"
+            className="input-field"
+          />
+        </div>
+
+        <div>
+          <label htmlFor="email" className="block text-sm font-medium text-[#282727] mb-1">
+            Salesperson Email <span className="text-primary-500">*</span>
+          </label>
+          <input
+            type="email"
+            id="email"
+            value={formData.email}
+            onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+            placeholder="e.g., salesperson@company.com"
+            className={`input-field ${errors.email ? 'border-red-300 focus:ring-red-500/20 focus:border-red-500' : ''}`}
+          />
+          {errors.email && (
+            <p className="mt-1 text-[11px] text-red-600">{errors.email}</p>
+          )}
+        </div>
+      </fieldset>
+
       <button
         type="submit"
         disabled={isSubmitting}
-        className={`btn-primary w-full ${
-          isSubmitting ? 'opacity-70 cursor-not-allowed' : ''
-        }`}
+        className={`btn-primary w-full text-sm ${isSubmitting ? 'opacity-70 cursor-not-allowed' : ''}`}
       >
         {isSubmitting ? (
           <span className="flex items-center justify-center">
-            <svg
-              className="animate-spin -ml-1 mr-2 h-5 w-5 text-white"
-              fill="none"
-              viewBox="0 0 24 24"
-            >
-              <circle
-                className="opacity-25"
-                cx="12"
-                cy="12"
-                r="10"
-                stroke="currentColor"
-                strokeWidth="4"
-              />
-              <path
-                className="opacity-75"
-                fill="currentColor"
-                d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-              />
+            <svg className="animate-spin -ml-1 mr-2 h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
             Processing...
           </span>
         ) : (
-          <>
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-            </svg>
-            Generate Profile
-          </>
+          'Generate Profile'
         )}
       </button>
     </form>

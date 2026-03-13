@@ -5,6 +5,30 @@
  */
 
 import { renderHook, act } from '@testing-library/react';
+
+// Mock Supabase before importing useJobs
+jest.mock('@/lib/supabase', () => ({
+  supabase: {
+    from: jest.fn(() => ({
+      select: jest.fn(() => ({
+        order: jest.fn(() => Promise.resolve({ data: [], error: null })),
+        eq: jest.fn(() => ({
+          single: jest.fn(() => Promise.resolve({ data: null, error: null })),
+        })),
+        in: jest.fn(() => Promise.resolve({ data: [], error: null })),
+      })),
+      update: jest.fn(() => ({
+        eq: jest.fn(() => Promise.resolve({ error: null })),
+      })),
+    })),
+    channel: jest.fn(() => ({
+      on: jest.fn().mockReturnThis(),
+      subscribe: jest.fn(),
+    })),
+    removeChannel: jest.fn(),
+  },
+}));
+
 import { JobsProvider, useJobs } from '../useJobs';
 import type { ReactNode } from 'react';
 

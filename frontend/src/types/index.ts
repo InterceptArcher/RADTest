@@ -288,6 +288,10 @@ export interface JobWithMetadata {
   result?: ProfileResult;
   createdAt: string;
   completedAt?: string;
+  sellerId?: string;
+  sellerName?: string;
+  requestedBy?: string;
+  salespersonName?: string;
 }
 
 /**
@@ -639,6 +643,32 @@ export interface NewsIntelligence {
   articlesCount: number;
   dateRange: string;
   lastUpdated?: string;
+}
+
+/**
+ * Seller — a client/company that requests intelligence profiles.
+ */
+export interface Seller {
+  id: string;
+  name: string;
+  created_at: string;
+}
+
+/**
+ * Seller job — a job assigned to a seller, synced via Supabase.
+ */
+export interface SellerJob {
+  id?: string;
+  job_id: string;
+  seller_id: string;
+  company_name: string;
+  domain: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  requested_by: string;
+  salesperson_name?: string;
+  created_at: string;
+  completed_at?: string;
+  result_data?: any;
 }
 
 /**

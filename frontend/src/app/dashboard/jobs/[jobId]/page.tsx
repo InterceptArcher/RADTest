@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useJobs } from '@/hooks/useJobs';
@@ -60,7 +60,7 @@ function BadgeList({ items, variant = 'default' }: BadgeListProps) {
 
   const variantClasses = {
     default: 'bg-slate-100 text-slate-700 ring-slate-500/20',
-    primary: 'bg-primary-50 text-primary-700 ring-primary-600/20',
+    primary: 'bg-blue-50 text-blue-700 ring-blue-600/20',
     success: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
     purple: 'bg-purple-50 text-purple-700 ring-purple-600/20',
   };
@@ -82,21 +82,54 @@ function BadgeList({ items, variant = 'default' }: BadgeListProps) {
 export default function JobDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { getJob } = useJobs();
+  const { getJob, fetchJobFromSupabase } = useJobs();
 
   // Outreach modal state
   const [outreachModalOpen, setOutreachModalOpen] = useState(false);
   const [selectedRoleType, setSelectedRoleType] = useState<StakeholderRoleType>('CIO');
   const [selectedStakeholderName, setSelectedStakeholderName] = useState<string | undefined>();
 
+  // Remote loading state — when a job isn't in local state, try Supabase
+  const [remoteLoading, setRemoteLoading] = useState(false);
+  const [remoteFetched, setRemoteFetched] = useState(false);
+
   const jobId = params.jobId as string;
   const job = getJob(jobId);
+
+  // If job not found locally, try fetching from Supabase (seller jobs are hosted)
+  useEffect(() => {
+    if (!job && !remoteFetched && !remoteLoading) {
+      setRemoteLoading(true);
+      fetchJobFromSupabase(jobId).finally(() => {
+        setRemoteLoading(false);
+        setRemoteFetched(true);
+      });
+    }
+  }, [job, jobId, remoteFetched, remoteLoading, fetchJobFromSupabase]);
 
   const handleGenerateOutreach = (roleType: StakeholderRoleType, stakeholderName?: string) => {
     setSelectedRoleType(roleType);
     setSelectedStakeholderName(stakeholderName);
     setOutreachModalOpen(true);
   };
+
+  // Show loading while attempting to fetch from Supabase
+  if (!job && remoteLoading) {
+    return (
+      <div className="p-8 lg:p-10">
+        <div className="card p-12 text-center max-w-md mx-auto">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-blue-50 flex items-center justify-center">
+            <svg className="w-8 h-8 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-semibold text-slate-900 mb-2">Loading job...</h2>
+          <p className="text-slate-600">Fetching job data from the server.</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!job) {
     return (
@@ -128,8 +161,8 @@ export default function JobDetailPage() {
     return (
       <div className="p-8 lg:p-10">
         <div className="card p-12 text-center max-w-md mx-auto">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-primary-50 flex items-center justify-center">
-            <svg className="w-8 h-8 text-primary-500 animate-spin" fill="none" viewBox="0 0 24 24">
+          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-blue-50 flex items-center justify-center">
+            <svg className="w-8 h-8 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
               <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
             </svg>
@@ -216,10 +249,45 @@ export default function JobDetailPage() {
           Back to Jobs
         </button>
 
+        {/* Requester Info Banner */}
+        {(job.sellerName || job.requestedBy) && (
+          <div className="card p-4 mb-6 border-l-4 border-l-[#282727]">
+            <div className="flex items-center space-x-4">
+              <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center">
+                <svg className="w-5 h-5 text-[#282727]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                </svg>
+              </div>
+              <div className="flex-1">
+                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+                  {job.sellerName && (
+                    <div>
+                      <span className="text-xs font-medium text-slate-500">Requested by Seller</span>
+                      <p className="text-sm font-semibold text-slate-900">{job.sellerName}</p>
+                    </div>
+                  )}
+                  {job.requestedBy && (
+                    <div>
+                      <span className="text-xs font-medium text-slate-500">Salesperson Email</span>
+                      <p className="text-sm font-semibold text-slate-900">{job.requestedBy}</p>
+                    </div>
+                  )}
+                  {job.salespersonName && (
+                    <div>
+                      <span className="text-xs font-medium text-slate-500">Salesperson</span>
+                      <p className="text-sm font-semibold text-slate-900">{job.salespersonName}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
           <div>
             <div className="flex items-center space-x-3 mb-2">
-              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center shadow-lg shadow-primary-500/25">
+              <div className="w-12 h-12 rounded-2xl bg-[#282727] flex items-center justify-center shadow-lg">
                 <span className="text-white font-bold text-lg">
                   {(data.company_name || job.companyName).charAt(0)}
                 </span>
@@ -383,7 +451,7 @@ export default function JobDetailPage() {
                 href={`https://${job.domain}`}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center text-primary-600 hover:text-primary-700 font-medium transition-colors"
+                className="flex items-center text-primary-500 hover:text-primary-600 font-medium transition-colors"
               >
                 <svg
                   className="w-5 h-5 mr-2"
@@ -405,7 +473,7 @@ export default function JobDetailPage() {
                   href={(data as any).linkedin_url}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center text-primary-600 hover:text-primary-700 font-medium transition-colors"
+                  className="flex items-center text-primary-500 hover:text-primary-600 font-medium transition-colors"
                 >
                   <svg
                     className="w-5 h-5 mr-2"
@@ -420,7 +488,7 @@ export default function JobDetailPage() {
               {isRealPhone((data as any).phone) && (
                 <a
                   href={`tel:${(data as any).phone}`}
-                  className="flex items-center text-primary-600 hover:text-primary-700 font-medium transition-colors"
+                  className="flex items-center text-primary-500 hover:text-primary-600 font-medium transition-colors"
                 >
                   <svg
                     className="w-5 h-5 mr-2"

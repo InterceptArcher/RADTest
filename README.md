@@ -1,6 +1,6 @@
-# RADTest - AI-Powered Company Intelligence & Gamma Slideshow System
+# RAD Admin Portal - AI-Powered Company Intelligence & Gamma Slideshow System
 
-## 🎉 System Status: FULLY OPERATIONAL WITH REAL API DATA
+## System Status: FULLY OPERATIONAL WITH REAL API DATA
 
 **Configuration**: ✅ 100% Complete
 **API Integrations**: ✅ Apollo, PDL, GNews, Hunter.io, ZoomInfo Active
@@ -18,6 +18,78 @@
 - ⚙️ [Apollo Setup](APOLLO_SETUP.md) - Intelligence gathering configuration
 - 📊 [Configuration Status](CONFIGURATION_COMPLETE.md) - What was configured
 - 🎨 [Gamma API Setup](GAMMA_SETUP.md) - Slideshow generation configuration (✅ OPERATIONAL)
+
+---
+
+## UI/UX Design Overhaul (2026-03-12)
+
+### Rebrand to RAD Admin Portal
+Changed site identity from "RADTest" to "RAD Admin Portal" across all branding surfaces (sidebar, page title, metadata) to reflect a production-ready product identity.
+
+### Professional Color Scheme
+Replaced the default indigo/violet theme with a teal-cyan primary palette (`#0891b2` base) and dark navy sidebar. This creates a distinctive, enterprise-grade visual identity that avoids the generic AI-tool aesthetic. Accent colors (amber, teal, emerald) provide clear visual hierarchy.
+
+**Rationale**: Indigo/violet is overused in AI dashboards. Teal-cyan is distinctive, professional, and reads as "enterprise intelligence" rather than "prototype."
+
+### Interactive Data Analytics (Recharts)
+Seller detail analytics upgraded from simple CSS progress bars to interactive charts using Recharts:
+- **Monthly Bandwidth**: Donut chart with center count overlay, replacing the flat progress bar
+- **Salesperson Activity**: Horizontal bar chart with colored bars per salesperson, replacing stacked progress bars
+- **Industry Trends**: Donut/pie chart with color-coded legend, replacing thin inline bars
+- All charts include custom dark tooltips and clickable legends
+
+**Rationale**: Charts convey proportional relationships and trends at a glance far better than inline progress bars. Recharts provides responsive SVG rendering with minimal bundle overhead.
+
+### Form Accessibility Improvements
+Intake form (AddCompanyForm) reorganized with:
+- **Fieldset grouping**: "Company Details" and "Assignment" sections with visual separation
+- **Required field indicators**: Red asterisk (*) on mandatory fields
+- **Optional field labels**: Explicit "(optional)" markers to reduce form anxiety
+- **Compact spacing**: Tighter vertical rhythm for less scrolling
+
+**Rationale**: Grouping reduces cognitive load; required/optional markers follow WCAG form accessibility guidelines.
+
+### Layout & Spacing Cleanup
+- Sidebar narrowed from 288px to 256px (w-72 to w-64) to maximize content area
+- Removed the static "How It Works" instructional section from the dashboard home page (redundant for admin users)
+- Reduced card padding, font sizes, and header margins for a denser, more information-rich layout
+- Tightened filter tabs, stat cards, and job card dimensions for better grid alignment
+- Subtler background mesh pattern (opacity 30% vs 50%) and refined card shadows
+
+---
+
+## Seller Management, Job Assignment & Cross-User Sync (2026-03-12)
+
+### Feature 1: Sellers Tab
+New **Sellers** tab in the sidebar navigation provides a management interface for client sellers who request intelligence profiles. Sellers are stored in Supabase (`sellers` table) and synced in real-time across all users. Each seller displays a card with:
+- Total job count and active/completed status
+- **Monthly bandwidth indicator** (40 jobs/month contract limit) with color-coded progress bar (green/amber/red)
+- Click-through to a detailed analytics page with job breakdown
+
+**Rationale**: Centralizes seller management and gives visibility into per-seller usage against contractual limits without blocking job creation.
+
+### Feature 2: Job Assignment & Requester Tracking
+The **New Profile** form now includes:
+- **Assign to Seller** dropdown (with "None (Local Only)" option) — associates jobs with specific sellers
+- **Salesperson Email** label (changed from "Your Email") — clearer field purpose
+
+The **job detail page** now shows a requester info banner at the top highlighting who requested the job (seller name, salesperson email, salesperson name). Job cards in the grid also display a seller badge when assigned.
+
+**Rationale**: Enables tracking which seller requested each job and associates the requesting salesperson's email for accountability and follow-up.
+
+### Feature 3: Supabase Cross-User Sync for Seller Jobs
+Jobs assigned to a seller are synced via Supabase (`seller_jobs` table) with real-time subscriptions, making them visible across all devices and users. Jobs with no seller assignment remain local-only (localStorage) per the existing behavior.
+
+**Rationale**: Seller-assigned jobs need shared visibility across the team while personal/ad-hoc jobs stay private. Real-time Postgres changes via Supabase ensure instant sync without polling.
+
+### Database Migration
+New tables: `sellers`, `seller_jobs` with RLS policies and real-time enabled. Migration at `setup/migrations/001_sellers_and_seller_jobs.sql`.
+
+### Environment Variables Required
+- `NEXT_PUBLIC_SUPABASE_URL` — Supabase project URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` — Supabase anon (public) key
+
+The app gracefully degrades when these are not set — seller features will show warnings but the app won't crash.
 
 ---
 

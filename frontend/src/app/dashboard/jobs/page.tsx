@@ -2,182 +2,281 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import JobCard from '@/components/jobs/JobCard';
 import { useJobs, useJobPolling } from '@/hooks/useJobs';
 
-type FilterStatus = 'all' | 'pending' | 'processing' | 'completed' | 'failed';
+type FilterStatus = 'all' | 'processing' | 'completed' | 'failed';
 
-const filterConfig: Record<FilterStatus, { label: string; icon: React.ReactNode }> = {
-  all: { label: 'All', icon: null },
-  pending: {
-    label: 'Pending',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
-  processing: {
-    label: 'Processing',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-      </svg>
-    ),
-  },
-  completed: {
-    label: 'Completed',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
-  failed: {
-    label: 'Failed',
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-    ),
-  },
+function formatTimeAgo(dateString: string): string {
+  const date = new Date(dateString);
+  const now = new Date();
+  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  if (seconds < 60) return 'Just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  return `${Math.floor(seconds / 86400)}d ago`;
+}
+
+const statusDisplay: Record<string, { bg: string; text: string; dot?: string; label: string }> = {
+  pending: { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Pending' },
+  processing: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500', label: 'Processing' },
+  completed: { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Completed' },
+  failed: { bg: 'bg-red-50', text: 'text-red-700', label: 'Failed' },
 };
 
 export default function JobsPage() {
-  const { jobs } = useJobs();
+  const { jobs, removeJob } = useJobs();
   useJobPolling();
 
   const [filter, setFilter] = useState<FilterStatus>('all');
+  const [search, setSearch] = useState('');
+  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
 
-  const filteredJobs =
-    filter === 'all' ? jobs : jobs.filter((job) => job.status === filter);
+  const filteredJobs = (filter === 'all'
+    ? jobs
+    : jobs.filter((job) => filter === 'processing'
+        ? (job.status === 'processing' || job.status === 'pending')
+        : job.status === filter
+      )
+  ).filter((job) => {
+    if (!search.trim()) return true;
+    const q = search.toLowerCase();
+    return job.companyName.toLowerCase().includes(q) || job.domain.toLowerCase().includes(q);
+  });
 
   const statusCounts = {
     all: jobs.length,
-    pending: jobs.filter((j) => j.status === 'pending').length,
-    processing: jobs.filter((j) => j.status === 'processing').length,
+    processing: jobs.filter((j) => j.status === 'processing' || j.status === 'pending').length,
     completed: jobs.filter((j) => j.status === 'completed').length,
     failed: jobs.filter((j) => j.status === 'failed').length,
   };
 
+  const filters: { key: FilterStatus; label: string }[] = [
+    { key: 'all', label: 'All' },
+    { key: 'processing', label: 'Processing' },
+    { key: 'completed', label: 'Completed' },
+    { key: 'failed', label: 'Failed' },
+  ];
+
   return (
-    <div className="p-8 lg:p-10">
+    <div className="p-6 lg:p-8">
       {/* Header */}
-      <div className="mb-10">
-        <div className="flex items-center space-x-2 text-sm text-slate-500 mb-2">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-          </svg>
-          <span>Jobs</span>
+      <div className="flex items-center justify-between mb-6">
+        <div>
+          <h1 className="text-2xl font-bold text-[#282727]">Job Queue</h1>
+          <p className="text-base text-[#939393]">Monitor and manage your company profile requests.</p>
         </div>
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl lg:text-4xl font-bold text-slate-900 tracking-tight">
-              Job Queue
-            </h1>
-            <p className="mt-2 text-lg text-slate-600">
-              Monitor and manage your company profile requests.
-            </p>
-          </div>
-          <Link
-            href="/dashboard"
-            className="btn-primary hidden sm:inline-flex"
-          >
-            <svg
-              className="w-5 h-5 mr-2"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+        <Link href="/dashboard" className="btn-primary hidden sm:inline-flex text-sm">
+          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
+          </svg>
+          New Profile
+        </Link>
+      </div>
+
+      {/* Search */}
+      <div className="mb-4">
+        <div className="relative">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#939393]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search companies by name or domain..."
+            className="input-field pl-10"
+          />
+          {search && (
+            <button
+              onClick={() => setSearch('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-[#939393] hover:text-[#282727]"
             >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M12 6v6m0 0v6m0-6h6m-6 0H6"
-              />
-            </svg>
-            New Profile
-          </Link>
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          )}
         </div>
       </div>
 
       {/* Filter Tabs */}
-      <div className="flex flex-wrap gap-2 mb-8">
-        {(['all', 'processing', 'completed', 'failed'] as FilterStatus[]).map(
-          (status) => {
-            const config = filterConfig[status];
-            const isActive = filter === status;
-            return (
-              <button
-                key={status}
-                onClick={() => setFilter(status)}
-                className={`inline-flex items-center px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
-                  isActive
-                    ? 'bg-slate-900 text-white shadow-lg'
-                    : 'bg-white text-slate-600 hover:bg-slate-50 hover:text-slate-900 border border-slate-200'
-                }`}
-              >
-                {config.icon && (
-                  <span className={`mr-2 ${isActive ? 'text-white' : 'text-slate-400'}`}>
-                    {config.icon}
-                  </span>
-                )}
-                {config.label}
-                <span
-                  className={`ml-2 px-2 py-0.5 rounded-full text-xs ${
-                    isActive
-                      ? 'bg-white/20 text-white'
-                      : 'bg-slate-100 text-slate-600'
-                  }`}
-                >
-                  {statusCounts[status]}
-                </span>
-              </button>
-            );
-          }
-        )}
+      <div className="flex gap-1 mb-4">
+        {filters.map(({ key, label }) => {
+          const isActive = filter === key;
+          return (
+            <button
+              key={key}
+              onClick={() => setFilter(key)}
+              className={`px-3.5 py-2 rounded-lg text-sm font-medium transition-all ${
+                isActive
+                  ? 'bg-[#282727] text-white'
+                  : 'text-[#939393] hover:bg-white hover:text-[#282727]'
+              }`}
+            >
+              {label}
+              <span className={`ml-1.5 ${isActive ? 'text-white/60' : 'text-slate-400'}`}>
+                {statusCounts[key]}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
-      {/* Jobs Grid */}
+      {/* Table */}
       {filteredJobs.length === 0 ? (
         <div className="card p-12 text-center">
-          <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-50 flex items-center justify-center">
-            <svg
-              className="w-10 h-10 text-slate-400"
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
-            >
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={1.5}
-                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
-              />
+          <div className="w-12 h-12 mx-auto mb-3 rounded-lg bg-slate-100 flex items-center justify-center">
+            <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
             </svg>
           </div>
-          <h3 className="text-xl font-semibold text-slate-900 mb-2">
+          <h3 className="text-sm font-semibold text-[#282727] mb-1">
             {filter === 'all' ? 'No jobs yet' : `No ${filter} jobs`}
           </h3>
-          <p className="text-slate-500 max-w-sm mx-auto mb-6">
+          <p className="text-xs text-[#939393] max-w-xs mx-auto mb-4">
             {filter === 'all'
               ? 'Start by adding a company to generate your first intelligence profile.'
               : 'There are no jobs with this status at the moment.'}
           </p>
           {filter === 'all' && (
-            <Link href="/dashboard" className="btn-primary">
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-              </svg>
-              Add Company
-            </Link>
+            <Link href="/dashboard" className="btn-primary text-sm">Add Company</Link>
           )}
         </div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5 stagger-children">
-          {filteredJobs.map((job) => (
-            <JobCard key={job.jobId} job={job} />
-          ))}
+        <div className="card overflow-hidden">
+          {/* Table header */}
+          <div className="hidden sm:grid grid-cols-12 gap-3 px-4 py-2 bg-slate-50 text-xs font-semibold text-[#939393] uppercase tracking-wider border-b border-slate-100">
+            <div className="col-span-3">Company</div>
+            <div className="col-span-2">Domain</div>
+            <div className="col-span-1">Status</div>
+            <div className="col-span-2">Seller</div>
+            <div className="col-span-1">Confidence</div>
+            <div className="col-span-1">Created</div>
+            <div className="col-span-2 text-right">Actions</div>
+          </div>
+
+          {/* Table rows */}
+          {filteredJobs.map((job) => {
+            const status = statusDisplay[job.status] || statusDisplay.pending;
+            const isClickable = job.status === 'completed';
+            const isDeleting = deleteConfirmId === job.jobId;
+
+            return (
+              <div key={job.jobId} className="relative">
+                {/* Delete confirmation overlay */}
+                {isDeleting && (
+                  <div className="absolute inset-0 bg-white/95 z-10 flex items-center justify-center gap-3">
+                    <span className="text-xs font-medium text-[#282727]">Delete this job?</span>
+                    <button
+                      onClick={() => setDeleteConfirmId(null)}
+                      className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-md"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={() => { removeJob(job.jobId); setDeleteConfirmId(null); }}
+                      className="px-2.5 py-1 text-xs font-medium text-white bg-red-500 hover:bg-red-600 rounded-md"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+
+                {isClickable ? (
+                  <Link href={`/dashboard/jobs/${job.jobId}`}>
+                    <div className="grid grid-cols-1 sm:grid-cols-12 gap-1 sm:gap-3 px-4 py-2.5 border-b border-slate-50 items-center hover:bg-slate-50 cursor-pointer group">
+                      <div className="sm:col-span-3 min-w-0">
+                        <p className="text-sm font-medium text-[#282727] truncate group-hover:text-primary-500">{job.companyName}</p>
+                      </div>
+                      <div className="sm:col-span-2 min-w-0">
+                        <p className="text-xs text-[#939393] truncate">{job.domain}</p>
+                      </div>
+                      <div className="sm:col-span-1">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${status.bg} ${status.text}`}>
+                          {status.dot && <span className={`w-1.5 h-1.5 rounded-full ${status.dot} mr-1 animate-pulse`} />}
+                          {status.label}
+                        </span>
+                      </div>
+                      <div className="sm:col-span-2 min-w-0">
+                        {job.sellerName ? (
+                          <span className="text-xs text-[#282727] truncate">{job.sellerName}</span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </div>
+                      <div className="sm:col-span-1">
+                        {job.result ? (
+                          <span className="text-xs font-semibold text-emerald-600">{Math.round(job.result.confidence_score * 100)}%</span>
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
+                        )}
+                      </div>
+                      <div className="sm:col-span-1">
+                        <span className="text-xs text-[#939393]">{formatTimeAgo(job.createdAt)}</span>
+                      </div>
+                      <div className="sm:col-span-2 flex items-center justify-end space-x-2">
+                        <button
+                          onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteConfirmId(job.jobId); }}
+                          className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                        >
+                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                          </svg>
+                        </button>
+                        <svg className="w-3.5 h-3.5 text-slate-300 group-hover:text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                        </svg>
+                      </div>
+                    </div>
+                  </Link>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-1 sm:gap-3 px-4 py-2.5 border-b border-slate-50 items-center group">
+                    <div className="sm:col-span-3 min-w-0">
+                      <p className="text-sm font-medium text-[#282727] truncate">{job.companyName}</p>
+                    </div>
+                    <div className="sm:col-span-2 min-w-0">
+                      <p className="text-xs text-[#939393] truncate">{job.domain}</p>
+                    </div>
+                    <div className="sm:col-span-1">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium ${status.bg} ${status.text}`}>
+                        {status.dot && <span className={`w-1.5 h-1.5 rounded-full ${status.dot} mr-1 animate-pulse`} />}
+                        {status.label}
+                      </span>
+                    </div>
+                    <div className="sm:col-span-2 min-w-0">
+                      {job.sellerName ? (
+                        <span className="text-xs text-[#282727] truncate">{job.sellerName}</span>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </div>
+                    <div className="sm:col-span-1">
+                      {(job.status === 'processing' || job.status === 'pending') ? (
+                        <div className="w-12 bg-slate-100 rounded-full h-1">
+                          <div className="bg-blue-500 h-1 rounded-full transition-all" style={{ width: `${job.progress}%` }} />
+                        </div>
+                      ) : (
+                        <span className="text-xs text-slate-300">—</span>
+                      )}
+                    </div>
+                    <div className="sm:col-span-1">
+                      <span className="text-xs text-[#939393]">{formatTimeAgo(job.createdAt)}</span>
+                    </div>
+                    <div className="sm:col-span-2 flex items-center justify-end">
+                      <button
+                        onClick={() => setDeleteConfirmId(job.jobId)}
+                        className="p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>

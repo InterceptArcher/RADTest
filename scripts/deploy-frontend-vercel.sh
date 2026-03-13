@@ -54,7 +54,7 @@ echo "Deploying to Vercel..."
 echo "This will create a new project if one doesn't exist..."
 
 # Deploy and capture output
-DEPLOY_OUTPUT=$(vercel --token="$VERCEL_TOKEN" --yes --prod 2>&1) || {
+DEPLOY_OUTPUT=$(vercel --token="$VERCEL_TOKEN" --yes --prod --scope fsilva7456s-projects 2>&1) || {
     echo "ERROR: Vercel deployment failed"
     echo "$DEPLOY_OUTPUT"
     exit 1

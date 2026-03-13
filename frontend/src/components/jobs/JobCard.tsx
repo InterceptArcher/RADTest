@@ -78,7 +78,7 @@ export default function JobCard({ job }: JobCardProps) {
 
   const cardContent = (
     <div
-      className={`card p-5 relative ${
+      className={`card p-4 relative ${
         isClickable
           ? 'hover:border-primary-200 hover:shadow-glow cursor-pointer group'
           : 'group'
@@ -117,36 +117,45 @@ export default function JobCard({ job }: JobCardProps) {
       </button>
 
       {/* Header */}
-      <div className="flex items-center justify-between mb-4 pr-6">
+      <div className="flex items-center justify-between mb-3 pr-6">
         <span
-          className={`inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium ring-1 ring-inset ${status.bg} ${status.text} ${status.ring}`}
+          className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ring-1 ring-inset ${status.bg} ${status.text} ${status.ring}`}
         >
           {(job.status === 'processing' || job.status === 'pending') && (
             <span className={`w-1.5 h-1.5 rounded-full ${status.dot} mr-1.5 animate-pulse`} />
           )}
           {status.label}
         </span>
-        <span className="text-xs text-slate-500 font-medium">
+        <span className="text-xs text-slate-400">
           {formatTimeAgo(job.createdAt)}
         </span>
       </div>
 
       {/* Company Info */}
-      <h3 className="text-lg font-semibold text-slate-900 mb-1 truncate group-hover:text-primary-600 transition-colors">
+      <h3 className="text-sm font-semibold text-slate-900 mb-0.5 truncate group-hover:text-primary-600 transition-colors">
         {job.companyName}
       </h3>
-      <p className="text-sm text-slate-500 mb-4 truncate">{job.domain}</p>
+      <p className="text-xs text-slate-500 mb-1 truncate">{job.domain}</p>
+      {job.sellerName && (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-medium bg-primary-50 text-primary-700 ring-1 ring-inset ring-primary-600/20 mb-3">
+          <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+          </svg>
+          {job.sellerName}
+        </span>
+      )}
+      {!job.sellerName && <div className="mb-3" />}
 
       {/* Progress */}
       {(job.status === 'pending' || job.status === 'processing') && (
-        <div className="space-y-2">
-          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+        <div className="space-y-1.5">
+          <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
             <div
-              className="bg-gradient-to-r from-primary-500 to-primary-400 h-1.5 rounded-full transition-all duration-500 ease-out"
+              className="bg-gradient-to-r from-primary-600 to-primary-400 h-1 rounded-full transition-all duration-500 ease-out"
               style={{ width: `${job.progress}%` }}
             />
           </div>
-          <p className="text-xs text-slate-600 truncate">{job.currentStep}</p>
+          <p className="text-xs text-slate-500 truncate">{job.currentStep}</p>
         </div>
       )}
 
@@ -154,38 +163,25 @@ export default function JobCard({ job }: JobCardProps) {
       {job.status === 'completed' && job.result && (
         <div className="flex items-center justify-between pt-2 border-t border-slate-100">
           <div className="flex items-center space-x-2">
-            <div className="w-8 h-8 rounded-lg bg-emerald-50 flex items-center justify-center">
-              <svg
-                className="w-4 h-4 text-emerald-600"
-                fill="currentColor"
-                viewBox="0 0 20 20"
-              >
-                <path
-                  fillRule="evenodd"
-                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                  clipRule="evenodd"
-                />
+            <div className="w-7 h-7 rounded-md bg-emerald-50 flex items-center justify-center">
+              <svg className="w-3.5 h-3.5 text-emerald-600" fill="currentColor" viewBox="0 0 20 20">
+                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
               </svg>
             </div>
             <div>
-              <p className="text-xs text-slate-500">Confidence</p>
+              <p className="text-xs text-slate-400">Confidence</p>
               <p className="text-sm font-semibold text-emerald-600">
                 {Math.round(job.result.confidence_score * 100)}%
               </p>
             </div>
           </div>
           <svg
-            className="w-5 h-5 text-slate-400 group-hover:text-primary-500 group-hover:translate-x-0.5 transition-all"
+            className="w-4 h-4 text-slate-400 group-hover:text-primary-500 group-hover:translate-x-0.5 transition-all"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M9 5l7 7-7 7"
-            />
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </div>
       )}
@@ -193,16 +189,12 @@ export default function JobCard({ job }: JobCardProps) {
       {/* Failed Info */}
       {job.status === 'failed' && (
         <div className="flex items-center space-x-2 pt-2 border-t border-slate-100">
-          <div className="w-8 h-8 rounded-lg bg-red-50 flex items-center justify-center">
-            <svg className="w-4 h-4 text-red-600" fill="currentColor" viewBox="0 0 20 20">
-              <path
-                fillRule="evenodd"
-                d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z"
-                clipRule="evenodd"
-              />
+          <div className="w-7 h-7 rounded-md bg-red-50 flex items-center justify-center">
+            <svg className="w-3.5 h-3.5 text-red-600" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
             </svg>
           </div>
-          <span className="text-sm font-medium text-red-600">Processing failed</span>
+          <span className="text-xs font-medium text-red-600">Processing failed</span>
         </div>
       )}
     </div>

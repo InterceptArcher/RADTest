@@ -11,7 +11,7 @@ const signalStrengthConfig = {
   low: { label: 'Low', color: 'bg-slate-400', width: 'w-1/4', textColor: 'text-slate-600', value: 25 },
   medium: { label: 'Medium', color: 'bg-amber-400', width: 'w-2/4', textColor: 'text-amber-600', value: 50 },
   high: { label: 'High', color: 'bg-emerald-500', width: 'w-3/4', textColor: 'text-emerald-600', value: 75 },
-  very_high: { label: 'Very High', color: 'bg-primary-500', width: 'w-full', textColor: 'text-primary-600', value: 100 },
+  very_high: { label: 'Very High', color: 'bg-primary-500', width: 'w-full', textColor: 'text-blue-600', value: 100 },
 };
 
 const scoopTypeConfig: Record<Scoop['type'], {
@@ -344,9 +344,9 @@ export default function BuyingSignalsCard({ signals }: BuyingSignalsCardProps) {
                   </div>
                 )}
                 {signals.keySignals.implications && (
-                  <div className="bg-primary-50 rounded-lg p-4 border border-primary-100">
-                    <h5 className="text-xs font-semibold text-primary-700 mb-2 uppercase tracking-wide">What This Means</h5>
-                    <p className="text-sm text-primary-900 leading-relaxed">{signals.keySignals.implications}</p>
+                  <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
+                    <h5 className="text-xs font-semibold text-[#282727] mb-2 uppercase tracking-wide">What This Means</h5>
+                    <p className="text-sm text-blue-900 leading-relaxed">{signals.keySignals.implications}</p>
                   </div>
                 )}
               </div>

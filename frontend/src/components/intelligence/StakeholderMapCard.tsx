@@ -23,8 +23,8 @@ const roleTypeConfig: Record<StakeholderRoleType, { color: string; bgColor: stri
   CPO: { color: 'text-pink-700', bgColor: 'bg-pink-100', description: 'Chief Product Officer' },
   CEO: { color: 'text-indigo-700', bgColor: 'bg-indigo-100', description: 'Chief Executive Officer' },
   CMO: { color: 'text-orange-700', bgColor: 'bg-orange-100', description: 'Chief Marketing Officer' },
-  VP: { color: 'text-teal-700', bgColor: 'bg-teal-100', description: 'Vice President' },
-  Director: { color: 'text-cyan-700', bgColor: 'bg-cyan-100', description: 'Director' },
+  VP: { color: 'text-blue-700', bgColor: 'bg-blue-100', description: 'Vice President' },
+  Director: { color: 'text-slate-700', bgColor: 'bg-slate-100', description: 'Director' },
   Manager: { color: 'text-violet-700', bgColor: 'bg-violet-100', description: 'Manager' },
   Unknown: { color: 'text-slate-700', bgColor: 'bg-slate-100', description: 'Executive' },
 };
@@ -107,8 +107,8 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
         </div>
 
         {/* Strategic Priorities - Always show, with fallback */}
-        <div className="bg-primary-50 rounded-lg p-3 mb-4">
-          <h5 className="text-xs font-semibold text-primary-700 mb-2 uppercase tracking-wide flex items-center">
+        <div className="bg-blue-50 rounded-lg p-3 mb-4">
+          <h5 className="text-xs font-semibold text-[#282727] mb-2 uppercase tracking-wide flex items-center">
             <svg className="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
             </svg>
@@ -119,14 +119,14 @@ function StakeholderDetailCard({ stakeholder, supportingAsset, onGenerateOutreac
               {strategicPriorities.slice(0, 4).map((priority, index) => {
                 const priorityText = typeof priority === 'string' ? priority : priority.priority;
                 return (
-                  <span key={index} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
+                  <span key={index} className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                     {priorityText}
                   </span>
                 );
               })}
             </div>
           ) : (
-            <p className="text-xs text-primary-600">Digital transformation, operational efficiency, cost optimization</p>
+            <p className="text-xs text-blue-600">Digital transformation, operational efficiency, cost optimization</p>
           )}
         </div>
 
@@ -328,7 +328,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
       <div className="space-y-1.5">
         {/* Email */}
         {contact.email && (
-          <a href={`mailto:${contact.email}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700 truncate">
+          <a href={`mailto:${contact.email}`} className="flex items-center text-xs text-blue-600 hover:text-blue-700 truncate">
             <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
@@ -339,7 +339,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
         {/* Phone section — always rendered, shows unavailable when missing */}
         <div className="flex flex-col gap-1">
           {isRealPhone(contact.directPhone) && (
-            <a href={`tel:${contact.directPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+            <a href={`tel:${contact.directPhone}`} className="flex items-center text-xs text-blue-600 hover:text-blue-700">
               <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
               </svg>
@@ -347,7 +347,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
             </a>
           )}
           {isRealPhone(contact.mobilePhone) && (
-            <a href={`tel:${contact.mobilePhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+            <a href={`tel:${contact.mobilePhone}`} className="flex items-center text-xs text-blue-600 hover:text-blue-700">
               <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 18h.01M8 21h8a2 2 0 002-2V5a2 2 0 00-2-2H8a2 2 0 00-2 2v14a2 2 0 002 2z" />
               </svg>
@@ -355,7 +355,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
             </a>
           )}
           {isRealPhone(contact.companyPhone) && (
-            <a href={`tel:${contact.companyPhone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+            <a href={`tel:${contact.companyPhone}`} className="flex items-center text-xs text-blue-600 hover:text-blue-700">
               <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
@@ -363,7 +363,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
             </a>
           )}
           {!isRealPhone(contact.directPhone) && !isRealPhone(contact.mobilePhone) && !isRealPhone(contact.companyPhone) && isRealPhone(contact.phone) && (
-            <a href={`tel:${contact.phone}`} className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+            <a href={`tel:${contact.phone}`} className="flex items-center text-xs text-blue-600 hover:text-blue-700">
               <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
               </svg>
@@ -382,7 +382,7 @@ function ContactInfoBlock({ contact }: { contact: Stakeholder['contact'] }) {
 
         {/* LinkedIn */}
         {contact.linkedinUrl && (
-          <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-xs text-primary-600 hover:text-primary-700">
+          <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="flex items-center text-xs text-blue-600 hover:text-blue-700">
             <svg className="w-3 h-3 mr-1.5 flex-shrink-0" fill="currentColor" viewBox="0 0 24 24">
               <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
             </svg>
@@ -428,7 +428,7 @@ function CompactContactRow({ stakeholder }: { stakeholder: Stakeholder }) {
       </div>
       <div className="flex items-center space-x-3 ml-4 flex-shrink-0">
         {contact.email && (
-          <a href={`mailto:${contact.email}`} className="text-primary-600 hover:text-primary-700" title={contact.email}>
+          <a href={`mailto:${contact.email}`} className="text-blue-600 hover:text-blue-700" title={contact.email}>
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
@@ -438,7 +438,7 @@ function CompactContactRow({ stakeholder }: { stakeholder: Stakeholder }) {
         {(isRealPhone(contact.directPhone) || isRealPhone(contact.mobilePhone) || isRealPhone(contact.companyPhone) || isRealPhone(contact.phone)) ? (
           <a
             href={`tel:${contact.directPhone || contact.mobilePhone || contact.companyPhone || contact.phone}`}
-            className="flex items-center text-primary-600 hover:text-primary-700"
+            className="flex items-center text-blue-600 hover:text-blue-700"
             title={contact.directPhone || contact.mobilePhone || contact.companyPhone || contact.phone}
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -454,7 +454,7 @@ function CompactContactRow({ stakeholder }: { stakeholder: Stakeholder }) {
           </span>
         )}
         {contact.linkedinUrl && (
-          <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:text-primary-700" title="LinkedIn">
+          <a href={contact.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700" title="LinkedIn">
             <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
               <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
             </svg>
@@ -516,7 +516,7 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
               </span>
             )}
             {executiveCount > 0 && otherCount > 0 && (
-              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-teal-50 text-teal-700 ring-1 ring-inset ring-teal-600/20">
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-medium bg-blue-50 text-blue-700 ring-1 ring-inset ring-blue-600/20">
                 {executiveCount} C-Suite
               </span>
             )}
@@ -628,7 +628,7 @@ export default function StakeholderMapCard({ stakeholderMap, supportingAssets, o
             <div className={executiveCount > 0 ? "mt-6 border-t border-slate-200 pt-6" : "mt-6"}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-semibold text-slate-900 flex items-center">
-                  <svg className="w-4 h-4 mr-2 text-teal-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197m13.5-9a2.5 2.5 0 11-5 0 2.5 2.5 0 015 0z" />
                   </svg>
                   {executiveCount > 0 ? 'Other Relevant Contacts' : 'Key Contacts'}

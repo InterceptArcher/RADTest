@@ -25,7 +25,7 @@ const techCategoryConfig: Record<string, { label: string; color: string }> = {
   infrastructure: { label: 'Infrastructure', color: 'bg-orange-100 text-orange-700' },
   analytics: { label: 'Analytics', color: 'bg-purple-100 text-purple-700' },
   security: { label: 'Security', color: 'bg-red-100 text-red-700' },
-  productivity: { label: 'Productivity', color: 'bg-teal-100 text-teal-700' },
+  productivity: { label: 'Productivity', color: 'bg-blue-100 text-blue-700' },
   hr: { label: 'HR', color: 'bg-indigo-100 text-indigo-700' },
   finance: { label: 'Finance', color: 'bg-emerald-100 text-emerald-700' },
   cloud: { label: 'Cloud', color: 'bg-sky-100 text-sky-700' },
@@ -95,7 +95,7 @@ export default function ExecutiveSnapshotCard({
       >
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-primary-500 to-primary-600 flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-[#282727] to-slate-800 flex items-center justify-center">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
               </svg>
@@ -157,7 +157,7 @@ export default function ExecutiveSnapshotCard({
           {/* Company Overview */}
           <div className="mt-6">
             <h3 className="text-sm font-semibold text-slate-900 mb-2 flex items-center">
-              <svg className="w-4 h-4 mr-2 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
               Company Overview
@@ -172,7 +172,7 @@ export default function ExecutiveSnapshotCard({
           {/* Key Firmographics */}
           <div className="mt-6">
             <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center">
-              <svg className="w-4 h-4 mr-2 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
               </svg>
               Key Firmographics
@@ -205,7 +205,7 @@ export default function ExecutiveSnapshotCard({
           {(snapshot.oneYearEmployeeGrowth || snapshot.twoYearEmployeeGrowth || snapshot.fundingAmount || snapshot.fortuneRank || snapshot.numLocations) && (
             <div className="mt-6">
               <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center">
-                <svg className="w-4 h-4 mr-2 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
                 Growth & Financials
@@ -252,7 +252,7 @@ export default function ExecutiveSnapshotCard({
           {/* Technology Install Base */}
           <div className="mt-6">
             <h3 className="text-sm font-semibold text-slate-900 mb-3 flex items-center">
-              <svg className="w-4 h-4 mr-2 text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <svg className="w-4 h-4 mr-2 text-blue-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
               </svg>
               Technology Install Base
