@@ -762,6 +762,175 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                     data += f"{i}. {step}\n"
                 data += "\n"
 
+        # ---------------------------------------------------------------
+        # SUPPORTING ASSETS — HP template-based outreach per persona
+        # ---------------------------------------------------------------
+        industry = validated_data.get('industry', 'technology')
+        intent_topics = buying_signals.get('intent_topics', validated_data.get('intent_topics', validated_data.get('intent_signals', [])))
+
+        # Priority area from intent topics
+        priority_area = ""
+        if intent_topics and len(intent_topics) > 0:
+            first_topic = intent_topics[0]
+            priority_area = first_topic.get('topic', '') if isinstance(first_topic, dict) else str(first_topic)
+        if not priority_area:
+            priority_area = "technology modernization"
+
+        # Pain points
+        pain_points = validated_data.get('pain_points') or validated_data.get('opportunity_themes_detailed', {}).get('pain_points', []) or validated_data.get('opportunity_themes', {}).get('pain_points', [])
+        outcome_or_kpi = "operational efficiency"
+        relevant_goal = "improved operational outcomes"
+        address_challenge = "strengthen their technology posture and improve outcomes"
+        example_a = "improving operational efficiency"
+        example_b = "reducing costs"
+        outcome_short = outcome_or_kpi
+
+        if pain_points and len(pain_points) > 0:
+            first_pain = pain_points[0]
+            if isinstance(first_pain, dict):
+                address_challenge = first_pain.get('title', address_challenge)
+                example_a = first_pain.get('title', example_a)
+                outcome_short = first_pain.get('title', outcome_or_kpi)
+                pain_desc = first_pain.get('description', '')
+                if 'efficiency' in pain_desc.lower():
+                    outcome_or_kpi = "operational efficiency"
+                elif 'security' in pain_desc.lower():
+                    outcome_or_kpi = "endpoint security posture"
+                elif 'cost' in pain_desc.lower():
+                    outcome_or_kpi = "cost optimization"
+            if len(pain_points) >= 2 and isinstance(pain_points[1], dict):
+                example_b = pain_points[1].get('title', example_b)
+
+        # Opportunities
+        opportunities = validated_data.get('sales_opportunities') or validated_data.get('opportunity_themes_detailed', {}).get('sales_opportunities', []) or validated_data.get('opportunities', [])
+        if opportunities and len(opportunities) > 0:
+            first_opp = opportunities[0]
+            if isinstance(first_opp, dict):
+                relevant_goal = first_opp.get('title', relevant_goal)
+
+        # Solutions
+        solutions = validated_data.get('recommended_solutions') or validated_data.get('opportunity_themes_detailed', {}).get('recommended_solution_areas', []) or validated_data.get('recommended_focus', [])
+        hp_capability = "modernizing device fleets and improving data security"
+        solution_summary = "modernizing device fleets to improve security and productivity"
+        hp_offering_name = "HP managed device solutions"
+        if solutions and len(solutions) > 0:
+            first_sol = solutions[0]
+            if isinstance(first_sol, dict):
+                hp_capability = first_sol.get('title', hp_capability)
+                sol_desc = first_sol.get('description', '')
+                if sol_desc:
+                    solution_summary = sol_desc[:120]
+                hp_offering_name = first_sol.get('title', hp_offering_name)
+
+        similar_org = f"a similar {industry} organization"
+        metric_outcome = "operational efficiency by 30%"
+        sp_name = salesperson_name if salesperson_name and salesperson_name != 'HP Sales Team' else "[Your Name]"
+
+        # Recommended sales program
+        data += "\n=== RECOMMENDED SALES PROGRAM ===\n\n"
+        data += "Recommended Next Steps:\n"
+        data += "Introduce emerging trends and thought leadership to build awareness and credibility. "
+        data += "Highlight business challenges and frame HP's solutions as ways to address them. "
+        data += "Reinforce proof points with case studies and demonstrate integration value. "
+        data += "Emphasize ROI, deployment support, and the ease of scaling with HP solutions.\n\n"
+
+        rec_next_steps = validated_data.get('recommended_next_steps', [])
+        if not rec_next_steps:
+            if intent_topics and len(intent_topics) > 0:
+                first_topic_name = intent_topics[0].get('topic', '') if isinstance(intent_topics[0], dict) else str(intent_topics[0])
+                rec_next_steps.append({'step': 'Build awareness and credibility', 'collateral': f'Thought leadership on {first_topic_name.lower()} in {industry}'})
+            if opportunities and len(opportunities) > 0:
+                first_opp_name = opportunities[0].get('title', '') if isinstance(opportunities[0], dict) else str(opportunities[0])
+                rec_next_steps.append({'step': 'Frame business challenges', 'collateral': f'Case study or insights on {first_opp_name.lower()}'})
+            rec_next_steps.append({'step': 'Demonstrate proven outcomes', 'collateral': f'Customer success stories from {industry}'})
+            rec_next_steps.append({'step': 'Enable decision-making', 'collateral': 'ROI framework and deployment approach'})
+
+        for i, step in enumerate(rec_next_steps, 1):
+            if isinstance(step, dict):
+                data += f"[{i}] {step.get('step', step.get('title', f'Step {i}'))}\n"
+                if step.get('collateral'):
+                    data += f"    Marketing collateral: {step['collateral']}\n"
+            else:
+                data += f"[{i}] {step}\n"
+
+        data += "\nSupporting assets: Email template | LinkedIn InMail template | Call script template\n"
+        data += "See the following slides for ready-to-use outreach templates per persona.\n\n"
+
+        # Determine persona types
+        persona_types = set()
+        stakeholder_map = validated_data.get('stakeholder_map', {})
+        all_stakeholders = stakeholder_map.get('stakeholders', []) if stakeholder_map else []
+        for s in all_stakeholders:
+            if isinstance(s, dict):
+                title = s.get('title', '').upper()
+                for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO']:
+                    if p in title:
+                        persona_types.add(p)
+        if not persona_types:
+            persona_types = {'CIO', 'CTO', 'CFO'}
+
+        for persona in sorted(persona_types):
+            data += f"\n=== SUPPORTING ASSETS - {persona} ===\n\n"
+
+            # Email Template
+            data += "--- Email Template ---\n\n"
+            data += "Sender: HP Sales\n\n"
+            data += "Subject:\n"
+            data += f"A: Insights that matter to {company_name}\n"
+            data += f"B: Supporting {company_name} on {priority_area}\n\n"
+            data += "Body copy:\n"
+            data += f"Hi [First Name],\n\n"
+            data += f"I understand {company_name} is focused on {priority_area} this year. I wanted to share something that might help advance that work.\n\n"
+            data += f"We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
+            data += "I thought you might find this useful:\n\n"
+            data += "[Insert link to supporting asset]\n\n"
+            data += f"Would you be open to a brief conversation about how we could help you achieve {relevant_goal}?\n\n"
+            data += f"Best regards,\n{sp_name}\nHP Canada | HP\n\n"
+
+            # LinkedIn InMail
+            data += "--- LinkedIn InMail Copy ---\n\n"
+            data += f"Subject: Supporting {company_name} on {priority_area}\n\n"
+            data += f"Hi [First Name],\n\n"
+            data += f"{priority_area.capitalize() if priority_area else 'Technology modernization'} seems to be a key focus across {industry}. We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
+            data += "Here's a short resource that outlines how:\n\n"
+            data += "[Insert link to supporting asset]\n\n"
+            data += f"Would you be open to a quick chat about what might work best for {company_name}?\n\n"
+            data += f"Best,\n{sp_name}\nHP Canada\n\n"
+
+            # Call Script
+            data += "--- Outreach Call Script ---\n\n"
+            data += "Step 1: Provide Context\n\n"
+            data += f"Hi [First name], this is {sp_name} with HP Canada.\n\n"
+            data += f"I'm calling about {priority_area}. I work with {industry} teams on this. Do you have 30 seconds to see if this is relevant?\n\n"
+            data += "Step 2: Explain Offering\n\n"
+            data += f"A lot of {industry} teams we work with are looking to {address_challenge}, whether that's {example_a} or {example_b}.\n\n"
+            data += f"At HP, we've been helping them by {solution_summary}.\n\n"
+            data += f"For example, {similar_org} recently improved {metric_outcome} after adopting {hp_offering_name}.\n\n"
+            data += f"It's a quick change that made a measurable difference in {relevant_goal}.\n\n"
+            data += "Step 3: CTA\n\n"
+            data += f"I can send over a short resource that outlines how we approached this with other {industry} teams. Would that be useful?\n\n"
+
+            # Voicemail Script
+            data += "--- Voicemail Script ---\n\n"
+            data += f"Hi [First Name], this is {sp_name} from HP Canada.\n\n"
+            data += f"I wanted to share a quick idea about {priority_area}, something we've seen help {industry} teams improve {outcome_short}.\n\n"
+            data += "If it's something you're exploring, I'd be happy to send over a short resource or set up a quick chat.\n\n"
+            data += "You can reach me at [phone number].\n\n"
+            data += f"Again, it's {sp_name} with HP Canada. Hope we can connect soon.\n\n"
+
+            # Objection Handling
+            data += "--- Objection Handling ---\n\n"
+            data += "Objection: I'm not interested.\n"
+            data += f"Totally understand. I'm not calling to sell anything. I just wanted to share a quick perspective we've seen make a difference for other teams in {industry}.\n"
+            data += "Would you be open to looking at a short resource?\n\n"
+            data += "Objection: We're already working with another vendor.\n"
+            data += "That's great. A lot of teams we work with were in a similar position and just wanted to see if there were areas they could do things a bit more efficiently.\n"
+            data += "Would it make sense to share a quick example?\n\n"
+            data += "Objection: Now's not a good time.\n"
+            data += "Of course. Is there a time when you will be available later this week? I can make it quick. 10 minutes tops.\n\n"
+            data += "Objection: Send me something.\n"
+            data += f"Absolutely. I'll send over a short piece on {priority_area}. If it seems relevant, we can reconnect to see if there's a fit.\n\n"
+
         data += f"\n=== REPORT METADATA ===\n\n"
         data += f"Confidence Score: {company_data.get('confidence_score', 0.85):.0%}\n"
         data += f"Report Generated: {current_date}\n"
