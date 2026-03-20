@@ -479,7 +479,7 @@ For each pain point, provide:
 1. A concise header: a broad category title with a parenthetical contextual hook, e.g. "Endpoint fleet standardization and lifecycle (desktop refresh challenges)"
 2. A rationale body (3-5 sentences): explain WHY this is a pain point for this specific company using the signals and data available. Connect the dots between what you know about the company and why this challenge matters. Write in natural prose, not bullet points.
 
-Keep pain points general and industry-relevant — do NOT make them specific to any particular vendor's product line.
+Pain points should be specific to this company's situation, industry, and scale — not generic.
 
 Format as JSON array:
 [

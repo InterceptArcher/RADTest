@@ -269,13 +269,13 @@ Output JSON: {
         "id": "opportunity_themes_analyst",
         "name": "Opportunity Themes Analyst",
         "focus": "opportunity_themes",
-        "prompt": """You are a sales opportunity analyst. Map organizational challenges to broad, strategic solution categories:
+        "prompt": """You are a sales opportunity analyst working from HP's perspective. Map organizational challenges to high-level HP strategic solution areas:
 - Identify 2-4 key business/technology challenges based on company context
-- Map each challenge to a general solution category (e.g. "Device standardization and lifecycle", "Security posture and compliance readiness") — NOT vendor-specific product names
-- Provide value proposition hooks that explain the strategic rationale, not product features
+- Map each challenge to a high-level way HP can help (e.g. "HP device standardization and lifecycle", "HP endpoint security posture", "HP workplace modernization") — focus on strategic categories, not specific product lines or SKUs
+- Provide value proposition hooks that give a salesperson strategic framing they can run with
 Output JSON: {
     "opportunity_themes": [
-        {"challenge": "Challenge description", "solution_category": "Broad category", "value_proposition": "Strategic rationale for how to position this"}
+        {"challenge": "Challenge description", "solution_category": "High-level HP strategic area", "value_proposition": "Strategic rationale for how to position HP"}
     ],
     "organizational_challenges": ["Challenge 1", "Challenge 2"],
     "solution_categories": ["Category 1", "Category 2"]
@@ -492,9 +492,9 @@ Output a clean JSON object with BOTH original and EXPANDED fields:
 
     "opportunity_themes_detailed": {{
         "pain_points": [
-            {{"title": "Broad pain point category (contextual hook)", "description": "3-5 sentence rationale explaining WHY this is a pain point for this company, using available signals and data. Write in natural prose."}},
-            {{"title": "Second pain point category (contextual hook)", "description": "3-5 sentence rationale for this pain point."}},
-            {{"title": "Third pain point category (contextual hook)", "description": "3-5 sentence rationale for this pain point."}}
+            {{"title": "Company-specific pain point (contextual hook)", "description": "3-5 sentence rationale explaining WHY this is a pain point for THIS company specifically, using available signals and data. Be specific to their industry, scale, and situation. Write in natural prose."}},
+            {{"title": "Second pain point (contextual hook)", "description": "3-5 sentence company-specific rationale."}},
+            {{"title": "Third pain point (contextual hook)", "description": "3-5 sentence company-specific rationale."}}
         ],
         "sales_opportunities": [
             {{"title": "Opportunity area", "description": "4-6 sentence in-depth blurb about what to explore and validate with the prospect. Focus on understanding current state, priorities, and gaps. Do NOT include qualification questions about budget/timeline/authority. Write as natural prose without Validate/Qualify headers."}},
@@ -502,9 +502,9 @@ Output a clean JSON object with BOTH original and EXPANDED fields:
             {{"title": "Third opportunity area", "description": "4-6 sentence in-depth blurb."}}
         ],
         "recommended_solution_areas": [
-            {{"title": "Broad solution category (strategic rationale hook)", "description": "3-5 sentence explanation of how to position this solution area using the signals available. Focus on strategic rationale, not vendor-specific product names."}},
-            {{"title": "Second solution category (strategic rationale hook)", "description": "3-5 sentence strategic rationale."}},
-            {{"title": "Third solution category (strategic rationale hook)", "description": "3-5 sentence strategic rationale."}}
+            {{"title": "High-level HP strategic area (contextual hook)", "description": "3-5 sentence explanation of how to position HP as a strategic partner in this area. Frame as high-level ways HP can help — e.g. device standardization, endpoint security posture, lifecycle management, workplace modernization — NOT specific HP product lines or SKUs. Write from the perspective of giving a salesperson strategic framing they can run with."}},
+            {{"title": "Second HP strategic area (contextual hook)", "description": "3-5 sentence high-level HP strategic rationale."}},
+            {{"title": "Third HP strategic area (contextual hook)", "description": "3-5 sentence high-level HP strategic rationale."}}
         ]
     }},
 

@@ -23,24 +23,37 @@
 
 ## Gamma Slide Output Quality Improvements (2026-03-20)
 
-### Opportunity Themes: Broader, Signal-Driven Content with Header/Body Format
-Pain points and recommended solution areas now use a `[header][body]` format where the header is a broad category title with a parenthetical contextual hook and the body expands on the strategic rationale in 3-5 sentences of natural prose. Recommended solution areas are no longer vendor-specific product pitches — they are general, strategic categories (e.g., "Device standardization and lifecycle management" rather than "HP's Infrastructure Modernization solutions") with rationale explaining how to use available signals to position the solution.
+### Critical Fix: Data Path for LLM-Generated Content
+Fixed a bug where `gamma_slideshow.py` never read LLM-generated pain points, sales opportunities, or recommended solutions from the council output. The LLM Council stores these in `validated_data['opportunity_themes_detailed']`, but gamma_slideshow only looked in `validated_data['pain_points']` and `validated_data['opportunity_themes']` — causing the fallback content to always render instead of the LLM-generated content. All three sections now correctly read from `opportunity_themes_detailed` as a data source.
 
-**Rationale**: The previous output was too HP-product-specific and lacked strategic depth. Sales teams need broader, consultative framing that connects company signals to solution categories — not product catalog entries. The header/body format gives a scannable title with enough depth in the body to support a real conversation.
+### Gamma Template Update
+Updated default Gamma template ID from `g_b18rs7bet2if0n9` to `g_76n9u56280zyiyz`.
+
+### Pain Points: [Header][Body] Format
+Pain points now use a `[header][body]` format where the header is a category title with a parenthetical contextual hook and the body expands on the rationale in 3-5 sentences. Pain points remain company-specific (industry, scale, signals) — they are NOT generalized.
+
+### Recommended Solution Areas: High-Level HP Strategic Framing
+Recommended solution areas now frame HP at a high strategic level — e.g. "HP device standardization and lifecycle management" or "HP endpoint security and compliance readiness" — rather than pushing specific product lines or SKUs. This gives salespeople strategic framing they can take into a conversation and run with, rather than a product catalog pitch.
+
+**Rationale**: Salespeople need strategic positioning, not product specs. High-level framing (device standardization, endpoint security posture, workplace modernization) opens consultative conversations. Specific products come later once the need is established.
 
 ### Sales Opportunities: In-Depth Validation Blurbs (Qualify Removed)
-Sales opportunity descriptions no longer include "Qualify scope, timeline, budget authority, and decision-making process" boilerplate. Instead, the validate content is expanded into a natural 4-6 sentence prose blurb that explains what to explore with the prospect — their current state, priorities, and where gaps or unmet needs may exist. The "Validate:" header is also removed for a cleaner read.
+Sales opportunity descriptions no longer include "Qualify scope, timeline, budget authority" boilerplate. The validate content is expanded into a natural 4-6 sentence prose blurb about what to explore with the prospect. The "Validate:" header is removed for a cleaner read.
 
-**Rationale**: The qualify/validate split created formulaic, checklist-style output that doesn't add value in a slide deck. A single, thoughtful blurb focused on understanding the prospect's situation is more useful for preparing a consultative conversation.
+**Rationale**: The qualify/validate split created formulaic, checklist-style output. A single thoughtful blurb focused on the prospect's situation is more useful for preparing a consultative conversation.
 
 ### LLM Prompt Updates
-Updated system prompts and user instructions in both `worker/llm_council.py` and root `llm_council.py` to generate signal-driven, vendor-neutral analysis. Increased `max_tokens` from 800 to 1500 to accommodate the longer, more detailed output format.
+- Pain points prompt: [header][body] format, company-specific (not vendor-neutral)
+- Sales opportunities prompt: No qualify, in-depth natural prose blurbs
+- Recommended solutions prompt: High-level HP strategic areas, not specific product lines
+- Aggregator prompt: Dict format (title/description) for all three sections
+- `max_tokens` increased from 800 to 1500
 
 ### Files Modified
-- `backend/worker/gamma_slideshow.py` — Rendering format, fallback content for all three sections
+- `backend/worker/gamma_slideshow.py` — Template ID, data path fix, rendering format, fallback content
 - `backend/worker/llm_council.py` — Pain points and opportunities LLM prompts
-- `backend/llm_council.py` — Opportunity themes analyst prompt, enrichment template structure
-- `backend/production_main.py` — Fallback opportunity themes content
+- `backend/llm_council.py` — Opportunity themes analyst prompt, aggregator prompt structure
+- `backend/production_main.py` — Fallback recommended solutions content
 
 ---
 

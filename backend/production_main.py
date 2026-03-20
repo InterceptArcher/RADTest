@@ -625,9 +625,9 @@ def _build_opportunity_themes_from_flat(validated_data: dict) -> dict:
 
     # Ensure we have at least 3 solution areas
     default_solutions = [
-        "Infrastructure modernization and lifecycle management (business agility). Use the transformation signals to position a phased modernization approach — replacing aging infrastructure with scalable, cloud-ready technology without disrupting day-to-day operations. The emphasis should be on enabling faster deployments, easier integration with modern workflows, and a foundation that supports future initiatives.",
-        "Security posture and compliance readiness (risk reduction). Use security and compliance signals to position a structured approach to endpoint protection, access controls, and audit readiness. The goal is building a posture that reduces operational risk, simplifies compliance reporting, and scales with the organization as its threat landscape evolves.",
-        "Managed services and operational support (efficiency gains). Use operational efficiency signals to explore whether a managed services approach would free up internal resources for higher-value work. The conversation should focus on understanding current support pain points and where the biggest operational drag exists."
+        "HP infrastructure modernization and workplace enablement (business agility). Use the transformation signals to position HP as an enabler of phased modernization — replacing aging infrastructure with scalable, modern technology without disrupting day-to-day operations. Frame HP as a partner for faster deployments, hybrid work readiness, and a technology foundation that supports future initiatives.",
+        "HP endpoint security and compliance readiness (risk reduction). Use security and compliance signals to position HP as a partner for building a structured endpoint security posture — from device-level protection to audit readiness. Frame the conversation around reducing operational risk and simplifying compliance, not specific product SKUs.",
+        "HP device standardization and lifecycle management (fleet efficiency). Use operational efficiency signals to position HP as a standardization partner — driving consistent device estates with clear refresh cycles, streamlined provisioning, and reduced support friction. Focus on how HP can simplify buying, deployment, and end-of-life as a single ecosystem approach."
     ]
     while len(solutions) < 3:
         solutions.append(default_solutions[len(solutions)])
