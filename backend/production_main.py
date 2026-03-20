@@ -354,7 +354,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "fix-gtm-field-formats-v2",
+        "deploy_version": "hp-outreach-templates-v1",
     }
 
 

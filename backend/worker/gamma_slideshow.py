@@ -1750,7 +1750,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         markdown += "# Recommended sales program\n\n"
 
         markdown += "## Recommended Next Steps\n\n"
-        markdown += "*[Introduce emerging trends and thought leadership to build awareness and credibility / Highlight business challenges and frame HP's solutions as ways to address them / Reinforce proof points with case studies and demonstrate integration value / Emphasize ROI, deployment support, and the ease of scaling with HP solutions.]*\n\n"
+        markdown += "*Introduce emerging trends and thought leadership to build awareness and credibility. Highlight business challenges and frame HP's solutions as ways to address them. Reinforce proof points with case studies and demonstrate integration value. Emphasize ROI, deployment support, and the ease of scaling with HP solutions.*\n\n"
 
         # Get recommended collateral/next steps
         next_steps_data = validated_data.get('recommended_next_steps', [])
@@ -1808,7 +1808,8 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 markdown += f"**[{i}]** {step}\n\n"
 
         markdown += "## Supporting assets\n\n"
-        markdown += "[Email template] [LinkedIn outreach template] [Call script template]\n\n"
+        markdown += "Email template | LinkedIn InMail template | Call script template\n\n"
+        markdown += "*See the following slides for ready-to-use outreach templates per persona.*\n\n"
 
         markdown += "---\n\n"
 
@@ -1888,6 +1889,12 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
             similar_org = f"a similar {industry} organization"
             metric_outcome = "operational efficiency by 30%"
+            # [outcome] in voicemail is distinct from [outcome or KPI] in email/LinkedIn
+            outcome_short = outcome_or_kpi
+            if pain_points and len(pain_points) > 0:
+                first_pain = pain_points[0]
+                if isinstance(first_pain, dict):
+                    outcome_short = first_pain.get('title', outcome_or_kpi)
             sp_name = salesperson_name if salesperson_name else "[Your Name]"
 
             # -------------------------------------------------------
@@ -1943,7 +1950,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             # -------------------------------------------------------
             markdown += "## Voicemail Script\n\n"
             markdown += f"Hi [First Name], this is {sp_name} from HP Canada.\n\n"
-            markdown += f"I wanted to share a quick idea about {priority_area}, something we've seen help {industry} teams improve {outcome_or_kpi}.\n\n"
+            markdown += f"I wanted to share a quick idea about {priority_area}, something we've seen help {industry} teams improve {outcome_short}.\n\n"
             markdown += "If it's something you're exploring, I'd be happy to send over a short resource or set up a quick chat.\n\n"
             markdown += f"You can reach me at [phone number].\n\n"
             markdown += f"Again, it's {sp_name} with HP Canada. Hope we can connect soon.\n\n"
