@@ -1,7 +1,22 @@
 'use client';
 
 import { useState } from 'react';
-import type { OpportunityThemesDetailed } from '@/types';
+import type { OpportunityThemesDetailed, OpportunityThemeItem } from '@/types';
+
+/** Render an opportunity theme item — handles both plain strings and {title, description} objects. */
+function ThemeItemContent({ item }: { item: OpportunityThemeItem }) {
+  if (typeof item === 'string') {
+    return <p className="text-sm leading-relaxed">{item}</p>;
+  }
+  return (
+    <div>
+      <p className="text-sm font-semibold leading-snug">{item.title}</p>
+      {item.description && (
+        <p className="text-sm leading-relaxed mt-1 opacity-90">{item.description}</p>
+      )}
+    </div>
+  );
+}
 
 interface OpportunityThemesCardProps {
   themes: OpportunityThemesDetailed;
@@ -99,7 +114,7 @@ export default function OpportunityThemesCard({ themes }: OpportunityThemesCardP
                       <span className="w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center text-xs font-bold mr-3 flex-shrink-0">
                         {index + 1}
                       </span>
-                      <p className="text-sm text-red-900 leading-relaxed">{point}</p>
+                      <div className="text-red-900"><ThemeItemContent item={point} /></div>
                     </div>
                   </div>
                 ))}
@@ -126,7 +141,7 @@ export default function OpportunityThemesCard({ themes }: OpportunityThemesCardP
                       <span className="w-6 h-6 rounded-full bg-emerald-500 text-white flex items-center justify-center text-xs font-bold mr-3 flex-shrink-0">
                         {index + 1}
                       </span>
-                      <p className="text-sm text-emerald-900 leading-relaxed">{opportunity}</p>
+                      <div className="text-emerald-900"><ThemeItemContent item={opportunity} /></div>
                     </div>
                   </div>
                 ))}
@@ -153,7 +168,7 @@ export default function OpportunityThemesCard({ themes }: OpportunityThemesCardP
                       <span className="w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center text-xs font-bold mr-3 flex-shrink-0">
                         {index + 1}
                       </span>
-                      <p className="text-sm text-blue-900 leading-relaxed">{area}</p>
+                      <div className="text-blue-900"><ThemeItemContent item={area} /></div>
                     </div>
                   </div>
                 ))}

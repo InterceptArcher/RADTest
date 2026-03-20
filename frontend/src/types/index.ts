@@ -591,11 +591,14 @@ export interface StakeholderMap {
 
 /**
  * Opportunity Themes Detailed - Pain points, sales opportunities, solution areas.
+ * Items can be plain strings (legacy) or structured objects with title + description.
  */
+export type OpportunityThemeItem = string | { title: string; description: string };
+
 export interface OpportunityThemesDetailed {
-  pain_points: string[];
-  sales_opportunities: string[];
-  recommended_solution_areas: string[];
+  pain_points: OpportunityThemeItem[];
+  sales_opportunities: OpportunityThemeItem[];
+  recommended_solution_areas: OpportunityThemeItem[];
 }
 
 /**
