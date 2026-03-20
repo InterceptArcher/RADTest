@@ -607,27 +607,27 @@ def _build_opportunity_themes_from_flat(validated_data: dict) -> dict:
 
     # Ensure we have at least 3 pain points
     default_pain_points = [
-        f"{company_name} faces challenges with legacy system modernization and digital transformation. Many organizations in the {industry} sector struggle with outdated infrastructure that limits agility and innovation.",
-        f"Operational efficiency and cost optimization remain key concerns. {company_name} likely seeks ways to streamline processes while reducing technology overhead.",
-        f"Security and compliance requirements continue to evolve, creating complexity in protecting sensitive data while meeting regulatory obligations."
+        f"{company_name} faces challenges with legacy system modernization and digital transformation ({industry.lower()} pressures). Many organizations in the {industry.lower()} sector are navigating a period where aging infrastructure limits the speed at which new capabilities can be deployed and scaled. The gap between organizations that have modernized and those still running legacy systems is widening, creating urgency to act while also managing the risk of hasty investments without a clear lifecycle strategy.",
+        f"Operational efficiency and cost optimization (scaling challenges). {company_name} likely carries operational overhead that has grown organically over time — inconsistent device configurations, reactive support models, and fragmented vendor relationships all contribute to a higher-than-necessary total cost of ownership. Without clear visibility into where technology spend is going and where it is being wasted, it becomes difficult to make strategic refresh and consolidation decisions.",
+        f"Security and compliance posture (evolving regulatory landscape). The regulatory environment in {industry.lower()} continues to evolve, creating complexity in protecting sensitive data while meeting compliance obligations. Every new endpoint, application, and integration point expands the attack surface, and organizations must balance innovation with the imperative to maintain audit trails, access controls, and encryption standards."
     ]
     while len(pain_points) < 3:
         pain_points.append(default_pain_points[len(pain_points)])
 
     # Ensure we have at least 3 sales opportunities
     default_sales_opps = [
-        f"Position HP solutions as enablers of {company_name}'s digital transformation strategy, emphasizing reduced time-to-value and proven ROI.",
-        f"Highlight HP's comprehensive portfolio that addresses end-to-end technology needs, from infrastructure to security to managed services.",
-        f"Leverage HP's industry expertise in the {industry} sector to demonstrate understanding of specific challenges and regulatory requirements."
+        f"{company_name} appears to be in a phase where digital transformation is a priority, which means understanding where they are in that journey — early evaluation, mid-implementation, or optimization — will reveal the real gaps. Exploring how their current infrastructure and vendor landscape supports or constrains their transformation goals can surface opportunities to add value through better lifecycle planning, standardization, or integration approaches that reduce time-to-value.",
+        f"There is an opportunity to explore {company_name}'s end-to-end technology landscape and identify where fragmentation or inconsistency is creating hidden costs. Many organizations in the {industry.lower()} space have built up a patchwork of solutions over time, and a conversation about consolidation, standardization, and total cost of ownership can open doors to a broader strategic engagement that addresses multiple pain points simultaneously.",
+        f"The {industry.lower()} sector has specific regulatory and operational requirements that demand technology partners who understand the context. Exploring how {company_name} currently navigates these industry-specific challenges — and where they feel underserved by existing solutions — can position a more consultative, needs-driven conversation rather than a product-led pitch."
     ]
     while len(sales_opps) < 3:
         sales_opps.append(default_sales_opps[len(sales_opps)])
 
     # Ensure we have at least 3 solution areas
     default_solutions = [
-        "Consider HP's Infrastructure Modernization solutions including hybrid cloud, edge computing, and data center transformation.",
-        "Explore HP's Security Solutions portfolio for endpoint protection, identity management, and compliance automation.",
-        "Evaluate HP's Managed Services for ongoing support, monitoring, and optimization of technology investments."
+        "Infrastructure modernization and lifecycle management (business agility). Use the transformation signals to position a phased modernization approach — replacing aging infrastructure with scalable, cloud-ready technology without disrupting day-to-day operations. The emphasis should be on enabling faster deployments, easier integration with modern workflows, and a foundation that supports future initiatives.",
+        "Security posture and compliance readiness (risk reduction). Use security and compliance signals to position a structured approach to endpoint protection, access controls, and audit readiness. The goal is building a posture that reduces operational risk, simplifies compliance reporting, and scales with the organization as its threat landscape evolves.",
+        "Managed services and operational support (efficiency gains). Use operational efficiency signals to explore whether a managed services approach would free up internal resources for higher-value work. The conversation should focus on understanding current support pain points and where the biggest operational drag exists."
     ]
     while len(solutions) < 3:
         solutions.append(default_solutions[len(solutions)])

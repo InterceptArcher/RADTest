@@ -476,8 +476,10 @@ Employee Count: {company_data.get('employee_count', 'Unknown')}
 Recent News: {news_data.get('summaries', {}).get('all', 'No recent news')}
 
 For each pain point, provide:
-1. A concise title (5-10 words)
-2. A detailed description (2-3 sentences) explaining the challenge
+1. A concise header: a broad category title with a parenthetical contextual hook, e.g. "Endpoint fleet standardization and lifecycle (desktop refresh challenges)"
+2. A rationale body (3-5 sentences): explain WHY this is a pain point for this specific company using the signals and data available. Connect the dots between what you know about the company and why this challenge matters. Write in natural prose, not bullet points.
+
+Keep pain points general and industry-relevant — do NOT make them specific to any particular vendor's product line.
 
 Format as JSON array:
 [
@@ -488,11 +490,11 @@ Format as JSON array:
             response = await openai.ChatCompletion.acreate(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an expert B2B sales analyst specializing in enterprise technology needs."},
+                    {"role": "system", "content": "You are an expert B2B sales analyst specializing in enterprise technology needs. You write strategic, signal-driven analysis — not generic product pitches."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0,
-                max_tokens=800
+                max_tokens=1500
             )
 
             import json
@@ -524,15 +526,15 @@ Format as JSON array:
         try:
             pain_summary = "\n".join([f"- {p['title']}" for p in pain_points])
 
-            prompt = f"""Based on these pain points for {company_data.get('company_name', 'the company')}, identify 3 specific sales opportunities for HP technology solutions.
+            prompt = f"""Based on these pain points for {company_data.get('company_name', 'the company')}, identify 3 specific sales opportunities.
 
 Industry: {company_data.get('industry', 'Unknown')}
 Pain Points:
 {pain_summary}
 
 For each opportunity, provide:
-1. A specific title (sales opportunity)
-2. A description with qualification questions
+1. A specific title (the sales opportunity area)
+2. An in-depth description (4-6 sentences) that explains what to explore and validate with the prospect. Focus on understanding their current state, priorities, and where there may be gaps or unmet needs. Write as a natural prose blurb — do NOT use headers like "Validate:" or "Qualify:", and do NOT include qualification questions about budget, timeline, or decision-making process.
 
 Format as JSON array:
 [
@@ -542,11 +544,11 @@ Format as JSON array:
             response = await openai.ChatCompletion.acreate(
                 model=self.model,
                 messages=[
-                    {"role": "system", "content": "You are an HP enterprise sales strategist."},
+                    {"role": "system", "content": "You are an enterprise sales strategist who writes thoughtful, consultative opportunity analyses — not generic qualification checklists."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0,
-                max_tokens=800
+                max_tokens=1500
             )
 
             import json

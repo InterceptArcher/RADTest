@@ -5,6 +5,7 @@ Creates markdown prompts and generates slideshows via Gamma API.
 import json
 import logging
 import asyncio
+import re
 from typing import Dict, Any, Optional
 import httpx
 
@@ -1268,34 +1269,34 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
             # Size-based pain point
             if isinstance(employee_count, int) and employee_count > 10000:
-                pain_points.append({'title': 'Enterprise-scale coordination and standardization', 'description': f'Managing technology standards and user experience across a large {employee_count}+ employee organization creates complexity and support burden.'})
+                pain_points.append({'title': f'Enterprise-scale coordination and standardization ({employee_count}+ employees)', 'description': f'Organizations of this scale face inherent complexity in maintaining consistent technology standards and user experience across a distributed workforce. With {employee_count}+ employees, even small inconsistencies in device configuration, software versions, or support processes compound into significant operational drag. The challenge intensifies when different business units have historically made independent technology decisions, creating a fragmented estate that is expensive to support and difficult to secure uniformly.'})
             elif isinstance(employee_count, int) and employee_count > 1000:
-                pain_points.append({'title': 'Growth-stage operational efficiency', 'description': f'Scaling operations efficiently while maintaining quality across {employee_count}+ employees requires standardized technology and streamlined support models.'})
+                pain_points.append({'title': f'Growth-stage operational efficiency (scaling beyond {employee_count} employees)', 'description': f'Mid-to-large organizations in a growth phase often find that the processes and tools that worked at a smaller scale start to break down. With {employee_count}+ employees, manual provisioning, ad-hoc support models, and inconsistent technology standards create friction that slows onboarding, increases support costs, and makes it harder to maintain security posture. The pressure to scale efficiently while keeping quality and consistency high demands a more intentional approach to technology lifecycle management.'})
             else:
-                pain_points.append({'title': 'Resource optimization and efficiency', 'description': 'Balancing technology investments with operational efficiency requires strategic vendor partnerships and scalable solutions.'})
+                pain_points.append({'title': 'Resource optimization and operational efficiency (lean IT operations)', 'description': 'Smaller and mid-size organizations often operate with lean IT teams that must balance day-to-day support with strategic initiatives. Without the luxury of dedicated teams for procurement, deployment, and lifecycle management, technology decisions tend to be reactive rather than planned. This creates an uneven technology estate where refresh cycles slip, support becomes ad-hoc, and the total cost of ownership creeps up without clear visibility.'})
 
             # Industry-specific pain point
             if any(word in industry.lower() for word in ['manufacturing', 'automotive', 'industrial']):
-                pain_points.append({'title': 'Operational technology modernization', 'description': f'{industry} digital transformation requires bridging legacy systems with modern infrastructure while maintaining uptime.'})
+                pain_points.append({'title': f'Operational technology modernization ({industry.lower()} digital transformation)', 'description': f'The {industry.lower()} sector is under pressure to bridge legacy operational technology with modern digital infrastructure without disrupting production uptime. Many organizations still rely on aging systems that were never designed for connectivity or data-driven decision-making. The challenge is not just technical migration — it requires rethinking workflows, retraining staff, and maintaining continuity during the transition, all while competitors move faster.'})
             elif any(word in industry.lower() for word in ['financial', 'banking', 'insurance']):
-                pain_points.append({'title': 'Regulatory compliance and security', 'description': f'{industry} faces stringent compliance requirements requiring secure, auditable technology infrastructure and risk management.'})
+                pain_points.append({'title': f'Regulatory compliance and security posture ({industry.lower()} requirements)', 'description': f'The {industry.lower()} sector operates under some of the most stringent regulatory frameworks, requiring auditable infrastructure, data protection controls, and demonstrable compliance at every layer of the technology stack. The challenge is compounded by evolving regulations that demand continuous adaptation rather than one-time compliance. Organizations must balance the need for innovation and agility with the reality that any security gap or compliance failure carries outsized financial and reputational risk.'})
             elif any(word in industry.lower() for word in ['healthcare', 'medical']):
-                pain_points.append({'title': 'Patient data security and compliance', 'description': f'{industry} must balance innovation with HIPAA compliance, requiring secure infrastructure and careful vendor selection.'})
+                pain_points.append({'title': f'Patient data security and compliance (HIPAA and beyond)', 'description': f'Healthcare organizations face a unique tension between the need to innovate — adopting telehealth, connected devices, and data-driven care — and the imperative to protect patient data under HIPAA and evolving state-level privacy regulations. Every new endpoint, application, and integration point expands the attack surface. The challenge is building an infrastructure posture that enables clinical agility while maintaining the audit trails, access controls, and encryption standards that regulators and patients expect.'})
             else:
-                pain_points.append({'title': 'Digital transformation acceleration', 'description': f'{industry} requires modern infrastructure to support business agility and competitive differentiation.'})
+                pain_points.append({'title': f'Digital transformation and competitive agility ({industry.lower()} pressures)', 'description': f'Organizations in the {industry.lower()} space are navigating a period where technology decisions directly impact competitive positioning. Legacy infrastructure limits the speed at which new capabilities can be deployed, tested, and scaled. The gap between organizations that have modernized their technology estate and those still operating on aging systems is widening, creating urgency to act — but also risk of making hasty investments without a clear lifecycle and support strategy.'})
 
             # Universal pain point
-            pain_points.append({'title': 'Technology investment ROI and visibility', 'description': 'Demonstrating technology value requires clear metrics, cost transparency, and alignment between IT investments and business outcomes.'})
+            pain_points.append({'title': 'Technology investment ROI and cost visibility (demonstrating value)', 'description': 'Across industries, IT leaders are under increasing pressure to demonstrate that technology investments deliver measurable business outcomes rather than just keeping the lights on. Without clear metrics on total cost of ownership, utilization rates, and lifecycle costs, it becomes difficult to justify refresh cycles, new initiatives, or vendor consolidation. The result is often deferred decisions that ultimately cost more in support burden, security risk, and lost productivity.'})
 
         for i, pain in enumerate(pain_points, 1):
             if isinstance(pain, dict):
                 pain_title = pain.get('title', pain.get('name', f'Pain Point {i}'))
                 pain_desc = pain.get('description', pain.get('pain_point', ''))
-                markdown += f"**[{i}] {pain_title}**\n\n"
+                markdown += f"**{i}. {pain_title}**\n\n"
                 if pain_desc:
                     markdown += f"{pain_desc}\n\n"
             else:
-                markdown += f"**[{i}]** {str(pain)}\n\n"
+                markdown += f"**{i}.** {str(pain)}\n\n"
 
         # Sales opportunities
         markdown += "## Sales opportunities\n\n"
@@ -1318,31 +1319,36 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                     topic_name = topic.get('topic', '') if isinstance(topic, dict) else str(topic)
                     opportunities.append({
                         'title': f'{topic_name} assessment and roadmap',
-                        'description': f'Validate current state and priorities around {topic_name.lower()}. Qualify scope, timeline, budget authority, and decision-making process.'
+                        'description': f'There are signals suggesting {company_name} has active interest or investment in {topic_name.lower()}. Understanding where they are in their journey — whether they are early in evaluation, mid-implementation, or looking to optimize an existing deployment — will reveal where the real gaps and unmet needs are. Exploring how their current approach to {topic_name.lower()} aligns with their broader business objectives can surface opportunities to add value through better integration, standardization, or lifecycle planning.'
                     })
 
             # Add infrastructure opportunity
             opportunities.append({
                 'title': 'Infrastructure modernization and lifecycle management',
-                'description': f'Validate {company_name}\'s refresh cycles, standardization goals, and support model preferences. Qualify device volumes, deployment timeline, and integration requirements.'
+                'description': f'{company_name} likely has refresh cycles, standardization goals, and support model preferences that have evolved over time — some intentionally, some by default. Understanding their current device estate maturity, how they handle end-of-life transitions, and whether their support model is reactive or proactive will clarify where modernization efforts can deliver the most impact. Organizations in the {industry.lower()} space often find that inconsistent lifecycle management creates hidden costs in support overhead, security exposure, and user productivity loss.'
             })
 
             # Ensure we have at least 3
             if len(opportunities) < 3:
                 opportunities.append({
                     'title': 'Managed services and support optimization',
-                    'description': 'Validate current support burden and operational pain points. Qualify appetite for managed services, success metrics, and service level requirements.'
+                    'description': f'Many organizations carry a significant internal support burden that they have grown accustomed to but never fully quantified. Exploring how {company_name} currently handles provisioning, break-fix, and ongoing management — and where those processes create friction or bottlenecks — can reveal whether a managed services approach would free up internal resources for higher-value work. The conversation should focus on understanding their pain points with the current support model and where they see the biggest operational drag.'
                 })
 
         for i, opp in enumerate(opportunities, 1):
             if isinstance(opp, dict):
                 opp_title = opp.get('title', opp.get('name', f'Opportunity {i}'))
                 opp_desc = opp.get('description', opp.get('details', ''))
-                markdown += f"**[{i}] {opp_title}**\n\n"
+                # Strip any residual "Validate:" or "Qualify:" prefixes from LLM output
+                if opp_desc:
+                    opp_desc = re.sub(r'^(Validate|Qualify)[:\s]+', '', opp_desc).strip()
+                    # Remove any "Qualify ..." sentence at the end
+                    opp_desc = re.sub(r'\s*Qualify\s+[^.]*\.\s*$', '', opp_desc).strip()
+                markdown += f"**{i}. {opp_title}**\n\n"
                 if opp_desc:
                     markdown += f"{opp_desc}\n\n"
             else:
-                markdown += f"**[{i}]** {str(opp)}\n\n"
+                markdown += f"**{i}.** {str(opp)}\n\n"
 
         # Recommended solution areas
         markdown += "## Recommended solution areas\n\n"
@@ -1359,28 +1365,33 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
 
             solutions = []
 
-            # Map pain points to solutions
+            # Map pain points to broad, strategic solution areas
             for i, pain in enumerate(pain_points[:3], 1):
                 pain_title = pain.get('title', '') if isinstance(pain, dict) else str(pain)
                 if 'security' in pain_title.lower() or 'compliance' in pain_title.lower():
                     solutions.append({
-                        'title': 'Enterprise security and compliance infrastructure',
-                        'description': f'Address {pain_title.lower()} with secure, compliance-ready hardware and infrastructure solutions designed for {industry}.'
+                        'title': 'Security posture and compliance readiness (risk reduction)',
+                        'description': f'Use the security and compliance signals to position a structured approach to endpoint protection, access controls, and audit readiness that addresses {industry.lower()}-specific regulatory requirements. The goal is not just deploying security tooling but building a posture that reduces operational risk, simplifies compliance reporting, and scales with the organization as its threat landscape and regulatory obligations evolve.'
                     })
                 elif 'scale' in pain_title.lower() or 'efficiency' in pain_title.lower() or 'optimization' in pain_title.lower():
                     solutions.append({
-                        'title': 'Managed services and operational efficiency',
-                        'description': f'Reduce operational burden through managed services, standardized device fleets, and proactive support models that address {pain_title.lower()}.'
+                        'title': 'Device standardization and lifecycle management (operational efficiency)',
+                        'description': f'Use the efficiency and scaling signals to drive a standardized device estate with clear refresh cycles, consistent configurations, and streamlined provisioning that reduces support friction and total cost of ownership. A well-managed lifecycle approach — from procurement through deployment to end-of-life — simplifies operations, improves user consistency, and makes it easier to forecast and control technology spend.'
                     })
                 elif 'transformation' in pain_title.lower() or 'modernization' in pain_title.lower():
                     solutions.append({
-                        'title': 'Infrastructure modernization and digital enablement',
-                        'description': f'Enable business agility with modern infrastructure, cloud-ready solutions, and scalable technology that supports {pain_title.lower()}.'
+                        'title': 'Infrastructure modernization and digital enablement (business agility)',
+                        'description': f'Use the transformation signals to position a phased modernization approach that replaces aging infrastructure with scalable, cloud-ready technology without disrupting day-to-day operations. The emphasis should be on enabling business agility — faster deployments, easier integration with modern workflows, and a foundation that supports rather than constrains future initiatives. For {industry.lower()} organizations, this often means bridging legacy systems with modern platforms in a way that preserves institutional knowledge while unlocking new capabilities.'
+                    })
+                elif 'roi' in pain_title.lower() or 'cost' in pain_title.lower() or 'visibility' in pain_title.lower() or 'investment' in pain_title.lower():
+                    solutions.append({
+                        'title': 'Technology cost transparency and value realization (ROI framework)',
+                        'description': 'Use the cost visibility and ROI signals to position a structured approach to technology asset management that provides clear metrics on total cost of ownership, utilization rates, and lifecycle costs. When organizations can see where their technology spend is going — and where it is being wasted — they make better refresh decisions, consolidate vendors more effectively, and can articulate the business value of IT investments to leadership with confidence.'
                     })
                 else:
                     solutions.append({
-                        'title': f'Solutions addressing {pain_title.lower()}',
-                        'description': f'HP offers comprehensive technology and services to address {pain_title.lower()} through proven enterprise solutions and support.'
+                        'title': f'Strategic approach to {pain_title.split("(")[0].strip().lower()}',
+                        'description': f'Use the available signals around {pain_title.split("(")[0].strip().lower()} to position a practical, phased approach that addresses the immediate operational pain while building toward a more sustainable long-term model. The focus should be on understanding the current state, identifying quick wins that build credibility, and establishing a roadmap that aligns technology investments with measurable business outcomes.'
                     })
 
             # Ensure unique solutions (deduplicate by title)
@@ -1396,11 +1407,11 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             if isinstance(solution, dict):
                 solution_title = solution.get('title', solution.get('name', f'Area {i}'))
                 solution_desc = solution.get('description', solution.get('solution', ''))
-                markdown += f"**[Area {i}] {solution_title}**\n\n"
+                markdown += f"**{i}. {solution_title}**\n\n"
                 if solution_desc:
                     markdown += f"{solution_desc}\n\n"
             else:
-                markdown += f"**[Area {i}]** {str(solution)}\n\n"
+                markdown += f"**{i}.** {str(solution)}\n\n"
 
         markdown += "---\n\n"
 

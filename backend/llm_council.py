@@ -269,13 +269,13 @@ Output JSON: {
         "id": "opportunity_themes_analyst",
         "name": "Opportunity Themes Analyst",
         "focus": "opportunity_themes",
-        "prompt": """You are a sales opportunity analyst. Map organizational challenges to solution categories:
+        "prompt": """You are a sales opportunity analyst. Map organizational challenges to broad, strategic solution categories:
 - Identify 2-4 key business/technology challenges based on company context
-- Map each challenge to relevant solution categories
-- Provide value proposition hooks
+- Map each challenge to a general solution category (e.g. "Device standardization and lifecycle", "Security posture and compliance readiness") — NOT vendor-specific product names
+- Provide value proposition hooks that explain the strategic rationale, not product features
 Output JSON: {
     "opportunity_themes": [
-        {"challenge": "Challenge description", "solution_category": "Category", "value_proposition": "How to position"}
+        {"challenge": "Challenge description", "solution_category": "Broad category", "value_proposition": "Strategic rationale for how to position this"}
     ],
     "organizational_challenges": ["Challenge 1", "Challenge 2"],
     "solution_categories": ["Category 1", "Category 2"]
@@ -492,19 +492,19 @@ Output a clean JSON object with BOTH original and EXPANDED fields:
 
     "opportunity_themes_detailed": {{
         "pain_points": [
-            "First paragraph describing a specific pain point the company faces",
-            "Second paragraph on another operational challenge",
-            "Third paragraph on a strategic challenge"
+            {{"title": "Broad pain point category (contextual hook)", "description": "3-5 sentence rationale explaining WHY this is a pain point for this company, using available signals and data. Write in natural prose."}},
+            {{"title": "Second pain point category (contextual hook)", "description": "3-5 sentence rationale for this pain point."}},
+            {{"title": "Third pain point category (contextual hook)", "description": "3-5 sentence rationale for this pain point."}}
         ],
         "sales_opportunities": [
-            "First paragraph on where HP can provide value",
-            "Second paragraph on another sales opportunity",
-            "Third paragraph on additional opportunity"
+            {{"title": "Opportunity area", "description": "4-6 sentence in-depth blurb about what to explore and validate with the prospect. Focus on understanding current state, priorities, and gaps. Do NOT include qualification questions about budget/timeline/authority. Write as natural prose without Validate/Qualify headers."}},
+            {{"title": "Second opportunity area", "description": "4-6 sentence in-depth blurb."}},
+            {{"title": "Third opportunity area", "description": "4-6 sentence in-depth blurb."}}
         ],
         "recommended_solution_areas": [
-            "First paragraph recommending a solution area based on pain points",
-            "Second paragraph on another solution recommendation",
-            "Third paragraph on additional solution area"
+            {{"title": "Broad solution category (strategic rationale hook)", "description": "3-5 sentence explanation of how to position this solution area using the signals available. Focus on strategic rationale, not vendor-specific product names."}},
+            {{"title": "Second solution category (strategic rationale hook)", "description": "3-5 sentence strategic rationale."}},
+            {{"title": "Third solution category (strategic rationale hook)", "description": "3-5 sentence strategic rationale."}}
         ]
     }},
 
