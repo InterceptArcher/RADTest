@@ -21,6 +21,38 @@
 
 ---
 
+## HP Template-Based Outreach Assets (2026-03-20)
+
+### Replaced LLM Free-Generation with HP-Approved PDF Templates
+All outreach content (email, LinkedIn InMail, call script, voicemail, objection handling) now uses **exact text from HP Canada's approved PDF templates**. Only bracket placeholders are substituted with company-specific data — all other copy is verbatim from the PDFs.
+
+**Rationale**: The previous system used OpenAI to freely generate outreach content, producing inconsistent outputs that didn't match HP Canada's approved messaging. Template-based output ensures brand compliance and consistent quality across all generated assets.
+
+### New Outreach Structure
+- **Email**: Two subject lines (A/B variants) + body with HP-approved copy
+- **LinkedIn InMail**: Subject + body matching HP InMail template
+- **Call Script**: 3-step structure (Provide Context, Explain Offering, CTA) from HP call script PDF
+- **Voicemail Script**: Dedicated voicemail template with phone number placeholder
+- **Objection Handling**: 4 scripted responses (not interested, another vendor, not good time, send something)
+
+### Bracket Fill Logic
+- **Auto-filled from data**: Company name, first name, industry, priority area, pain points, opportunities, solutions
+- **Auto-filled from RAD query**: Salesperson name (from form input), Business Unit (always "HP")
+- **LLM-selected** (on-demand endpoint only): Similar organization, metric/outcome, HP offering — LLM picks relevant, credible examples
+- **Left for salesperson**: `[phone number]`, `[Insert link to supporting asset]`
+
+### Gamma Slideshow Supporting Assets Updated
+Per-persona supporting asset slides (CIO, CTO, CISO, etc.) now use the exact HP PDF template text instead of semi-templated creative content. Same slide structure, updated content.
+
+### Files Modified
+- `backend/production_main.py` — HP template constants, `fill_hp_outreach_templates()`, new Pydantic models, updated endpoint
+- `backend/worker/gamma_slideshow.py` — Supporting assets slides rewritten with HP PDF text
+- `frontend/src/types/index.ts` — `OutreachContent` interface updated (email, linkedin, callScript, voicemail, objectionHandling)
+- `frontend/src/components/intelligence/OutreachGeneratorModal.tsx` — Redesigned tabs: Email (2 subjects + body), LinkedIn InMail, Call Script (3 steps + voicemail + objection handling)
+- `backend/tests/test_hp_outreach_templates.py` — 32 tests validating template substitution, structure, and placeholder preservation
+
+---
+
 ## Gamma Slide Output Quality Improvements (2026-03-20)
 
 ### Critical Fix: Data Path for LLM-Generated Content

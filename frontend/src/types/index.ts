@@ -676,23 +676,33 @@ export interface SellerJob {
 
 /**
  * Generated outreach content for a stakeholder.
+ * Uses exact HP Canada PDF templates with bracket substitution.
  */
 export interface OutreachContent {
   roleType: StakeholderRoleType;
   stakeholderName?: string;
   email: {
-    subject: string;
+    subjectA: string;
+    subjectB: string;
     body: string;
   };
   linkedin: {
-    connectionRequest: string;
-    followupMessage: string;
+    subject: string;
+    body: string;
   };
   callScript: {
-    opening: string;
-    valueProposition: string;
-    questions: string[];
-    closingCTA: string;
+    step1Context: string;
+    step2Offering: string;
+    step3CTA: string;
+  };
+  voicemail: {
+    script: string;
+  };
+  objectionHandling: {
+    notInterested: string;
+    anotherVendor: string;
+    notGoodTime: string;
+    sendSomething: string;
   };
   generatedAt: string;
 }

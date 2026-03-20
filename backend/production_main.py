@@ -5056,26 +5056,210 @@ async def get_process_flow(job_id: str):
 # On-Demand Sales Content Generation
 # ============================================================================
 
+# ---------------------------------------------------------------------------
+# HP Template Constants — exact text from HP Canada PDF templates.
+# Only [bracket] placeholders are substituted; all other text is verbatim.
+# ---------------------------------------------------------------------------
+
+HP_EMAIL_SUBJECT_A_TEMPLATE = "Insights that matter to [Company name]"
+HP_EMAIL_SUBJECT_B_TEMPLATE = "Supporting [Company name] on [priority area]"
+HP_EMAIL_BODY_TEMPLATE = (
+    "Hi [First Name],\n\n"
+    "I understand [Company Name] is focused on [priority area] this year. "
+    "I wanted to share something that might help advance that work.\n\n"
+    "We've seen similar organizations strengthen [outcome or KPI] by "
+    "[briefly reference HP capability or benefit, e.g., modernizing device fleets, improving data security, etc.].\n\n"
+    "I thought you might find this useful:\n\n"
+    "[Insert link to supporting asset]\n\n"
+    "Would you be open to a brief conversation about how we could help you achieve "
+    "[relevant goal or improvement]?\n\n"
+    "Best regards,\n"
+    "[Your Name]\n"
+    "HP Canada | [Business Unit]"
+)
+
+HP_LINKEDIN_SUBJECT_TEMPLATE = "Supporting [Company Name] on [priority area]"
+HP_LINKEDIN_BODY_TEMPLATE = (
+    "Hi [First Name],\n\n"
+    "[Priority area] seems to be a key focus across [industry]. "
+    "We've seen similar organizations strengthen [outcome or KPI] by "
+    "[briefly reference HP capability or benefit].\n\n"
+    "Here's a short resource that outlines how:\n\n"
+    "[Insert link to supporting asset]\n\n"
+    "Would you be open to a quick chat about what might work best for [Company Name]?\n\n"
+    "Best,\n"
+    "[Your Name]\n"
+    "HP Canada"
+)
+
+HP_CALL_STEP1_TEMPLATE = (
+    "Hi [First name], this is [Your name] with HP Canada.\n\n"
+    "I'm calling about [priority area]. I work with [industry] teams on this. "
+    "Do you have 30 seconds to see if this is relevant?"
+)
+
+HP_CALL_STEP2_TEMPLATE = (
+    "A lot of [industry] teams we work with are looking to "
+    "[address challenge or improve outcome], whether that's [example A] or [example B].\n\n"
+    "At HP, we've been helping them by [short summary of capability or solution, e.g., "
+    "modernizing device fleets to improve security and productivity].\n\n"
+    "For example, [similar organization] recently improved [metric / outcome] after adopting "
+    "[HP offering].\n\n"
+    "It's a quick change that made a measurable difference in [result]."
+)
+
+HP_CALL_STEP3_TEMPLATE = (
+    "I can send over a short resource that outlines how we approached this with other "
+    "[industry] teams. Would that be useful?"
+)
+
+HP_VOICEMAIL_TEMPLATE = (
+    "Hi [First Name], this is [Your Name] from HP Canada.\n\n"
+    "I wanted to share a quick idea about [priority area], something we've seen help "
+    "[industry] teams improve [outcome].\n\n"
+    "If it's something you're exploring, I'd be happy to send over a short resource or "
+    "set up a quick chat.\n\n"
+    "You can reach me at [phone number].\n\n"
+    "Again, it's [Your Name] with HP Canada. Hope we can connect soon."
+)
+
+HP_OBJECTION_NOT_INTERESTED_TEMPLATE = (
+    "Totally understand. I'm not calling to sell anything. I just wanted to share a quick "
+    "perspective we've seen make a difference for other teams in [industry].\n\n"
+    "Would you be open to looking at a short resource?"
+)
+
+HP_OBJECTION_ANOTHER_VENDOR_TEMPLATE = (
+    "That's great. A lot of teams we work with were in a similar position and just wanted "
+    "to see if there were areas they could do things a bit more efficiently.\n\n"
+    "Would it make sense to share a quick example?"
+)
+
+HP_OBJECTION_NOT_GOOD_TIME_TEMPLATE = (
+    "Of course. Is there a time when you will be available later this week? "
+    "I can make it quick. 10 minutes tops."
+)
+
+HP_OBJECTION_SEND_SOMETHING_TEMPLATE = (
+    "Absolutely. I'll send over a short piece on [priority area]. "
+    "If it seems relevant, we can reconnect to see if there's a fit."
+)
+
+
+def fill_hp_outreach_templates(fills: dict) -> dict:
+    """
+    Substitute bracket placeholders in HP templates using the provided fills dict.
+
+    Expected keys in *fills*:
+        company_name, first_name, industry, priority_area, outcome_or_kpi,
+        hp_capability_or_benefit, relevant_goal_or_improvement, salesperson_name,
+        address_challenge_or_improve_outcome, example_a, example_b,
+        short_summary_of_capability_or_solution, similar_organization,
+        metric_outcome, hp_offering, result, outcome
+
+    Returns a dict matching the OutreachContent JSON structure.
+    """
+    def _sub(template: str) -> str:
+        """Replace all bracket placeholders in a template string."""
+        t = template
+        t = t.replace("[Company name]", fills.get("company_name", ""))
+        t = t.replace("[Company Name]", fills.get("company_name", ""))
+        t = t.replace("[First Name]", fills.get("first_name", ""))
+        t = t.replace("[First name]", fills.get("first_name", ""))
+        t = t.replace("[industry]", fills.get("industry", ""))
+        t = t.replace("[priority area]", fills.get("priority_area", ""))
+        t = t.replace("[Priority area]", fills.get("priority_area", "").capitalize() if fills.get("priority_area") else "")
+        t = t.replace("[outcome or KPI]", fills.get("outcome_or_kpi", ""))
+        t = t.replace(
+            "[briefly reference HP capability or benefit, e.g., modernizing device fleets, improving data security, etc.]",
+            fills.get("hp_capability_or_benefit", ""),
+        )
+        t = t.replace(
+            "[briefly reference HP capability or benefit]",
+            fills.get("hp_capability_or_benefit", ""),
+        )
+        t = t.replace("[relevant goal or improvement]", fills.get("relevant_goal_or_improvement", ""))
+        t = t.replace("[Your Name]", fills.get("salesperson_name", ""))
+        t = t.replace("[Your name]", fills.get("salesperson_name", ""))
+        t = t.replace("[Business Unit]", "HP")
+        t = t.replace("[address challenge or improve outcome]", fills.get("address_challenge_or_improve_outcome", ""))
+        t = t.replace("[example A]", fills.get("example_a", ""))
+        t = t.replace("[example B]", fills.get("example_b", ""))
+        t = t.replace(
+            "[short summary of capability or solution, e.g., modernizing device fleets to improve security and productivity]",
+            fills.get("short_summary_of_capability_or_solution", ""),
+        )
+        t = t.replace("[similar organization]", fills.get("similar_organization", ""))
+        t = t.replace("[metric / outcome]", fills.get("metric_outcome", ""))
+        t = t.replace("[HP offering]", fills.get("hp_offering", ""))
+        t = t.replace("[result]", fills.get("result", ""))
+        t = t.replace("[outcome]", fills.get("outcome", ""))
+        # These two remain as literal placeholders for the salesperson
+        # "[phone number]" and "[Insert link to supporting asset]" are NOT replaced
+        return t
+
+    return {
+        "email": {
+            "subjectA": _sub(HP_EMAIL_SUBJECT_A_TEMPLATE),
+            "subjectB": _sub(HP_EMAIL_SUBJECT_B_TEMPLATE),
+            "body": _sub(HP_EMAIL_BODY_TEMPLATE),
+        },
+        "linkedin": {
+            "subject": _sub(HP_LINKEDIN_SUBJECT_TEMPLATE),
+            "body": _sub(HP_LINKEDIN_BODY_TEMPLATE),
+        },
+        "callScript": {
+            "step1Context": _sub(HP_CALL_STEP1_TEMPLATE),
+            "step2Offering": _sub(HP_CALL_STEP2_TEMPLATE),
+            "step3CTA": _sub(HP_CALL_STEP3_TEMPLATE),
+        },
+        "voicemail": {
+            "script": _sub(HP_VOICEMAIL_TEMPLATE),
+        },
+        "objectionHandling": {
+            "notInterested": _sub(HP_OBJECTION_NOT_INTERESTED_TEMPLATE),
+            "anotherVendor": _sub(HP_OBJECTION_ANOTHER_VENDOR_TEMPLATE),
+            "notGoodTime": _sub(HP_OBJECTION_NOT_GOOD_TIME_TEMPLATE),
+            "sendSomething": _sub(HP_OBJECTION_SEND_SOMETHING_TEMPLATE),
+        },
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pydantic models for outreach response
+# ---------------------------------------------------------------------------
+
 class OutreachRequest(BaseModel):
     stakeholder_name: Optional[str] = None
     custom_context: Optional[str] = None
 
 
 class OutreachContentEmail(BaseModel):
-    subject: str
+    subjectA: str
+    subjectB: str
     body: str
 
 
 class OutreachContentLinkedIn(BaseModel):
-    connectionRequest: str
-    followupMessage: str
+    subject: str
+    body: str
 
 
 class OutreachContentCallScript(BaseModel):
-    opening: str
-    valueProposition: str
-    questions: List[str]
-    closingCTA: str
+    step1Context: str
+    step2Offering: str
+    step3CTA: str
+
+
+class OutreachContentVoicemail(BaseModel):
+    script: str
+
+
+class OutreachContentObjectionHandling(BaseModel):
+    notInterested: str
+    anotherVendor: str
+    notGoodTime: str
+    sendSomething: str
 
 
 class OutreachContent(BaseModel):
@@ -5084,6 +5268,8 @@ class OutreachContent(BaseModel):
     email: OutreachContentEmail
     linkedin: OutreachContentLinkedIn
     callScript: OutreachContentCallScript
+    voicemail: OutreachContentVoicemail
+    objectionHandling: OutreachContentObjectionHandling
     generatedAt: str
 
 
@@ -5098,8 +5284,11 @@ async def generate_outreach_content(
     request: Optional[OutreachRequest] = None
 ):
     """
-    Generate personalized outreach content (email, LinkedIn, call script) for a specific stakeholder role.
-    This is called on-demand when user clicks 'Generate Outreach' to save API costs.
+    Generate personalized outreach content using HP Canada PDF templates.
+
+    The LLM is used ONLY to determine intelligent bracket fill values
+    (e.g. [similar organization], [metric / outcome], [HP offering]).
+    All template text comes verbatim from the HP-approved PDFs.
     """
     logger.info(f"Generating outreach content for job {job_id}, role {role_type}")
 
@@ -5138,237 +5327,167 @@ async def generate_outreach_content(
             target_stakeholder = s
             break
 
-    # Build context for content generation
+    # -----------------------------------------------------------------
+    # Extract data for bracket fills
+    # -----------------------------------------------------------------
     company_name = validated_data.get("company_name", "the company")
     industry = validated_data.get("industry", "their industry")
-    buying_signals = validated_data.get("buying_signals", {})
-    intent_level = buying_signals.get("signal_strength", "medium")
-    intent_topics = buying_signals.get("intent_topics", [])
 
     stakeholder_name = target_stakeholder.get("name") if target_stakeholder else None
     if request and request.stakeholder_name:
         stakeholder_name = request.stakeholder_name
+    first_name = stakeholder_name.split()[0] if stakeholder_name else "[First Name]"
 
-    # Generate content using OpenAI
-    if not OPENAI_API_KEY:
-        # Return template content if no API key
-        return generate_template_outreach(role_type, company_name, stakeholder_name)
+    # Salesperson name from original job request
+    salesperson_name = job.get("company_data", {}).get("salesperson_name", "")
+    if not salesperson_name:
+        salesperson_name = job.get("result", {}).get("validated_data", {}).get("salesperson_name", "")
 
-    try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+    # Intent topics
+    buying_signals = validated_data.get("buying_signals", {})
+    intent_topics = buying_signals.get("intent_topics", [])
+    if not intent_topics:
+        intent_topics = validated_data.get("intent_topics", validated_data.get("intent_signals", []))
+    priority_area = ""
+    if intent_topics:
+        first_topic = intent_topics[0]
+        priority_area = first_topic.get("topic", str(first_topic)) if isinstance(first_topic, dict) else str(first_topic)
+    if not priority_area:
+        priority_area = "technology modernization"
 
-        prompt = f"""Generate personalized sales outreach content for a {role_type} at {company_name}.
+    # Pain points
+    pain_points = validated_data.get("pain_points", [])
+    example_a = "improving operational efficiency"
+    example_b = "reducing costs"
+    address_challenge = "strengthen their technology posture and improve outcomes"
+    if pain_points:
+        if isinstance(pain_points[0], dict):
+            example_a = pain_points[0].get("title", example_a)
+            address_challenge = pain_points[0].get("description", address_challenge)[:120]
+        if len(pain_points) >= 2 and isinstance(pain_points[1], dict):
+            example_b = pain_points[1].get("title", example_b)
+
+    # Opportunities
+    opportunities = validated_data.get("sales_opportunities", validated_data.get("opportunities", []))
+    relevant_goal = "improved operational outcomes"
+    outcome_or_kpi = "operational efficiency"
+    if opportunities:
+        first_opp = opportunities[0]
+        if isinstance(first_opp, dict):
+            relevant_goal = first_opp.get("title", relevant_goal)
+            outcome_or_kpi = first_opp.get("title", outcome_or_kpi)
+
+    # Solutions
+    solutions = validated_data.get("recommended_solutions", validated_data.get("recommended_focus", []))
+    hp_capability = "modernizing device fleets and improving data security"
+    solution_summary = "modernizing device fleets to improve security and productivity"
+    if solutions:
+        first_sol = solutions[0]
+        if isinstance(first_sol, dict):
+            hp_capability = first_sol.get("title", hp_capability)
+            solution_summary = first_sol.get("description", solution_summary)[:120]
+
+    # -----------------------------------------------------------------
+    # LLM-determined fills: similar_organization, metric_outcome, hp_offering
+    # Use OpenAI only for these three creative bracket values.
+    # -----------------------------------------------------------------
+    similar_org = f"a similar {industry} organization"
+    metric_outcome = "operational efficiency by 30%"
+    hp_offering = "HP managed device solutions"
+
+    if OPENAI_API_KEY:
+        try:
+            from openai import AsyncOpenAI
+            client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+            llm_prompt = f"""You are helping fill in 3 bracket placeholders for an HP Canada sales outreach call script targeting a {role_type} at {company_name} in the {industry} industry.
+
+Based on the company context below, provide realistic, relevant values for these 3 fields. Be specific and credible.
 
 COMPANY CONTEXT:
 - Company: {company_name}
 - Industry: {industry}
-- Intent Level: {intent_level}
-- Intent Topics: {', '.join(intent_topics[:3]) if intent_topics else 'Digital transformation, operational efficiency'}
-- Stakeholder Name: {stakeholder_name or 'Unknown'}
+- Priority area: {priority_area}
+- Pain points: {', '.join(p.get('title','') if isinstance(p,dict) else str(p) for p in pain_points[:3])}
+- Opportunities: {', '.join(o.get('title','') if isinstance(o,dict) else str(o) for o in opportunities[:3])}
 
-ROLE CONTEXT FOR {role_type}:
-{get_role_context(role_type)}
-
-Generate the following content (be specific, professional, and value-focused):
-
-1. EMAIL:
-- Subject line (compelling, under 60 chars)
-- Body (150-200 words, personalized to role and company)
-
-2. LINKEDIN:
-- Connection request message (max 300 chars)
-- Follow-up message (max 500 chars, value-focused)
-
-3. CALL SCRIPT:
-- Opening statement (2-3 sentences)
-- 3 discovery questions relevant to {role_type} priorities
-- Value proposition statement (2-3 sentences)
-- Closing call to action
-
-Output as JSON with these exact field names:
+Return JSON with exactly these 3 keys:
 {{
-    "email": {{
-        "subject": "...",
-        "body": "..."
-    }},
-    "linkedin": {{
-        "connectionRequest": "...",
-        "followupMessage": "..."
-    }},
-    "callScript": {{
-        "opening": "...",
-        "valueProposition": "...",
-        "questions": ["...", "...", "..."],
-        "closingCTA": "..."
-    }}
+    "similar_organization": "a credible example organization in {industry} (do NOT use {company_name} itself)",
+    "metric_outcome": "a specific measurable outcome, e.g. 'endpoint compliance rates by 40%'",
+    "hp_offering": "a specific HP product or solution name relevant to {priority_area}"
 }}"""
 
-        response = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "You are a sales enablement expert. Generate professional, value-focused outreach content."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0,  # Set to 0 for deterministic results
-            response_format={"type": "json_object"}
-        )
+            response = await client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Return only valid JSON. Be specific and realistic."},
+                    {"role": "user", "content": llm_prompt}
+                ],
+                temperature=0,
+                response_format={"type": "json_object"}
+            )
 
-        import json
-        from datetime import datetime
-        content = json.loads(response.choices[0].message.content)
+            llm_fills = json.loads(response.choices[0].message.content)
+            similar_org = llm_fills.get("similar_organization", similar_org)
+            metric_outcome = llm_fills.get("metric_outcome", metric_outcome)
+            hp_offering = llm_fills.get("hp_offering", hp_offering)
 
-        outreach_content = OutreachContent(
-            roleType=role_type.upper(),
-            stakeholderName=stakeholder_name,
-            email=OutreachContentEmail(
-                subject=content.get("email", {}).get("subject", ""),
-                body=content.get("email", {}).get("body", "")
-            ),
-            linkedin=OutreachContentLinkedIn(
-                connectionRequest=content.get("linkedin", {}).get("connectionRequest", ""),
-                followupMessage=content.get("linkedin", {}).get("followupMessage", "")
-            ),
-            callScript=OutreachContentCallScript(
-                opening=content.get("callScript", {}).get("opening", ""),
-                valueProposition=content.get("callScript", {}).get("valueProposition", ""),
-                questions=content.get("callScript", {}).get("questions", []),
-                closingCTA=content.get("callScript", {}).get("closingCTA", "")
-            ),
-            generatedAt=datetime.utcnow().isoformat() + "Z"
-        )
-        return OutreachResponse(content=outreach_content)
+        except Exception as e:
+            logger.warning(f"LLM bracket fill failed, using defaults: {e}")
 
-    except Exception as e:
-        logger.error(f"Error generating outreach content: {e}")
-        # Fall back to template
-        return generate_template_outreach(role_type, company_name, stakeholder_name)
-
-
-def get_role_context(role_type: str) -> str:
-    """Get context about priorities and concerns for each C-suite role."""
-    contexts = {
-        "CIO": """
-- Priorities: Digital transformation, IT modernization, security, vendor consolidation
-- Concerns: Budget constraints, legacy system integration, cybersecurity risks
-- Communication style: Data-driven, ROI-focused, risk-aware""",
-        "CTO": """
-- Priorities: Technology innovation, engineering productivity, scalability, technical debt
-- Concerns: Build vs buy decisions, talent retention, keeping up with tech trends
-- Communication style: Technical depth, innovation-focused, forward-looking""",
-        "CISO": """
-- Priorities: Security posture, compliance, risk management, incident response
-- Concerns: Threat landscape, budget for security tools, board-level reporting
-- Communication style: Risk-focused, compliance-aware, security-first""",
-        "COO": """
-- Priorities: Operational efficiency, process optimization, cost reduction, scalability
-- Concerns: Operational bottlenecks, resource allocation, cross-functional alignment
-- Communication style: Efficiency-focused, metrics-driven, practical""",
-        "CFO": """
-- Priorities: Cost optimization, ROI, financial planning, risk management
-- Concerns: Budget allocation, proving technology ROI, financial compliance
-- Communication style: Numbers-driven, ROI-focused, business case oriented""",
-        "CPO": """
-- Priorities: Product innovation, customer experience, market fit, product roadmap
-- Concerns: Time to market, competitive differentiation, user feedback
-- Communication style: Customer-focused, innovation-driven, market-aware"""
-    }
-    return contexts.get(role_type.upper(), "General executive priorities and concerns")
-
-
-def generate_template_outreach(role_type: str, company_name: str, stakeholder_name: str = None) -> OutreachResponse:
-    """Generate template outreach content when API is unavailable."""
+    # -----------------------------------------------------------------
+    # Fill HP templates
+    # -----------------------------------------------------------------
     from datetime import datetime
-    name_greeting = f"Hi {stakeholder_name.split()[0]}," if stakeholder_name else f"Hi,"
 
-    templates = {
-        "CIO": {
-            "email_subject": f"Digital Transformation Opportunities at {company_name}",
-            "email_body": f"""{name_greeting}
-
-I've been following {company_name}'s digital initiatives and wanted to reach out about how we're helping CIOs accelerate their transformation journeys while managing complexity.
-
-Many CIOs are dealing with the challenge of modernizing legacy systems while maintaining operational stability. Our approach focuses on delivering quick wins that build momentum for larger initiatives.
-
-Would you be open to a brief conversation about your technology priorities for this year?
-
-Best regards""",
-            "connectionRequest": f"Hi, I work with CIOs at companies like {company_name} on digital transformation. Would love to connect.",
-            "followupMessage": f"Thanks for connecting! I noticed {company_name} is investing in modernization. Happy to share insights from similar initiatives if helpful.",
-            "opening": f"Hi, this is [Name] from [Company]. I'm reaching out because we work with CIOs on digital transformation, and I noticed {company_name} has been making strategic technology investments.",
-            "valueProposition": "We help CIOs accelerate digital transformation while maintaining operational stability, delivering measurable results in the first 90 days.",
-            "questions": [
-                "What are your top technology priorities for this year?",
-                "How are you balancing innovation with managing your existing technology stack?",
-                "What's your biggest challenge in driving digital adoption across the organization?"
-            ],
-            "closingCTA": "Would you be open to a 15-minute call next week to explore how we might help with your priorities?"
-        },
-        "CTO": {
-            "email_subject": f"Engineering Excellence at {company_name}",
-            "email_body": f"""{name_greeting}
-
-I've been impressed by {company_name}'s technical achievements and wanted to connect about how we're helping CTOs drive engineering productivity and innovation.
-
-We work with technology leaders to solve complex challenges around scaling, technical debt, and team velocity while maintaining the agility to ship quickly.
-
-Would you be interested in a brief conversation about your engineering priorities?
-
-Best regards""",
-            "connectionRequest": f"Hi, I work with CTOs at innovative companies like {company_name}. Would love to connect and exchange ideas.",
-            "followupMessage": f"Thanks for connecting! I'd love to learn more about the technical challenges {company_name} is tackling.",
-            "opening": f"Hi, this is [Name] from [Company]. I'm reaching out because we work with CTOs on engineering productivity, and {company_name}'s technical work caught my attention.",
-            "valueProposition": "We help CTOs scale engineering teams and reduce technical debt while shipping faster and maintaining code quality.",
-            "questions": [
-                "What's your biggest engineering challenge right now?",
-                "How are you balancing feature development with technical debt?",
-                "What tools or processes are you exploring to improve team productivity?"
-            ],
-            "closingCTA": "Would you be open to a technical conversation to explore potential synergies?"
-        },
-        "CISO": {
-            "email_subject": f"Security Posture at {company_name}",
-            "email_body": f"""{name_greeting}
-
-Security leaders like yourself are facing an evolving threat landscape while managing compliance requirements and limited resources.
-
-We work with CISOs to strengthen security posture, streamline compliance, and demonstrate security value to the board.
-
-Would you be open to discussing your security priorities for this year?
-
-Best regards""",
-            "connectionRequest": f"Hi, I work with CISOs on security strategy. Would love to connect and share insights.",
-            "followupMessage": f"Thanks for connecting! I'd love to learn about {company_name}'s approach to security in today's threat environment.",
-            "opening": f"Hi, this is [Name] from [Company]. I'm reaching out because we help CISOs strengthen their security posture while managing complexity.",
-            "valueProposition": "We help CISOs reduce risk, streamline compliance, and communicate security value to business stakeholders.",
-            "questions": [
-                "What's your top security concern heading into this year?",
-                "How are you balancing security investments with business enablement?",
-                "What's your approach to demonstrating security ROI to the board?"
-            ],
-            "closingCTA": "Would you be open to a brief security-focused conversation?"
-        }
+    fills = {
+        "company_name": company_name,
+        "first_name": first_name,
+        "industry": industry,
+        "priority_area": priority_area,
+        "outcome_or_kpi": outcome_or_kpi,
+        "hp_capability_or_benefit": hp_capability,
+        "relevant_goal_or_improvement": relevant_goal,
+        "salesperson_name": salesperson_name if salesperson_name else "[Your Name]",
+        "address_challenge_or_improve_outcome": address_challenge,
+        "example_a": example_a,
+        "example_b": example_b,
+        "short_summary_of_capability_or_solution": solution_summary,
+        "similar_organization": similar_org,
+        "metric_outcome": metric_outcome,
+        "hp_offering": hp_offering,
+        "result": relevant_goal,
+        "outcome": outcome_or_kpi,
     }
 
-    # Use CIO template as default
-    t = templates.get(role_type.upper(), templates["CIO"])
+    filled = fill_hp_outreach_templates(fills)
 
     outreach_content = OutreachContent(
         roleType=role_type.upper(),
         stakeholderName=stakeholder_name,
         email=OutreachContentEmail(
-            subject=t["email_subject"],
-            body=t["email_body"]
+            subjectA=filled["email"]["subjectA"],
+            subjectB=filled["email"]["subjectB"],
+            body=filled["email"]["body"],
         ),
         linkedin=OutreachContentLinkedIn(
-            connectionRequest=t["connectionRequest"],
-            followupMessage=t["followupMessage"]
+            subject=filled["linkedin"]["subject"],
+            body=filled["linkedin"]["body"],
         ),
         callScript=OutreachContentCallScript(
-            opening=t["opening"],
-            valueProposition=t["valueProposition"],
-            questions=t["questions"],
-            closingCTA=t["closingCTA"]
+            step1Context=filled["callScript"]["step1Context"],
+            step2Offering=filled["callScript"]["step2Offering"],
+            step3CTA=filled["callScript"]["step3CTA"],
+        ),
+        voicemail=OutreachContentVoicemail(
+            script=filled["voicemail"]["script"],
+        ),
+        objectionHandling=OutreachContentObjectionHandling(
+            notInterested=filled["objectionHandling"]["notInterested"],
+            anotherVendor=filled["objectionHandling"]["anotherVendor"],
+            notGoodTime=filled["objectionHandling"]["notGoodTime"],
+            sendSomething=filled["objectionHandling"]["sendSomething"],
         ),
         generatedAt=datetime.utcnow().isoformat() + "Z"
     )
