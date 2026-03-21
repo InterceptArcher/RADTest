@@ -2933,7 +2933,14 @@ async def fetch_apollo_data(company_data: dict) -> dict:
                     json={
                         "q_organization_domains": company_data["domain"],
                         "person_titles": ["CEO", "Chief Executive Officer", "Founder", "Co-Founder"],
-                        "person_locations": ["Canada"],
+                        "person_locations": [
+                            "Canada",
+                            "Toronto, Ontario, Canada",
+                            "Vancouver, British Columbia, Canada",
+                            "Montreal, Quebec, Canada",
+                            "Calgary, Alberta, Canada",
+                            "Ottawa, Ontario, Canada",
+                        ],
                         "page": 1,
                         "per_page": 5
                     },
@@ -3194,7 +3201,17 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                 json={
                     "q_organization_domains": domain,
                     "person_titles": target_titles,
-                    "person_locations": ["Canada"],
+                    "person_locations": [
+                        "Canada",
+                        "Toronto, Ontario, Canada",
+                        "Vancouver, British Columbia, Canada",
+                        "Montreal, Quebec, Canada",
+                        "Calgary, Alberta, Canada",
+                        "Ottawa, Ontario, Canada",
+                        "Edmonton, Alberta, Canada",
+                        "Mississauga, Ontario, Canada",
+                        "Winnipeg, Manitoba, Canada",
+                    ],
                     "page": 1,
                     "per_page": 50  # Expanded to capture more contacts
                 },
