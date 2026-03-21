@@ -2144,4 +2144,7 @@ class ZoomInfoClient:
             "department": attrs.get("department", ""),
             "management_level": attrs.get("managementLevel", attrs.get("management_level", "")),
             "person_id": attrs.get("personId", attrs.get("person_id", attrs.get("id", raw.get("id", "")))),
+            "country": attrs.get("country", attrs.get("personCountry", attrs.get("companyCountry", ""))),
+            "state": attrs.get("state", attrs.get("personState", "")),
+            "city": attrs.get("city", attrs.get("personCity", "")),
         }

@@ -1820,6 +1820,13 @@ def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -
                 # Also fill in phone if empty
                 if not stakeholder.get("phone") and zi_contact.get("phone"):
                     stakeholder["phone"] = zi_contact["phone"]
+                # Preserve country/location data from ZoomInfo
+                if zi_contact.get("country") and not stakeholder.get("country"):
+                    stakeholder["country"] = zi_contact["country"]
+                if zi_contact.get("state") and not stakeholder.get("state"):
+                    stakeholder["state"] = zi_contact["state"]
+                if zi_contact.get("city") and not stakeholder.get("city"):
+                    stakeholder["city"] = zi_contact["city"]
                 break
 
     # Add any ZoomInfo contacts not already in stakeholders
@@ -1847,6 +1854,9 @@ def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -
                 "contact_accuracy_score": zi_contact.get("contact_accuracy_score", 0),
                 "department": zi_contact.get("department", ""),
                 "management_level": zi_contact.get("management_level", ""),
+                "country": zi_contact.get("country", ""),
+                "state": zi_contact.get("state", ""),
+                "city": zi_contact.get("city", ""),
                 "source": "zoominfo",
             })
 
@@ -3128,6 +3138,7 @@ def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
             "is_new_hire": False,
             "hire_date": None,
             "photo_url": None,
+            "country": hunter_data.get("country", ""),
             "source": "hunter.io",
             "confidence": email_entry.get("confidence", 0)
         }
@@ -3247,6 +3258,9 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                         "is_new_hire": is_new_hire,
                         "hire_date": hire_date,
                         "photo_url": person.get("photo_url"),
+                        "country": person.get("country", ""),
+                        "city": person.get("city", ""),
+                        "state": person.get("state", ""),
                         "source": "apollo"
                     }
                     stakeholders.append(stakeholder)
