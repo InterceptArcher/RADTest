@@ -1027,12 +1027,23 @@ Use the LinkedIn profile URL to cross-reference identity, current employment, AN
 A LinkedIn URL slug matching the person's name confirms they are a real person.
 The LinkedIn profile location field (visible on the profile) indicates where the person is based.
 
+IMPORTANT — CANADIAN LOCATION RECOGNITION:
+A contact is located in Canada if their LinkedIn location mentions ANY of:
+- The word "Canada" itself
+- ANY Canadian province or territory: Ontario, Quebec, British Columbia, Alberta, Manitoba, Saskatchewan, Nova Scotia, New Brunswick, Newfoundland and Labrador, Prince Edward Island, Northwest Territories, Nunavut, Yukon
+- Province abbreviations: ON, QC, BC, AB, MB, SK, NS, NB, NL, PE, NT, NU, YT
+- ANY city or town in Canada, including but not limited to: Toronto, Vancouver, Montreal, Calgary, Edmonton, Ottawa, Winnipeg, Quebec City, Hamilton, Kitchener, Halifax, Victoria, Oshawa, Windsor, Saskatoon, Regina, St. John's, Barrie, Kelowna, Sherbrooke, Guelph, Kingston, Thunder Bay, Sudbury, Brampton, Mississauga, Markham, Richmond Hill, Vaughan, Oakville, Burlington, Waterloo, London (Ontario), Cambridge, Gatineau, Laval, Longueuil, Burnaby, Surrey, Richmond (BC), Scarborough, North York, Etobicoke, Kanata, Nepean, Red Deer, Lethbridge, Nanaimo, Kamloops, Moncton, Fredericton, Charlottetown, Whitehorse, Yellowknife
+- "Greater Toronto Area", "GTA", "Greater Vancouver Area", "GVA", "Greater Montreal Area"
+- Any format like "City, Province", "City, Province, Canada", "City, ON", etc.
+
+DO NOT flag a contact as non-Canadian just because you don't recognize a smaller city. If the location mentions a Canadian province or territory (or its abbreviation), it IS Canadian. When in doubt about a location, set location_canada to null (not false). Only set false when the location is CLEARLY in another country (e.g. "San Francisco, California", "London, England", "New York", "Texas").
+
 Red flags to check:
 - Title suggests they work at a DIFFERENT company (e.g. "CEO of Small IT Firm" listed under Microsoft)
 - LinkedIn profile URL slug doesn't match the person's name
 - Title contains "Former", "Ex-", "Previous", "Consultant", "Advisor" — they may not be a current employee
 - Title is too junior or not a decision maker (e.g. "Intern", "Analyst", "Associate")
-- LinkedIn profile location is NOT in Canada (e.g. "San Francisco, California", "London, England") — this person is not in the Canadian division
+- LinkedIn profile location is clearly NOT in Canada (e.g. "San Francisco, California", "London, England") — this person is not in the Canadian division
 
 Contacts to validate:
 {json.dumps(contact_list, indent=2)}
@@ -1051,9 +1062,9 @@ Scoring guide:
 - 0.0-0.3: Not a current employee, not a decision maker, works at different company, OR clearly located outside Canada
 
 The location_canada field should be:
-- true: LinkedIn profile clearly shows a Canadian location (e.g. Toronto, Vancouver, Montreal, Calgary, Ottawa, etc.)
-- false: LinkedIn profile clearly shows a non-Canadian location
-- null: Location cannot be determined from available data"""
+- true: LinkedIn profile shows a Canadian location — any Canadian city, province, territory, or abbreviation counts
+- false: LinkedIn profile CLEARLY shows a non-Canadian location (US state, UK city, etc.)
+- null: Location cannot be determined from available data — DO NOT default to false"""
 
     result = await _call_openai_json(
         prompt,
@@ -1061,7 +1072,9 @@ The location_canada field should be:
         "Validate that contacts CURRENTLY work at this company as decision makers "
         "AND are based in Canada (Canadian office/division). "
         "Use LinkedIn URLs to confirm identity, current employment, and Canadian location. "
-        "Be accurate — flag obvious mismatches but don't over-filter legitimate employees."
+        "You are an expert in Canadian geography — recognize ALL Canadian cities, provinces, "
+        "and territories including smaller cities like Brampton, Thunder Bay, Sudbury, Kamloops, etc. "
+        "Be accurate — flag obvious mismatches but don't over-filter legitimate Canadian employees."
     )
 
     if not result or "contacts" not in result:
