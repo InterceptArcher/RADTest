@@ -21,6 +21,46 @@
 
 ---
 
+## Canada-Only Contact Filtering (2026-03-21)
+
+### Two-Pronged Approach: API Filters + LLM Validation
+
+HP Canada RAD Intelligence Desk targets Canadian contacts exclusively. This change ensures all contact data sources filter for Canada at the API level, with a post-merge safety net and LLM-based LinkedIn location verification as final checks.
+
+### Prong 1: API-Level Filtering
+
+**ZoomInfo** (`backend/worker/zoominfo_client.py`):
+- Changed `NORTH_AMERICA_COUNTRIES` (US + Canada + Mexico) to `CANADA_COUNTRY_FILTER` (`["Canada"]` only)
+- All contact search strategies now use `country: ["Canada"]` with `locationSearchType: "Person"` — targets contacts personally located in Canada, not just HQ-based, so multinational companies return their Canadian division contacts
+- Global fallback preserved: if Canada returns 0 results, falls back to unfiltered search (Prong 2 catches non-Canadian contacts)
+
+**Apollo** (`backend/production_main.py`):
+- Added `person_locations: ["Canada"]` to `fetch_stakeholders` (executive search) and `fetch_apollo_data` (CEO search) request bodies
+
+**PDL & Hunter**: No API-level changes needed — PDL is company enrichment only (no contact search), and Hunter's domain search has no country filter
+
+### Prong 2: Post-Merge Safety Net + LLM Location Verification
+
+**Post-merge `filter_contacts_canada()`** (Step 2.84c in pipeline):
+- Runs after all API data is merged (ZoomInfo + Apollo + Hunter contacts combined)
+- Removes contacts with a known non-Canadian `country`, `location_country`, or `person_country` field
+- Contacts with no country data are kept (benefit of the doubt — LLM will verify)
+- Case-insensitive matching
+
+**LLM Fact-Checker Enhancement** (`fact_check_contacts`):
+- Updated the LLM prompt to verify **three** things (was two): current employment, decision-maker role, AND Canadian location
+- The LLM checks each contact's LinkedIn profile location to confirm they are based in Canada
+- Returns `location_canada: true/false/null` for each contact
+- Contacts explicitly confirmed as non-Canadian (`location_canada: false`) are filtered out regardless of score
+- Scoring guide updated: 0.9-1.0 requires confirmed Canadian location
+
+### Files Modified
+- `backend/worker/zoominfo_client.py` — `CANADA_COUNTRY_FILTER`, `_search_canada_first()`, `locationSearchType: "Person"`
+- `backend/production_main.py` — Apollo `person_locations`, `filter_contacts_canada()`, updated `fact_check_contacts` prompt
+- `backend/tests/test_canada_contact_filter.py` — 10 tests covering ZoomInfo constant, Apollo filter, post-merge filter logic, LLM prompt
+
+---
+
 ## HP Content Audit Integration (2026-03-21)
 
 ### Content Audit Tab — Browsable Asset Library
