@@ -225,7 +225,8 @@ class GammaSlideshowCreator:
         # Build comprehensive, data-rich structured content
         data = f"""⚠️ GENERATION INSTRUCTIONS:
 - ONLY slide 7 ("Stakeholder Map: Role Profile Alignment") is LOCKED. Do NOT generate, modify, or add any content on slide 7. Use its existing template layout exactly as-is with zero changes.
-- Slides 8, 9, 10, 11, 12 (individual stakeholder profile slides) are NOT locked. Generate FULL, RICH content for each stakeholder profile slide — include all conversation starters (multiple per contact), all phone numbers without leading dashes, strategic priorities, communication preferences, recommended approach, and every other data field provided below. These slides should be fully populated.
+- Slides 8-12 (individual stakeholder profile slides): Populate ALL existing template fields using the data below — all conversation starters, all phone numbers, strategic priorities, communication preferences, recommended approach. Do NOT add new sections or elements that are not already in the template (e.g. do NOT add a "Key Contacts" section). Just fill in the existing fields completely.
+- Supporting asset slides: Each template section (Email Template, LinkedIn InMail, Call Script, Voicemail, Objection Handling) MUST be on its OWN SEPARATE slide. Do NOT merge or combine them.
 - All other slides: populate normally using the data provided below.
 
 ACCOUNT INTELLIGENCE REPORT
@@ -618,7 +619,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             return s
 
         if all_stakeholders:
-            data += "⚠️ REMINDER: ONLY slide 7 ('Stakeholder Map: Role Profile Alignment') is locked — do not touch it. The individual stakeholder profile slides below (slides 8-12) are NOT locked. Generate full, rich content for each one using ALL the data provided — multiple conversation starters, all phone numbers, strategic priorities, etc.\n\n"
+            data += "⚠️ REMINDER: ONLY slide 7 ('Stakeholder Map: Role Profile Alignment') is locked — do not touch it. Slides 8-12 (individual stakeholder profiles): populate all existing template fields fully but do NOT add new sections (no 'Key Contacts' or other invented sections). Just fill in the fields that already exist in the template.\n\n"
             data += "=== KEY STAKEHOLDERS (ONE SLIDE PER CONTACT) ===\n\n"
             for idx, stakeholder in enumerate(all_stakeholders, 1):
                 name = stakeholder.get('name', stakeholder.get('fullName', 'Not available'))
@@ -936,8 +937,8 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             else:
                 supporting_asset_text = "[Insert link to supporting asset]"
 
-            # Email Template
-            data += "--- Email Template ---\n\n"
+            # Email Template — SEPARATE SLIDE
+            data += f"=== SLIDE: Email Template – {persona} ===\n\n"
             data += "Sender: HP Sales\n\n"
             data += "Subject:\n"
             data += f"A: Insights that matter to {company_name}\n"
@@ -951,8 +952,8 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             data += f"Would you be open to a brief conversation about how we could help you achieve {relevant_goal}?\n\n"
             data += f"Best regards,\n{sp_name}\nHP Canada | HP\n\n"
 
-            # LinkedIn InMail
-            data += "--- LinkedIn InMail Copy ---\n\n"
+            # LinkedIn InMail — SEPARATE SLIDE
+            data += f"=== SLIDE: LinkedIn InMail – {persona} ===\n\n"
             data += f"Subject: Supporting {company_name} on {priority_area}\n\n"
             data += f"Hi {contact_first_name},\n\n"
             data += f"{priority_area.capitalize() if priority_area else 'Technology modernization'} seems to be a key focus across {industry}. We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
@@ -961,8 +962,8 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             data += f"Would you be open to a quick chat about what might work best for {company_name}?\n\n"
             data += f"Best,\n{sp_name}\nHP Canada\n\n"
 
-            # Call Script
-            data += "--- Outreach Call Script ---\n\n"
+            # Call Script — SEPARATE SLIDE
+            data += f"=== SLIDE: Outreach Call Script – {persona} ===\n\n"
             data += "Step 1: Provide Context\n\n"
             data += f"Hi {contact_first_name}, this is {sp_name} with HP Canada.\n\n"
             data += f"I'm calling about {priority_area}. I work with {industry} teams on this. Do you have 30 seconds to see if this is relevant?\n\n"
@@ -974,16 +975,16 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             data += "Step 3: CTA\n\n"
             data += f"I can send over a short resource that outlines how we approached this with other {industry} teams. Would that be useful?\n\n"
 
-            # Voicemail Script
-            data += "--- Voicemail Script ---\n\n"
+            # Voicemail Script — SEPARATE SLIDE
+            data += f"=== SLIDE: Voicemail Script – {persona} ===\n\n"
             data += f"Hi {contact_first_name}, this is {sp_name} from HP Canada.\n\n"
             data += f"I wanted to share a quick idea about {priority_area}, something we've seen help {industry} teams improve {outcome_short}.\n\n"
             data += "If it's something you're exploring, I'd be happy to send over a short resource or set up a quick chat.\n\n"
             data += "You can reach me at [phone number].\n\n"
             data += f"Again, it's {sp_name} with HP Canada. Hope we can connect soon.\n\n"
 
-            # Objection Handling
-            data += "--- Objection Handling ---\n\n"
+            # Objection Handling — SEPARATE SLIDE
+            data += f"=== SLIDE: Objection Handling – {persona} ===\n\n"
             data += "Objection: I'm not interested.\n"
             data += f"Totally understand. I'm not calling to sell anything. I just wanted to share a quick perspective we've seen make a difference for other teams in {industry}.\n"
             data += "Would you be open to looking at a short resource?\n\n"
