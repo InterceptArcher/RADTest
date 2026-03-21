@@ -224,8 +224,9 @@ class GammaSlideshowCreator:
 
         # Build comprehensive, data-rich structured content
         data = f"""⚠️ GENERATION INSTRUCTIONS:
-- For the "Stakeholder Map: Role Profile Alignment" slide (slide 7): THIS SLIDE IS LOCKED. DO NOT generate, modify, add, or rearrange ANY content on this slide. Use the existing template layout EXACTLY as-is with ZERO changes. Preserve the original template design, structure, text, and formatting completely untouched.
-- For all other slides: populate using the data provided below.
+- ONLY slide 7 ("Stakeholder Map: Role Profile Alignment") is LOCKED. Do NOT generate, modify, or add any content on slide 7. Use its existing template layout exactly as-is with zero changes.
+- Slides 8, 9, 10, 11, 12 (individual stakeholder profile slides) are NOT locked. Generate FULL, RICH content for each stakeholder profile slide — include all conversation starters (multiple per contact), all phone numbers without leading dashes, strategic priorities, communication preferences, recommended approach, and every other data field provided below. These slides should be fully populated.
+- All other slides: populate normally using the data provided below.
 
 ACCOUNT INTELLIGENCE REPORT
 
@@ -617,7 +618,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             return s
 
         if all_stakeholders:
-            data += "⚠️ REMINDER: The 'Stakeholder Map: Role Profile Alignment' slide (slide 7) is LOCKED. Do NOT generate any new content for it. Use the existing template layout exactly as-is with no modifications whatsoever.\n\n"
+            data += "⚠️ REMINDER: ONLY slide 7 ('Stakeholder Map: Role Profile Alignment') is locked — do not touch it. The individual stakeholder profile slides below (slides 8-12) are NOT locked. Generate full, rich content for each one using ALL the data provided — multiple conversation starters, all phone numbers, strategic priorities, etc.\n\n"
             data += "=== KEY STAKEHOLDERS (ONE SLIDE PER CONTACT) ===\n\n"
             for idx, stakeholder in enumerate(all_stakeholders, 1):
                 name = stakeholder.get('name', stakeholder.get('fullName', 'Not available'))
