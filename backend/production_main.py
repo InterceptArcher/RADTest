@@ -94,72 +94,6 @@ def _contact_data_tier(contact: dict) -> int:
 MAX_CONTACTS_PER_CSUITE = 3
 
 
-# ============================================================================
-# Canada-Only Contact Filter
-# HP Canada RAD Intelligence Desk targets Canadian contacts exclusively.
-# This function runs after all API merges as a safety net — the API-level
-# filters (ZoomInfo country, Apollo person_locations) are soft and may fall
-# back to global results. This post-merge filter catches any non-Canadian
-# contacts that slipped through.
-# ============================================================================
-
-# Fields that may contain country information across different API sources
-_COUNTRY_FIELDS = ("country", "location_country", "person_country")
-
-
-def filter_contacts_canada(contacts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Remove contacts with a known non-Canadian location.
-
-    Contacts with no country data are kept (benefit of the doubt — the
-    API-level Canada filter should have already scoped them, and the
-    LLM fact-checker will verify location via LinkedIn as a final check).
-
-    Args:
-        contacts: List of contact/stakeholder dicts.
-
-    Returns:
-        Filtered list with only Canadian or unknown-location contacts.
-    """
-    kept = []
-    removed = 0
-
-    for contact in contacts:
-        # Check all possible country fields
-        detected_country = ""
-        for field in _COUNTRY_FIELDS:
-            val = (contact.get(field) or "").strip()
-            if val:
-                detected_country = val
-                break
-
-        # If no country data, keep the contact (benefit of the doubt)
-        if not detected_country:
-            kept.append(contact)
-            continue
-
-        # Keep if Canada (case-insensitive)
-        if detected_country.lower() == "canada":
-            kept.append(contact)
-            continue
-
-        # Non-Canadian contact — filter out
-        removed += 1
-        logger.info(
-            "FILTERED (non-Canadian): %s — %s [country=%s]",
-            contact.get("name", "Unknown"),
-            contact.get("title", ""),
-            detected_country,
-        )
-
-    if removed > 0:
-        logger.info(
-            "Canada contact filter: kept %d/%d contacts, removed %d non-Canadian",
-            len(kept), len(contacts), removed,
-        )
-
-    return kept
-
-
 def _csuite_affiliation(title: str) -> str | None:
     """Map a job title to a C-suite category using lax matching.
 
@@ -1018,32 +952,18 @@ async def fact_check_contacts(company_name: str, domain: str, contacts: list) ->
 
     prompt = f"""Validate these contacts for {company_name} ({domain}).
 
-CRITICAL: For each contact, verify THREE things:
+CRITICAL: For each contact, verify TWO things:
 1. They are a CURRENT employee of {company_name} (not former, not at a different company)
 2. They are a decision maker — their title indicates executive, VP, director, or senior leadership
-3. They are based in CANADA — check their LinkedIn profile location. We only want contacts who work in Canada (the Canadian division/office of the company). Contacts located in the US, UK, or other countries should be flagged.
 
-Use the LinkedIn profile URL to cross-reference identity, current employment, AND location.
+Use the LinkedIn profile URL to cross-reference identity and current employment.
 A LinkedIn URL slug matching the person's name confirms they are a real person.
-The LinkedIn profile location field (visible on the profile) indicates where the person is based.
-
-IMPORTANT — CANADIAN LOCATION RECOGNITION:
-A contact is located in Canada if their LinkedIn location mentions ANY of:
-- The word "Canada" itself
-- ANY Canadian province or territory: Ontario, Quebec, British Columbia, Alberta, Manitoba, Saskatchewan, Nova Scotia, New Brunswick, Newfoundland and Labrador, Prince Edward Island, Northwest Territories, Nunavut, Yukon
-- Province abbreviations: ON, QC, BC, AB, MB, SK, NS, NB, NL, PE, NT, NU, YT
-- ANY city or town in Canada, including but not limited to: Toronto, Vancouver, Montreal, Calgary, Edmonton, Ottawa, Winnipeg, Quebec City, Hamilton, Kitchener, Halifax, Victoria, Oshawa, Windsor, Saskatoon, Regina, St. John's, Barrie, Kelowna, Sherbrooke, Guelph, Kingston, Thunder Bay, Sudbury, Brampton, Mississauga, Markham, Richmond Hill, Vaughan, Oakville, Burlington, Waterloo, London (Ontario), Cambridge, Gatineau, Laval, Longueuil, Burnaby, Surrey, Richmond (BC), Scarborough, North York, Etobicoke, Kanata, Nepean, Red Deer, Lethbridge, Nanaimo, Kamloops, Moncton, Fredericton, Charlottetown, Whitehorse, Yellowknife
-- "Greater Toronto Area", "GTA", "Greater Vancouver Area", "GVA", "Greater Montreal Area"
-- Any format like "City, Province", "City, Province, Canada", "City, ON", etc.
-
-DO NOT flag a contact as non-Canadian just because you don't recognize a smaller city. If the location mentions a Canadian province or territory (or its abbreviation), it IS Canadian. When in doubt about a location, set location_canada to null (not false). Only set false when the location is CLEARLY in another country (e.g. "San Francisco, California", "London, England", "New York", "Texas").
 
 Red flags to check:
 - Title suggests they work at a DIFFERENT company (e.g. "CEO of Small IT Firm" listed under Microsoft)
 - LinkedIn profile URL slug doesn't match the person's name
 - Title contains "Former", "Ex-", "Previous", "Consultant", "Advisor" — they may not be a current employee
 - Title is too junior or not a decision maker (e.g. "Intern", "Analyst", "Associate")
-- LinkedIn profile location is clearly NOT in Canada (e.g. "San Francisco, California", "London, England") — this person is not in the Canadian division
 
 Contacts to validate:
 {json.dumps(contact_list, indent=2)}
@@ -1051,30 +971,22 @@ Contacts to validate:
 Output JSON:
 {{
     "contacts": [
-        {{"name": "...", "fact_check_score": 0.0-1.0, "fact_check_notes": "brief explanation", "location_canada": true/false/null}}
+        {{"name": "...", "fact_check_score": 0.0-1.0, "fact_check_notes": "brief explanation"}}
     ]
 }}
 
 Scoring guide:
-- 0.9-1.0: Current decision maker at {company_name}, LinkedIn confirms identity AND location is in Canada
-- 0.7-0.9: Title plausible for {company_name}, LinkedIn present and consistent, location likely Canada or unverifiable
-- 0.4-0.7: Uncertain — title is ambiguous, or location appears to be outside Canada
-- 0.0-0.3: Not a current employee, not a decision maker, works at different company, OR clearly located outside Canada
-
-The location_canada field should be:
-- true: LinkedIn profile shows a Canadian location — any Canadian city, province, territory, or abbreviation counts
-- false: LinkedIn profile CLEARLY shows a non-Canadian location (US state, UK city, etc.)
-- null: Location cannot be determined from available data — DO NOT default to false"""
+- 0.9-1.0: Current decision maker at {company_name}, LinkedIn confirms identity
+- 0.7-0.9: Title plausible for {company_name}, LinkedIn present and consistent
+- 0.4-0.7: Uncertain — title is ambiguous or not clearly a decision maker
+- 0.0-0.3: Not a current employee, not a decision maker, or works at different company"""
 
     result = await _call_openai_json(
         prompt,
         f"You are a corporate contact verification system for {company_name}. "
-        "Validate that contacts CURRENTLY work at this company as decision makers "
-        "AND are based in Canada (Canadian office/division). "
-        "Use LinkedIn URLs to confirm identity, current employment, and Canadian location. "
-        "You are an expert in Canadian geography — recognize ALL Canadian cities, provinces, "
-        "and territories including smaller cities like Brampton, Thunder Bay, Sudbury, Kamloops, etc. "
-        "Be accurate — flag obvious mismatches but don't over-filter legitimate Canadian employees."
+        "Validate that contacts CURRENTLY work at this company as decision makers. "
+        "Use LinkedIn URLs to confirm identity and current employment. "
+        "Be accurate — flag obvious mismatches but don't over-filter legitimate employees."
     )
 
     if not result or "contacts" not in result:
@@ -1090,32 +1002,19 @@ The location_canada field should be:
         name = checked.get("name", "").lower().strip()
         score_map[name] = {
             "fact_check_score": checked.get("fact_check_score", 0.5),
-            "fact_check_notes": checked.get("fact_check_notes", ""),
-            "location_canada": checked.get("location_canada"),
+            "fact_check_notes": checked.get("fact_check_notes", "")
         }
 
     # Apply scores and filter
     enriched = []
-    filtered_non_canadian_llm = 0
     for contact in qualified:
         name_key = (contact.get("name") or "").lower().strip()
         if name_key in score_map:
             contact["fact_check_score"] = score_map[name_key]["fact_check_score"]
             contact["fact_check_notes"] = score_map[name_key]["fact_check_notes"]
-            contact["location_canada"] = score_map[name_key]["location_canada"]
         else:
             contact["fact_check_score"] = 0.7
             contact["fact_check_notes"] = "Not matched in validation response"
-            contact["location_canada"] = None
-
-        # Filter out contacts the LLM explicitly confirmed as non-Canadian
-        if contact.get("location_canada") is False:
-            filtered_non_canadian_llm += 1
-            logger.warning(
-                f"FACT CHECK FILTERED (non-Canadian via LinkedIn): {contact.get('name')} "
-                f"as {contact.get('title')} — {contact.get('fact_check_notes')}"
-            )
-            continue
 
         if contact["fact_check_score"] >= 0.15:
             enriched.append(contact)
@@ -1129,8 +1028,7 @@ The location_canada field should be:
         f"Fact checker: {len(enriched)}/{len(contacts)} contacts passed "
         f"({len(qualified)} had LinkedIn+contact info, "
         f"{filtered_no_linkedin} dropped for no LinkedIn, "
-        f"{filtered_no_contact_info} dropped for no phone/email, "
-        f"{filtered_non_canadian_llm} dropped for non-Canadian location via LinkedIn)"
+        f"{filtered_no_contact_info} dropped for no phone/email)"
     )
     return enriched
 
@@ -1833,13 +1731,6 @@ def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -
                 # Also fill in phone if empty
                 if not stakeholder.get("phone") and zi_contact.get("phone"):
                     stakeholder["phone"] = zi_contact["phone"]
-                # Preserve country/location data from ZoomInfo
-                if zi_contact.get("country") and not stakeholder.get("country"):
-                    stakeholder["country"] = zi_contact["country"]
-                if zi_contact.get("state") and not stakeholder.get("state"):
-                    stakeholder["state"] = zi_contact["state"]
-                if zi_contact.get("city") and not stakeholder.get("city"):
-                    stakeholder["city"] = zi_contact["city"]
                 break
 
     # Add any ZoomInfo contacts not already in stakeholders
@@ -1867,9 +1758,6 @@ def _merge_zoominfo_contacts(stakeholders_data: list, zoominfo_contacts: list) -
                 "contact_accuracy_score": zi_contact.get("contact_accuracy_score", 0),
                 "department": zi_contact.get("department", ""),
                 "management_level": zi_contact.get("management_level", ""),
-                "country": zi_contact.get("country", ""),
-                "state": zi_contact.get("state", ""),
-                "city": zi_contact.get("city", ""),
                 "source": "zoominfo",
             })
 
@@ -2176,25 +2064,6 @@ async def process_company_profile(job_id: str, company_data: dict):
                 except Exception as e:
                     logger.warning(f"ZoomInfo GTM identity lookup failed: {e}")
                     jobs_store[job_id]["step_2_84_result"] = {"error": str(e)}
-
-        # Step 2.84c: Canada-only contact filter (post-merge safety net).
-        # API-level filters (ZoomInfo country=Canada, Apollo person_locations=Canada)
-        # are soft and fall back to global when Canada returns 0. This step removes
-        # any non-Canadian contacts that slipped through the API fallbacks.
-        if stakeholders_data:
-            pre_filter_count = len(stakeholders_data)
-            stakeholders_data = filter_contacts_canada(stakeholders_data)
-            ca_filtered = pre_filter_count - len(stakeholders_data)
-            if ca_filtered > 0:
-                jobs_store[job_id]["canada_filter_results"] = {
-                    "pre_filter_count": pre_filter_count,
-                    "post_filter_count": len(stakeholders_data),
-                    "removed_count": ca_filtered,
-                }
-                logger.info(
-                    f"Canada filter: {len(stakeholders_data)}/{pre_filter_count} contacts "
-                    f"passed (removed {ca_filtered} non-Canadian)"
-                )
 
         # Step 2.85: Enrich contacts missing LinkedIn URLs via Apollo people/match.
         # ZoomInfo contact search does NOT return LinkedIn URLs (disallowed engagement data).
@@ -2946,14 +2815,6 @@ async def fetch_apollo_data(company_data: dict) -> dict:
                     json={
                         "q_organization_domains": company_data["domain"],
                         "person_titles": ["CEO", "Chief Executive Officer", "Founder", "Co-Founder"],
-                        "person_locations": [
-                            "Canada",
-                            "Toronto, Ontario, Canada",
-                            "Vancouver, British Columbia, Canada",
-                            "Montreal, Quebec, Canada",
-                            "Calgary, Alberta, Canada",
-                            "Ottawa, Ontario, Canada",
-                        ],
                         "page": 1,
                         "per_page": 5
                     },
@@ -3158,7 +3019,6 @@ def extract_stakeholders_from_hunter(hunter_data: dict) -> List[Dict[str, Any]]:
             "is_new_hire": False,
             "hire_date": None,
             "photo_url": None,
-            "country": hunter_data.get("country", ""),
             "source": "hunter.io",
             "confidence": email_entry.get("confidence", 0)
         }
@@ -3214,17 +3074,6 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                 json={
                     "q_organization_domains": domain,
                     "person_titles": target_titles,
-                    "person_locations": [
-                        "Canada",
-                        "Toronto, Ontario, Canada",
-                        "Vancouver, British Columbia, Canada",
-                        "Montreal, Quebec, Canada",
-                        "Calgary, Alberta, Canada",
-                        "Ottawa, Ontario, Canada",
-                        "Edmonton, Alberta, Canada",
-                        "Mississauga, Ontario, Canada",
-                        "Winnipeg, Manitoba, Canada",
-                    ],
                     "page": 1,
                     "per_page": 50  # Expanded to capture more contacts
                 },
@@ -3288,9 +3137,6 @@ async def fetch_stakeholders(domain: str) -> List[Dict[str, Any]]:
                         "is_new_hire": is_new_hire,
                         "hire_date": hire_date,
                         "photo_url": person.get("photo_url"),
-                        "country": person.get("country", ""),
-                        "city": person.get("city", ""),
-                        "state": person.get("state", ""),
                         "source": "apollo"
                     }
                     stakeholders.append(stakeholder)

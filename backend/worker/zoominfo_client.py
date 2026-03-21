@@ -161,14 +161,9 @@ CSUITE_JOB_TITLES = PRIORITY_CSUITE_TITLES + OTHER_CSUITE_TITLES + [
     "Director", "Senior Director",
 ]
 
-# Canada-only country filter for ZoomInfo contact search.
-# HP Canada RAD Intelligence Desk targets Canadian contacts exclusively.
-# Used as a soft filter — falls back to global search if geo returns 0 results,
-# with a post-merge Canada filter applied downstream as a safety net.
-CANADA_COUNTRY_FILTER = ["Canada"]
-
-# Legacy alias kept for backwards compatibility in tests
-NORTH_AMERICA_COUNTRIES = CANADA_COUNTRY_FILTER
+# North America country names passed to ZoomInfo contact search where supported.
+# Used as a soft filter — falls back to global search if geo returns 0 results.
+NORTH_AMERICA_COUNTRIES = ["United States", "Canada", "Mexico"]
 
 # Broad B2B intent topics used when querying ZoomInfo Intent Enrich.
 # ZoomInfo requires at least 1 topic; this set covers the domains most
@@ -1041,23 +1036,19 @@ class ZoomInfoClient:
                 logger.error("ZoomInfo %s failed: %s", label, e)
             return 0
 
-        async def _search_canada_only(base_attrs: Dict[str, Any], label: str) -> int:
+        async def _search_na_first(base_attrs: Dict[str, Any], label: str) -> int:
             """
-            Search contacts filtered to Canada only. No global fallback.
-            Uses locationSearchType=Person to find contacts personally located in
-            Canada (not just HQ-based), targeting the Canadian division of
-            multinational companies. If Canada returns 0, we accept 0 — better
-            to have no contacts than non-Canadian ones.
+            Try contact search with North America geo filter first, then global.
+            Maximises NA coverage without hard-failing when geo returns nothing
+            (some companies have no NA contacts in ZoomInfo, or the field isn't
+            supported for a given search type).
             """
-            ca_attrs = {
-                **base_attrs,
-                "country": CANADA_COUNTRY_FILTER,
-                "locationSearchType": "Person",
-            }
-            count = await _search(ca_attrs, f"{label} [Canada]")
-            if count == 0:
-                logger.info("ZoomInfo %s: Canada filter returned 0 contacts for domain=%s", label, domain)
-            return count
+            na_attrs = {**base_attrs, "country": NORTH_AMERICA_COUNTRIES}
+            count = await _search(na_attrs, f"{label} [NA]")
+            if count > 0:
+                return count
+            logger.info("ZoomInfo %s: NA geo returned 0, falling back to global", label)
+            return await _search(base_attrs, f"{label} [global]")
 
         rpp = min(max_results, 10)
 
@@ -1066,7 +1057,7 @@ class ZoomInfoClient:
         # regardless of exact title wording (avoids jobTitle exact-match misses on
         # large companies like Amazon where titles vary widely).
         if len(all_people) < max_results:
-            await _search_canada_only(
+            await _search_na_first(
                 {"companyWebsite": website_candidates, "managementLevel": ["C-Level"], "rpp": rpp},
                 "C-Level"
             )
@@ -1076,58 +1067,48 @@ class ZoomInfoClient:
         # Uses the caller's job_titles override if provided, otherwise PRIORITY_CSUITE_TITLES.
         if len(all_people) < max_results:
             titles = job_titles if job_titles else PRIORITY_CSUITE_TITLES
-            await _search_canada_only(
+            await _search_na_first(
                 {"companyWebsite": website_candidates, "jobTitle": titles, "rpp": rpp},
                 "priority-csuite"
             )
 
         # --- Strategy 3: Other C-Suite by jobTitle (CEO, COO, CRO, CPO, etc.) ---
         if len(all_people) < max_results and job_titles is None:
-            await _search_canada_only(
+            await _search_na_first(
                 {"companyWebsite": website_candidates, "jobTitle": OTHER_CSUITE_TITLES, "rpp": rpp},
                 "other-csuite"
             )
 
         # --- Strategy 4: VP-Level ---
         if len(all_people) < max_results:
-            await _search_canada_only(
+            await _search_na_first(
                 {"companyWebsite": website_candidates, "managementLevel": ["VP-Level"], "rpp": rpp},
                 "VP-Level"
             )
 
         # --- Strategy 5: Director-Level ---
         if len(all_people) < max_results:
-            await _search_canada_only(
+            await _search_na_first(
                 {"companyWebsite": website_candidates, "managementLevel": ["Director-Level"], "rpp": rpp},
                 "Director-Level"
             )
 
-        # --- Strategy 6: All-roles fallback (Canada only) ---
+        # --- Strategy 6: No-filter fallback (all roles, all regions) ---
         if not all_people:
             await _search(
-                {
-                    "companyWebsite": website_candidates,
-                    "country": CANADA_COUNTRY_FILTER,
-                    "locationSearchType": "Person",
-                    "rpp": max_results,
-                },
-                "all-roles [Canada]"
+                {"companyWebsite": website_candidates, "rpp": max_results},
+                "no-filter fallback"
             )
 
-        # --- Strategy 7: Company name fallback (Canada only) ---
+        # --- Strategy 7: Company name fallback ---
         # ZoomInfo stores company names separately from URLs — this catches cases
         # where the website-based lookup finds nothing.
         if not all_people:
             company_name = self._company_name_from_domain(domain)
             if company_name:
                 await _search(
-                    {
-                        "companyName": company_name,
-                        "country": CANADA_COUNTRY_FILTER,
-                        "locationSearchType": "Person",
-                        "rpp": max_results,
-                    },
-                    f"companyName={company_name} [Canada]"
+                    {"companyName": company_name, "rpp": max_results},
+                    f"companyName={company_name} fallback"
                 )
 
         # Sort: CTO/CFO/CMO/CIO first → other C-Suite → VP → Director → other.
@@ -1292,8 +1273,7 @@ class ZoomInfoClient:
         # (e.g. linkedInUrl is disallowed in CONTACT_ENRICH_OUTPUT_FIELDS).
         # Preserve these from the search result during the merge.
         _SEARCH_ONLY_FIELDS = ("linkedin", "linkedinUrl", "linkedInUrl",
-                                "management_level", "managementLevel", "department",
-                                "country", "state", "city")
+                                "management_level", "managementLevel", "department")
 
         merged_people = []
         enriched_count = 0
@@ -2153,7 +2133,4 @@ class ZoomInfoClient:
             "department": attrs.get("department", ""),
             "management_level": attrs.get("managementLevel", attrs.get("management_level", "")),
             "person_id": attrs.get("personId", attrs.get("person_id", attrs.get("id", raw.get("id", "")))),
-            "country": attrs.get("country", attrs.get("personCountry", attrs.get("companyCountry", ""))),
-            "state": attrs.get("state", attrs.get("personState", "")),
-            "city": attrs.get("city", attrs.get("personCity", "")),
         }
