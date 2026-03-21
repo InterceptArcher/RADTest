@@ -21,6 +21,42 @@
 
 ---
 
+## HP Content Audit Integration (2026-03-21)
+
+### Content Audit Tab — Browsable Asset Library
+Added a new **Content Audit** tab to the RAD Admin Portal sidebar. This tab loads all 27 HP Canada marketing/sales assets from the CSV audit file (`hp_assets/HP Canada_RAD Intelligence Desk_Content Audit(Audit).csv`) and displays them in a sortable, filterable table with:
+- **Search**: Full-text search across asset names, summaries, and solutions
+- **Filters**: Audience (ITDM/BDM), Service/Solution (HP Z, WXP, Future of Work), Format (Guide, Video, Ebook, etc.)
+- **Sortable columns**: Asset Name, Solution, Year, Audience, Format, Inventory Recommendation status
+- **Expandable rows**: Click any row to see full summary, page count, audit notes, and metadata
+- **Add Resource**: Users can add custom resources with title, link, description, and metadata
+- **Status badges**: Color-coded Leverage / Upcycle / Retire recommendation indicators
+
+**Rationale**: The sales team needs visibility into HP's approved content library to select the right assets for outreach. Previously, there was no way to browse or search these assets within the portal.
+
+### Gamma Slideshow Content Audit Integration
+The Gamma slideshow output now **automatically selects relevant HP content assets** from the audit library instead of using generic placeholder text:
+
+1. **Slide 10 — Recommended Sales Program**: Each recommendation step's "Marketing collateral" field now links to a matched content audit asset (e.g., a thought leadership guide for "Build awareness" steps, a solution brief for "Enable decision-making" steps). The matching uses keyword scoring against the step description, industry, and intent topics.
+
+2. **Supporting Assets — Email & LinkedIn Templates**: The `[Insert link to supporting asset]` placeholders in each persona's email and LinkedIn InMail templates are replaced with a persona-appropriate content asset (e.g., security-focused content for CISO, fleet management for CIO, ROI-focused for CFO). Assets are formatted as `[Asset Title](link)` so they render as clickable links.
+
+**Matching logic**: Assets are scored by keyword relevance, audience match, inventory recommendation (Leverage preferred over Upcycle; Retire penalized), and recency (2025 > 2024). Each slot uses a different asset to avoid duplication across the slideshow.
+
+### Files Modified
+- `backend/content_audit.py` — New module: CSV loader, keyword matcher, collateral/supporting-asset matchers
+- `backend/production_main.py` — `GET /api/content-audit` and `POST /api/content-audit` endpoints
+- `backend/worker/gamma_slideshow.py` — Content audit integration in both `_format_for_template` and markdown generation
+- `frontend/src/app/dashboard/content-audit/page.tsx` — New Content Audit page with sortable table and add form
+- `frontend/src/components/layout/Sidebar.tsx` — Added Content Audit nav item
+- `backend/tests/test_content_audit.py` — 11 tests covering CSV loading, matching, and user-added items
+
+### API Endpoints
+- `GET /api/content-audit` — Returns all content audit items (CSV + user-added)
+- `POST /api/content-audit` — Add a custom content audit item (asset_name, sp_link, asset_summary, etc.)
+
+---
+
 ## HP Template-Based Outreach Assets (2026-03-20)
 
 ### Replaced LLM Free-Generation with HP-Approved PDF Templates

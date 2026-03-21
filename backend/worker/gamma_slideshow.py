@@ -6,8 +6,14 @@ import json
 import logging
 import asyncio
 import re
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import httpx
+
+from content_audit import (
+    load_content_audit,
+    match_content_for_collateral,
+    match_content_for_supporting_asset,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -850,10 +856,33 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             rec_next_steps.append({'step': 'Demonstrate proven outcomes', 'collateral': f'Customer success stories from {industry}'})
             rec_next_steps.append({'step': 'Enable decision-making', 'collateral': 'ROI framework and deployment approach'})
 
+        # Match content audit items for each step's marketing collateral
+        load_content_audit()
+        first_intent = ''
+        if intent_topics and len(intent_topics) > 0:
+            first_intent = intent_topics[0].get('topic', '') if isinstance(intent_topics[0], dict) else str(intent_topics[0])
+        collateral_used_ids: List[int] = []
+
         for i, step in enumerate(rec_next_steps, 1):
             if isinstance(step, dict):
-                data += f"[{i}] {step.get('step', step.get('title', f'Step {i}'))}\n"
-                if step.get('collateral'):
+                step_title = step.get('step', step.get('title', f'Step {i}'))
+                data += f"[{i}] {step_title}\n"
+                # Try to match a content audit asset for this step
+                matched = match_content_for_collateral(
+                    step_description=step_title,
+                    industry=industry,
+                    intent_topic=first_intent,
+                    exclude_ids=collateral_used_ids,
+                )
+                if matched:
+                    collateral_used_ids.append(matched.get('id', 0))
+                    asset_name = matched.get('asset_name', '')
+                    sp_link = matched.get('sp_link', '')
+                    if sp_link and sp_link.startswith('http'):
+                        data += f"    Marketing collateral: [{asset_name}]({sp_link})\n"
+                    else:
+                        data += f"    Marketing collateral: {asset_name}\n"
+                elif step.get('collateral'):
                     data += f"    Marketing collateral: {step['collateral']}\n"
             else:
                 data += f"[{i}] {step}\n"
@@ -882,9 +911,29 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
         if not persona_contacts:
             persona_contacts = {'CIO': '', 'CTO': '', 'CFO': ''}
 
+        supporting_asset_used_ids: List[int] = list(collateral_used_ids)  # avoid reusing collateral picks
+
         for persona in sorted(persona_contacts):
             contact_first_name = persona_contacts.get(persona, '') or '[First Name]'
             data += f"\n=== SUPPORTING ASSETS - {persona} ===\n\n"
+
+            # Match a content audit asset for this persona's supporting asset link
+            sa_match = match_content_for_supporting_asset(
+                persona=persona,
+                industry=industry,
+                priority_area=priority_area,
+                exclude_ids=supporting_asset_used_ids,
+            )
+            if sa_match:
+                supporting_asset_used_ids.append(sa_match.get('id', 0))
+                sa_name = sa_match.get('asset_name', '')
+                sa_link = sa_match.get('sp_link', '')
+                if sa_link and sa_link.startswith('http'):
+                    supporting_asset_text = f"[{sa_name}]({sa_link})"
+                else:
+                    supporting_asset_text = sa_name
+            else:
+                supporting_asset_text = "[Insert link to supporting asset]"
 
             # Email Template
             data += "--- Email Template ---\n\n"
@@ -897,7 +946,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             data += f"I understand {company_name} is focused on {priority_area} this year. I wanted to share something that might help advance that work.\n\n"
             data += f"We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
             data += "I thought you might find this useful:\n\n"
-            data += "[Insert link to supporting asset]\n\n"
+            data += f"{supporting_asset_text}\n\n"
             data += f"Would you be open to a brief conversation about how we could help you achieve {relevant_goal}?\n\n"
             data += f"Best regards,\n{sp_name}\nHP Canada | HP\n\n"
 
@@ -907,7 +956,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             data += f"Hi {contact_first_name},\n\n"
             data += f"{priority_area.capitalize() if priority_area else 'Technology modernization'} seems to be a key focus across {industry}. We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
             data += "Here's a short resource that outlines how:\n\n"
-            data += "[Insert link to supporting asset]\n\n"
+            data += f"{supporting_asset_text}\n\n"
             data += f"Would you be open to a quick chat about what might work best for {company_name}?\n\n"
             data += f"Best,\n{sp_name}\nHP Canada\n\n"
 
@@ -1976,6 +2025,13 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 'why': f'Addresses financial justification and implementation concerns that matter to {company_name}\'s decision-makers.'
             })
 
+        # Match content audit items for marketing collateral in each step
+        load_content_audit()
+        first_intent_md = ''
+        if intent_topics and len(intent_topics) > 0:
+            first_intent_md = intent_topics[0].get('topic', '') if isinstance(intent_topics[0], dict) else str(intent_topics[0])
+        md_collateral_used_ids: List[int] = []
+
         for i, step in enumerate(next_steps_data, 1):
             if isinstance(step, dict):
                 step_title = step.get('step', step.get('title', f'Step {i}'))
@@ -1983,8 +2039,25 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 why = step.get('why', step.get('reason', ''))
 
                 markdown += f"**[{i}] {step_title}**\n\n"
-                if collateral:
+
+                # Try to match a content audit asset
+                matched_collateral = match_content_for_collateral(
+                    step_description=step_title,
+                    industry=industry,
+                    intent_topic=first_intent_md,
+                    exclude_ids=md_collateral_used_ids,
+                )
+                if matched_collateral:
+                    md_collateral_used_ids.append(matched_collateral.get('id', 0))
+                    ca_name = matched_collateral.get('asset_name', '')
+                    ca_link = matched_collateral.get('sp_link', '')
+                    if ca_link and ca_link.startswith('http'):
+                        markdown += f"Marketing collateral: [{ca_name}]({ca_link})\n\n"
+                    else:
+                        markdown += f"Marketing collateral: {ca_name}\n\n"
+                elif collateral:
                     markdown += f"Marketing collateral: {collateral}\n\n"
+
                 if why:
                     markdown += f"**Why:** {why}\n\n"
             else:
@@ -2018,6 +2091,8 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             persona_contacts = {'CIO': '', 'CTO': '', 'CFO': ''}
 
         # Generate slide for each persona type
+        md_supporting_used_ids: List[int] = list(md_collateral_used_ids)  # avoid reusing collateral picks
+
         for persona in sorted(persona_contacts):
             contact_first_name = persona_contacts.get(persona, '') or '[First Name]'
             markdown += f"# Supporting assets – [{persona}]\n\n"
@@ -2085,6 +2160,26 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             sp_name = salesperson_name if salesperson_name else "[Your Name]"
 
             # -------------------------------------------------------
+            # Match a content audit asset for this persona
+            # -------------------------------------------------------
+            sa_md_match = match_content_for_supporting_asset(
+                persona=persona,
+                industry=industry,
+                priority_area=priority_area,
+                exclude_ids=md_supporting_used_ids,
+            )
+            if sa_md_match:
+                md_supporting_used_ids.append(sa_md_match.get('id', 0))
+                sa_md_name = sa_md_match.get('asset_name', '')
+                sa_md_link = sa_md_match.get('sp_link', '')
+                if sa_md_link and sa_md_link.startswith('http'):
+                    sa_md_text = f"[{sa_md_name}]({sa_md_link})"
+                else:
+                    sa_md_text = sa_md_name
+            else:
+                sa_md_text = "[Insert link to supporting asset]"
+
+            # -------------------------------------------------------
             # Email Template (exact HP PDF text)
             # -------------------------------------------------------
             markdown += "## Email Template\n\n"
@@ -2097,7 +2192,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             markdown += f"I understand {company_name} is focused on {priority_area} this year. I wanted to share something that might help advance that work.\n\n"
             markdown += f"We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
             markdown += "I thought you might find this useful:\n\n"
-            markdown += "[Insert link to supporting asset]\n\n"
+            markdown += f"{sa_md_text}\n\n"
             markdown += f"Would you be open to a brief conversation about how we could help you achieve {relevant_goal}?\n\n"
             markdown += f"Best regards,\n{sp_name}\nHP Canada | HP\n\n"
 
@@ -2110,7 +2205,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             markdown += f"Hi {contact_first_name},\n\n"
             markdown += f"{priority_area.capitalize() if priority_area else 'Technology modernization'} seems to be a key focus across {industry}. We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
             markdown += "Here's a short resource that outlines how:\n\n"
-            markdown += "[Insert link to supporting asset]\n\n"
+            markdown += f"{sa_md_text}\n\n"
             markdown += f"Would you be open to a quick chat about what might work best for {company_name}?\n\n"
             markdown += f"Best,\n{sp_name}\nHP Canada\n\n"
 

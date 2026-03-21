@@ -27,6 +27,13 @@ from orchestrator import analyze_and_plan, OrchestratorResult, should_query_api
 # Import Data Validator for pre-LLM fact-checking
 from worker.data_validator import DataValidator, get_validator
 
+# Import Content Audit module for HP asset matching
+from content_audit import (
+    load_content_audit,
+    get_all_items as get_content_audit_items,
+    add_item as add_content_audit_item,
+)
+
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
@@ -330,6 +337,47 @@ logger.info(f"  SUPABASE_URL: {'SET' if SUPABASE_URL else 'MISSING'}")
 logger.info(f"  SUPABASE_KEY: {'SET' if SUPABASE_KEY else 'MISSING'}")
 logger.info(f"  GAMMA_API_KEY: {'SET' if GAMMA_API_KEY else 'MISSING'}")
 logger.info("=" * 50)
+
+
+# ============================================================================
+# Content Audit endpoints
+# ============================================================================
+
+# Load content audit CSV on startup
+load_content_audit()
+
+
+@app.get("/api/content-audit", tags=["Content Audit"])
+async def list_content_audit():
+    """Return all HP content audit items (CSV + user-added)."""
+    items = get_content_audit_items()
+    return {"items": items, "total": len(items)}
+
+
+class ContentAuditItemCreate(BaseModel):
+    """Request body for adding a content audit item."""
+    asset_name: str = Field(..., min_length=1)
+    sp_link: str = Field(..., min_length=1)
+    asset_summary: str = Field(default="")
+    industry: str = Field(default="")
+    service_solution: str = Field(default="")
+    audience: str = Field(default="")
+    format_type: str = Field(default="")
+
+
+@app.post("/api/content-audit", tags=["Content Audit"], status_code=status.HTTP_201_CREATED)
+async def create_content_audit_item(body: ContentAuditItemCreate):
+    """Add a user-defined content audit item."""
+    item = add_content_audit_item(
+        asset_name=body.asset_name,
+        sp_link=body.sp_link,
+        asset_summary=body.asset_summary,
+        industry=body.industry,
+        service_solution=body.service_solution,
+        audience=body.audience,
+        format_type=body.format_type,
+    )
+    return {"item": item}
 
 
 # Health check
