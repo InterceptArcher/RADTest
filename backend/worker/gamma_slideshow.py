@@ -217,7 +217,11 @@ class GammaSlideshowCreator:
         salesperson_name = company_data.get('salesperson_name') or user_email or 'HP Sales Team'
 
         # Build comprehensive, data-rich structured content
-        data = f"""ACCOUNT INTELLIGENCE REPORT
+        data = f"""⚠️ GENERATION INSTRUCTIONS:
+- For the "Stakeholder Map: Role Profile Alignment" slide (slide 7): THIS SLIDE IS LOCKED. DO NOT generate, modify, add, or rearrange ANY content on this slide. Use the existing template layout EXACTLY as-is with ZERO changes. Preserve the original template design, structure, text, and formatting completely untouched.
+- For all other slides: populate using the data provided below.
+
+ACCOUNT INTELLIGENCE REPORT
 
 Company: {company_name}
 Report Date: {current_date}
@@ -607,6 +611,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             return s
 
         if all_stakeholders:
+            data += "⚠️ REMINDER: The 'Stakeholder Map: Role Profile Alignment' slide (slide 7) is LOCKED. Do NOT generate any new content for it. Use the existing template layout exactly as-is with no modifications whatsoever.\n\n"
             data += "=== KEY STAKEHOLDERS (ONE SLIDE PER CONTACT) ===\n\n"
             for idx, stakeholder in enumerate(all_stakeholders, 1):
                 name = stakeholder.get('name', stakeholder.get('fullName', 'Not available'))
@@ -856,20 +861,29 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
         data += "\nSupporting assets: Email template | LinkedIn InMail template | Call script template\n"
         data += "See the following slides for ready-to-use outreach templates per persona.\n\n"
 
-        # Determine persona types
-        persona_types = set()
-        stakeholder_map = validated_data.get('stakeholder_map', {})
-        all_stakeholders = stakeholder_map.get('stakeholders', []) if stakeholder_map else []
-        for s in all_stakeholders:
+        # Determine persona types and map each to the best contact's first name
+        persona_contacts = {}  # persona type -> first name of best contact
+        # Use best_per_role (already computed above) for highest-quality mapping
+        for cat, s in best_per_role.items():
+            if cat in ('CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO'):
+                full_name = s.get('name', s.get('fullName', ''))
+                first_name = full_name.split()[0] if full_name and full_name.strip() else ''
+                persona_contacts[cat] = first_name
+        # Fallback: also scan all stakeholders by title for any missed personas
+        _sa_stakeholders = validated_data.get('stakeholder_map', {}).get('stakeholders', []) if validated_data.get('stakeholder_map') else []
+        for s in _sa_stakeholders:
             if isinstance(s, dict):
                 title = s.get('title', '').upper()
                 for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO']:
-                    if p in title:
-                        persona_types.add(p)
-        if not persona_types:
-            persona_types = {'CIO', 'CTO', 'CFO'}
+                    if p in title and p not in persona_contacts:
+                        full_name = s.get('name', s.get('fullName', ''))
+                        first_name = full_name.split()[0] if full_name and full_name.strip() else ''
+                        persona_contacts[p] = first_name
+        if not persona_contacts:
+            persona_contacts = {'CIO': '', 'CTO': '', 'CFO': ''}
 
-        for persona in sorted(persona_types):
+        for persona in sorted(persona_contacts):
+            contact_first_name = persona_contacts.get(persona, '') or '[First Name]'
             data += f"\n=== SUPPORTING ASSETS - {persona} ===\n\n"
 
             # Email Template
@@ -879,7 +893,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             data += f"A: Insights that matter to {company_name}\n"
             data += f"B: Supporting {company_name} on {priority_area}\n\n"
             data += "Body copy:\n"
-            data += f"Hi [First Name],\n\n"
+            data += f"Hi {contact_first_name},\n\n"
             data += f"I understand {company_name} is focused on {priority_area} this year. I wanted to share something that might help advance that work.\n\n"
             data += f"We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
             data += "I thought you might find this useful:\n\n"
@@ -890,7 +904,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             # LinkedIn InMail
             data += "--- LinkedIn InMail Copy ---\n\n"
             data += f"Subject: Supporting {company_name} on {priority_area}\n\n"
-            data += f"Hi [First Name],\n\n"
+            data += f"Hi {contact_first_name},\n\n"
             data += f"{priority_area.capitalize() if priority_area else 'Technology modernization'} seems to be a key focus across {industry}. We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
             data += "Here's a short resource that outlines how:\n\n"
             data += "[Insert link to supporting asset]\n\n"
@@ -900,7 +914,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             # Call Script
             data += "--- Outreach Call Script ---\n\n"
             data += "Step 1: Provide Context\n\n"
-            data += f"Hi [First name], this is {sp_name} with HP Canada.\n\n"
+            data += f"Hi {contact_first_name}, this is {sp_name} with HP Canada.\n\n"
             data += f"I'm calling about {priority_area}. I work with {industry} teams on this. Do you have 30 seconds to see if this is relevant?\n\n"
             data += "Step 2: Explain Offering\n\n"
             data += f"A lot of {industry} teams we work with are looking to {address_challenge}, whether that's {example_a} or {example_b}.\n\n"
@@ -912,7 +926,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
 
             # Voicemail Script
             data += "--- Voicemail Script ---\n\n"
-            data += f"Hi [First Name], this is {sp_name} from HP Canada.\n\n"
+            data += f"Hi {contact_first_name}, this is {sp_name} from HP Canada.\n\n"
             data += f"I wanted to share a quick idea about {priority_area}, something we've seen help {industry} teams improve {outcome_short}.\n\n"
             data += "If it's something you're exploring, I'd be happy to send over a short resource or set up a quick chat.\n\n"
             data += "You can reach me at [phone number].\n\n"
@@ -1986,22 +2000,26 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         # SLIDES: Supporting Assets - ONE PER PERSONA
         # ============================================================
         # Generate supporting assets for each unique persona found in stakeholders
-        persona_types = set()
+        # Map each persona to the first name of the best matching contact
+        persona_contacts = {}  # persona type -> first name of best contact
         for stakeholder in all_stakeholders:
             # Ensure stakeholder is a dict
             if not isinstance(stakeholder, dict):
                 continue
             title = stakeholder.get('title', '').upper()
             for p in ['CFO', 'CTO', 'CIO', 'CISO', 'COO', 'CPO']:
-                if p in title:
-                    persona_types.add(p)
+                if p in title and p not in persona_contacts:
+                    full_name = stakeholder.get('name', stakeholder.get('fullName', ''))
+                    first_name = full_name.split()[0] if full_name and full_name.strip() else ''
+                    persona_contacts[p] = first_name
 
         # If no personas identified, use default set
-        if not persona_types:
-            persona_types = {'CIO', 'CTO', 'CFO'}
+        if not persona_contacts:
+            persona_contacts = {'CIO': '', 'CTO': '', 'CFO': ''}
 
         # Generate slide for each persona type
-        for persona in sorted(persona_types):
+        for persona in sorted(persona_contacts):
+            contact_first_name = persona_contacts.get(persona, '') or '[First Name]'
             markdown += f"# Supporting assets – [{persona}]\n\n"
 
             # -------------------------------------------------------
@@ -2075,7 +2093,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             markdown += f"A: Insights that matter to {company_name}\n\n"
             markdown += f"B: Supporting {company_name} on {priority_area}\n\n"
             markdown += "**Body copy:**\n\n"
-            markdown += f"Hi [First Name],\n\n"
+            markdown += f"Hi {contact_first_name},\n\n"
             markdown += f"I understand {company_name} is focused on {priority_area} this year. I wanted to share something that might help advance that work.\n\n"
             markdown += f"We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
             markdown += "I thought you might find this useful:\n\n"
@@ -2089,7 +2107,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             markdown += "## LinkedIn InMail Copy\n\n"
             markdown += f"**Subject:** Supporting {company_name} on {priority_area}\n\n"
             markdown += "**Body:**\n\n"
-            markdown += f"Hi [First Name],\n\n"
+            markdown += f"Hi {contact_first_name},\n\n"
             markdown += f"{priority_area.capitalize() if priority_area else 'Technology modernization'} seems to be a key focus across {industry}. We've seen similar organizations strengthen {outcome_or_kpi} by {hp_capability}.\n\n"
             markdown += "Here's a short resource that outlines how:\n\n"
             markdown += "[Insert link to supporting asset]\n\n"
@@ -2102,7 +2120,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             markdown += "## Outreach Call Script\n\n"
 
             markdown += "**Step 1: Provide Context**\n\n"
-            markdown += f"Hi [First name], this is {sp_name} with HP Canada.\n\n"
+            markdown += f"Hi {contact_first_name}, this is {sp_name} with HP Canada.\n\n"
             markdown += f"I'm calling about {priority_area}. I work with {industry} teams on this. Do you have 30 seconds to see if this is relevant?\n\n"
 
             markdown += "**Step 2: Explain Offering**\n\n"
@@ -2118,7 +2136,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             # Voicemail Script (exact HP PDF text)
             # -------------------------------------------------------
             markdown += "## Voicemail Script\n\n"
-            markdown += f"Hi [First Name], this is {sp_name} from HP Canada.\n\n"
+            markdown += f"Hi {contact_first_name}, this is {sp_name} from HP Canada.\n\n"
             markdown += f"I wanted to share a quick idea about {priority_area}, something we've seen help {industry} teams improve {outcome_short}.\n\n"
             markdown += "If it's something you're exploring, I'd be happy to send over a short resource or set up a quick chat.\n\n"
             markdown += f"You can reach me at [phone number].\n\n"
