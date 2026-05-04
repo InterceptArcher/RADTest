@@ -1551,3 +1551,48 @@ A regenerated BC Liquor Distribution Branch deck against the v3 template should:
 - Show ≤4 stakeholder profile slides — best-fit CTO/CFO/CIO/COO with CISO falling back to CIO only if no CIO contact exists
 - Each profile shows name/title on separate lines, plus a populated-channels-only comm-prefs list
 - Show recommended-solution titles at capability-category granularity, never SKU level
+
+---
+
+## Implementation Progress (paused 2026-05-04)
+
+Execution method: subagent-driven development (`superpowers:subagent-driven-development`). Per task: implementer → spec compliance reviewer → code-quality reviewer. All 3 must pass before marking the task complete.
+
+### Status
+
+| # | Task | Status | Commit | Notes |
+|---|---|---|---|---|
+| 1 | Template ID swap | ✅ Complete | `19ccd89` | Both reviews passed |
+| 2 | Account-type 4-bucket normalization | ✅ Complete | `1aa39f4` | Both reviews passed |
+| 3 | Pain points format | ✅ Complete | `5365f47` | Both reviews passed (1 minor empty-desc inconsistency noted, non-blocking) |
+| 4 | Sales opportunities format | ⏳ Partial | `64d55ad` | Implementer DONE, spec review PASSED, **code-quality review interrupted before completion** |
+| 5 | Slide-7 lock wording | ⬜ Not started | — | — |
+| 6 | Canonical 4-role stakeholder picker | ⬜ Not started | — | Largest task — consider `sonnet` model for implementer |
+| 7 | Stakeholder profile name+title | ⬜ Not started | — | Line numbers in plan have shifted; grep for per-stakeholder loop |
+| 8 | Communication preferences filter | ⬜ Not started | — | — |
+| 9 | Reinforce LLM prompt | ⬜ Not started | — | — |
+| 10 | Final regression + deploy_version bump | ⬜ Not started | — | — |
+
+### Test status (as of last green run after Task 4 commit)
+
+- `backend/tests/test_gamma_template_v3.py`: **11/11 passing** (Task 1's 2 + Task 2's 4 + Task 3's 3 + Task 4's 2)
+- `backend/tests/test_gamma_pending_recovery.py`: **11/11 passing** (regression — unaffected)
+
+### Branch / deploy state
+
+- Branch: `main` (user works directly on main; no worktree used)
+- **8 commits unpushed** since `425697c` (4 spec/plan + 4 implementation). Render auto-deploy will fire when pushed.
+- Working tree is clean for `backend/` and `docs/` paths.
+
+### Next concrete action to resume
+
+1. Read this progress section to re-orient.
+2. Re-dispatch the **code-quality review for Task 4 (commit `64d55ad`)** using `superpowers:code-reviewer` subagent. Implementer and spec reviewer already passed; only quality review is outstanding for this task. Reference the original dispatch payload for the prompt content (see Task 4 in this plan's body).
+3. If quality review approves: mark Task 4 completed in TaskList, dispatch implementer for Task 5 (slide-7 lock wording — small mechanical change, `haiku` model is fine).
+4. If quality review raises issues: dispatch implementer to fix, then re-review.
+
+### Notes for resume
+
+- Task 6 is the largest and most error-prone (the 4-role picker with tiered CISO fallback). When dispatching its implementer, use `model: sonnet` rather than `haiku` and double-check the implementer's understanding of the tiered selection rule before they start.
+- The plan's line-number references (e.g., "around line 593-650" in Task 6) have drifted as commits land. Tell each implementer to grep for landmark strings rather than trust line numbers.
+- User has not asked for the work to be pushed mid-stream. Ask before pushing — they may prefer to push only after all 10 tasks land green to avoid intermediate Render deploys.
