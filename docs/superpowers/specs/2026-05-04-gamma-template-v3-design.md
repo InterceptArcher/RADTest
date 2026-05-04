@@ -149,11 +149,25 @@ Title-keyword map (private constant in the module):
 CTO  → ["technology", "engineering", "digital", "information systems",
         "innovation", "architect"]
 CFO  → ["finance", "financial", "treasurer", "controller", "accounting"]
-CIO  → ["information", "it ", "systems", "data", "infrastructure"]
+CIO  → ["chief information officer", "information officer", "it ",
+        "systems", "data", "infrastructure"]
+       # "information" alone is intentionally NOT in the CIO list —
+       # it would otherwise pull CISO titles into this slot. See the
+       # tiered selection below for how CISO is handled as a last resort.
 COO  → ["operations", "operating", "field services", "service delivery"]
 ```
 
 Note: spaces in keywords are intentional — `"it "` matches "Director of IT" but not "Director of Items". Match is case-insensitive substring against the contact's `title` field.
+
+**CIO slot — tiered selection with CISO fallback:**
+
+The CIO slot uses a 3-tier search to honor the user's "CISO as absolute last resort" rule:
+
+1. **Tier 1 — direct match:** any contact with `csuiteCategory == 'CIO'`.
+2. **Tier 2 — title-keyword match, excluding security titles:** scan all contacts whose title matches one of the CIO keywords above AND does *not* contain `"security"` or `"ciso"`. Rank by seniority.
+3. **Tier 3 — CISO fallback (last resort only):** if and only if Tiers 1 and 2 both returned nothing, allow contacts whose title contains `"chief information security"`, `"ciso"`, or `"information security officer"`. Rank by seniority. This means a CISO will fill the CIO slot only when no plausible CIO exists in the entire contact pool.
+
+The other three roles (CTO / CFO / COO) use the standard 2-tier rule (direct csuiteCategory match → title-keyword match by seniority). No tiered CISO-style fallback for them.
 
 Output ordering is hard-coded **CTO → CFO → CIO → COO**. Skipped roles compress the list (no blank slot rendered).
 
@@ -283,6 +297,8 @@ Test coverage:
 - De-duplicates: a contact who matches both CTO and CIO keywords takes the earlier slot only; the later slot then looks for its own next-best match.
 - Skips a role gracefully when nothing in the contact pool matches (output has 3 contacts, not 4 with one blank).
 - Reads `otherContacts` and legacy `stakeholder_profiles` as candidate sources but doesn't emit them as their own slides.
+- **CIO slot CISO fallback:** when there's no CIO match (Tier 1) and no non-security CIO-keyword match (Tier 2), a CISO title fills the slot (Tier 3). When a non-security CIO match exists, it wins over any CISO regardless of seniority.
+- **CIO slot CISO exclusion:** when both a CIO and a CISO are present, the CIO takes the slot and the CISO is skipped (no separate CISO slide).
 
 **Communication preferences filter**
 - Contact with email + phone + linkedin → 3 bullets in `Email | Phone | LinkedIn` order.
@@ -302,7 +318,7 @@ Test coverage:
 | Risk | Mitigation |
 |---|---|
 | `_format_for_template` and `_generate_markdown` drift apart on pain-points / opportunities format | Both blocks updated in the same change; tests assert the markdown emitted by both paths matches the new format |
-| Title-keyword fallback picks wrong person when titles overlap (e.g., "Chief Information Security Officer" pulled into CIO slot when the user actually wants CISO=skipped) | Keyword `"information"` is too broad alone; `"information systems"` is more discriminating. Risk acknowledged — tests cover the common edge cases (CISO, COO/Operations, CTO/Tech). Tune the keyword list if production runs surface mis-picks |
+| Title-keyword fallback picks wrong person when titles overlap (e.g., "Chief Information Security Officer" pulled into CIO slot when a real CIO exists) | Keyword `"information"` was intentionally removed from the CIO list. CIO slot uses a 3-tier search where CISO titles only qualify if no real CIO match (csuiteCategory or non-security keyword) exists in the entire pool. Tests cover the overlap cases — CIO+CISO both present, CISO only, neither |
 | Subsidiary → Private mapping is wrong for users who expect public-listed parent → Public | Documented in the design; user has flagged they're OK with this default. Easy to revisit by adding a `parent_company_type` lookup if needed |
 | LLM still drifts toward SKU titles despite reinforced prompt | Tests assert prompt content, not LLM output. The prompt edit is best-effort emphasis — if drift continues, follow-up could add a post-LLM regex scrub or a validator pass. Out of scope for this change |
 | `otherContacts` users who relied on those slides will see them disappear | Documented behavior change. Users who want non-C-suite contacts in the deck need to surface them through a different mechanism (out of scope) |
