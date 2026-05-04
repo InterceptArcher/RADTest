@@ -29,21 +29,21 @@ class GammaSlideshowCreator:
     4. Return slideshow URL
     """
 
-    def __init__(self, gamma_api_key: str, template_id: str = "g_76n9u56280zyiyz"):
+    def __init__(self, gamma_api_key: str, template_id: str = "g_uost7x0lutmwtwd"):
         """
         Initialize Gamma slideshow creator.
 
         Args:
             gamma_api_key: Gamma API key (from environment)
             template_id: Gamma template ID (gammaId) for template-based generation
-                        Default: g_76n9u56280zyiyz (HP RAD Intelligence template)
+                        Default: g_uost7x0lutmwtwd (HP RAD Intelligence template v3)
 
         Note:
             API key must be provided via environment variables.
             Template will preserve its exact design, fonts, and logos.
         """
         self.api_key = gamma_api_key
-        self.template_id = template_id or "g_76n9u56280zyiyz"  # Always use template by default
+        self.template_id = template_id or "g_uost7x0lutmwtwd"  # Always use template by default
         self.api_url = "https://public-api.gamma.app/v1.0/generations"
         self.template_url = "https://public-api.gamma.app/v1.0/generations/from-template"
         self.status_url = "https://public-api.gamma.app/v1.0/generations"
