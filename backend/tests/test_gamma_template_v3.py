@@ -74,3 +74,83 @@ def test_normalize_account_type_unknown_defaults_to_private():
     assert _normalize_account_type("") == "Private"
     assert _normalize_account_type("???") == "Private"
     assert _normalize_account_type(None) == "Private"
+
+
+# ---------------------------------------------------------------------------
+# Task 3: Pain points format — bolded title + blank line + description
+# ---------------------------------------------------------------------------
+
+def _make_validated_with_pain_points():
+    return {
+        "company_name": "Acme Co",
+        "domain": "acme.com",
+        "validated_data": {"company_name": "Acme Co"},
+        "pain_points": [
+            {"title": "Aging device fleet",
+             "description": "Most laptops are 4+ years old, hurting productivity."},
+            {"title": "Inconsistent endpoint security",
+             "description": "Mixed OS versions complicate patching and policy."},
+            {"title": "Slow procurement cycle",
+             "description": "Hardware refreshes take 90+ days vs industry 30."},
+        ],
+    }
+
+
+def test_pain_points_format_template_path_emits_bold_title_blank_description():
+    """
+    The template-path formatter (_format_for_template) emits each pain point
+    as **title** on its own line, then a blank line, then the description.
+    Caps at 3 entries.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = _make_validated_with_pain_points()
+    output = creator._format_for_template(company)
+
+    assert "**Aging device fleet**" in output
+    assert "Most laptops are 4+ years old, hurting productivity." in output
+    assert "**Inconsistent endpoint security**" in output
+    assert "Mixed OS versions complicate patching and policy." in output
+    assert "**Slow procurement cycle**" in output
+
+    # Each title must be followed by a blank line and then the description
+    # (verify by checking the title and description appear in order with a
+    # newline between them, not inline).
+    idx_title_1 = output.index("**Aging device fleet**")
+    idx_desc_1 = output.index("Most laptops are 4+ years old")
+    between = output[idx_title_1:idx_desc_1]
+    assert "\n\n" in between, (
+        "expected blank line between title and description, got: " + repr(between)
+    )
+
+
+def test_pain_points_format_caps_at_three_entries():
+    """Inputs of >3 entries truncate to 3."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = _make_validated_with_pain_points()
+    company["pain_points"].append({"title": "Fourth", "description": "Should not render."})
+    output = creator._format_for_template(company)
+    assert "**Fourth**" not in output
+    assert "Should not render." not in output
+
+
+def test_pain_points_format_reads_fallback_chain():
+    """
+    If validated_data.pain_points is missing, the formatter falls through
+    to opportunity_themes_detailed.pain_points, then opportunity_themes.pain_points.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Fallback Co",
+        "validated_data": {"company_name": "Fallback Co"},
+        "opportunity_themes_detailed": {
+            "pain_points": [
+                {"title": "Nested pain", "description": "From the detailed nest."},
+            ],
+        },
+    }
+    output = creator._format_for_template(company)
+    assert "**Nested pain**" in output
+    assert "From the detailed nest." in output

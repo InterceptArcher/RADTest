@@ -502,18 +502,25 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                         data += "\n"
                 data += "\n"
 
-        # Pain Points
-        pain_points = validated_data.get('pain_points', [])
+        # Pain Points — v3 format: bolded title, blank line, description paragraph. Cap at 3.
+        pain_points = (
+            company_data.get('pain_points')
+            or validated_data.get('pain_points')
+            or company_data.get('opportunity_themes_detailed', {}).get('pain_points')
+            or validated_data.get('opportunity_themes_detailed', {}).get('pain_points')
+            or company_data.get('opportunity_themes', {}).get('pain_points')
+            or validated_data.get('opportunity_themes', {}).get('pain_points')
+            or []
+        )
         if pain_points:
             data += "=== PAIN POINTS ===\n\n"
-            for i, pain in enumerate(pain_points, 1):
-                if isinstance(pain, dict):
-                    data += f"{i}. {pain.get('title', pain)}\n"
-                    if pain.get('description'):
-                        data += f"   {pain['description']}\n"
+            for p in pain_points[:3]:
+                if isinstance(p, dict):
+                    title = p.get('title', '')
+                    desc = p.get('description', '')
+                    data += f"**{title}**\n\n{desc}\n\n"
                 else:
-                    data += f"{i}. {pain}\n"
-                data += "\n"
+                    data += f"**{p}**\n\n"
 
         # Opportunities
         opportunities = validated_data.get('sales_opportunities', [])
@@ -1581,15 +1588,16 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
             # Universal pain point
             pain_points.append({'title': 'Technology investment ROI and cost visibility (demonstrating value)', 'description': 'Across industries, IT leaders are under increasing pressure to demonstrate that technology investments deliver measurable business outcomes rather than just keeping the lights on. Without clear metrics on total cost of ownership, utilization rates, and lifecycle costs, it becomes difficult to justify refresh cycles, new initiatives, or vendor consolidation. The result is often deferred decisions that ultimately cost more in support burden, security risk, and lost productivity.'})
 
-        for i, pain in enumerate(pain_points, 1):
+        # v3 format: bolded title, blank line, description paragraph. Cap at 3.
+        for pain in pain_points[:3]:
             if isinstance(pain, dict):
-                pain_title = pain.get('title', pain.get('name', f'Pain Point {i}'))
+                pain_title = pain.get('title', pain.get('name', 'Pain Point'))
                 pain_desc = pain.get('description', pain.get('pain_point', ''))
-                markdown += f"**{i}. {pain_title}**\n\n"
+                markdown += f"**{pain_title}**\n\n"
                 if pain_desc:
                     markdown += f"{pain_desc}\n\n"
             else:
-                markdown += f"**{i}.** {str(pain)}\n\n"
+                markdown += f"**{str(pain)}**\n\n"
 
         # Sales opportunities
         markdown += "## Sales opportunities\n\n"
