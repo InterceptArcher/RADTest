@@ -48,6 +48,13 @@ class GammaSlideshowCreator:
         self.template_url = "https://public-api.gamma.app/v1.0/generations/from-template"
         self.status_url = "https://public-api.gamma.app/v1.0/generations"
 
+        # Polling ceiling for the per-request _send_to_gamma loop. 300 attempts
+        # × 2 s/attempt = 600 s. Raised from 150 after the BC Liquor 2026-05-03
+        # incident where Gamma's queue held the job in `pending` for >5 min.
+        # When even this ceiling is exceeded, the job is handed off to the
+        # background reconcile loop instead of being declared a failure.
+        self.polling_max_attempts = 300
+
         if template_id:
             logger.info(f"Gamma slideshow creator initialized with template: {template_id}")
         else:
@@ -178,13 +185,31 @@ class GammaSlideshowCreator:
             # Send to Gamma API (standard endpoint with full markdown + numCards)
             result = await self._send_to_gamma(markdown_content, num_cards, company_data, user_email)
 
-            logger.info(f"Slideshow created successfully: {result.get('url')}")
+            inner_status = result.get("status")
+            if inner_status == "pending":
+                # Generation outlasted the per-request polling window. The
+                # generation_id is preserved so the pipeline can hand the job
+                # off to the background reconcile loop and the frontend can
+                # keep polling /job-status for the URL.
+                logger.info(
+                    f"Slideshow generation still pending after polling window — "
+                    f"handing off to reconcile (generation_id={result.get('id')})"
+                )
+                return {
+                    "success": True,
+                    "slideshow_url": None,
+                    "slideshow_id": result.get("id"),
+                    "slideshow_status": "pending",
+                    "company_name": company_name,
+                }
 
+            logger.info(f"Slideshow created successfully: {result.get('url')}")
             return {
                 "success": True,
                 "slideshow_url": result.get("url"),
                 "slideshow_id": result.get("id"),
-                "company_name": company_name
+                "slideshow_status": "completed",
+                "company_name": company_name,
             }
 
         except Exception as e:
@@ -196,7 +221,8 @@ class GammaSlideshowCreator:
                 "success": False,
                 "slideshow_url": None,
                 "slideshow_id": None,
-                "error": f"{type(e).__name__}: {str(e)}"
+                "slideshow_status": "failed",
+                "error": f"{type(e).__name__}: {str(e)}",
             }
 
     def _format_for_template(self, company_data: Dict[str, Any], user_email: str = None) -> str:
@@ -2379,8 +2405,10 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 logger.info(f"Markdown length: {len(markdown_content)} characters")
                 logger.info(f"Template ID: {self.template_id}")
 
-                # Poll for completion (max 5 minutes for complex presentations)
-                max_attempts = 150  # 150 attempts * 2 seconds = 5 minutes
+                # Poll for completion. Ceiling is configured per-instance via
+                # self.polling_max_attempts (default 300 = 600 s = 10 min) so
+                # tests can override it without monkeypatching constants.
+                max_attempts = self.polling_max_attempts
                 attempt = 0
                 last_logged_time = 0
 
@@ -2493,17 +2521,26 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                         if attempt >= max_attempts:
                             raise
 
-                # If we exit the loop without returning, generation timed out
+                # If we exit the loop without returning, the per-request
+                # polling window is exhausted. We do NOT raise here — that
+                # would discard `generation_id` and lose the slideshow even
+                # though Gamma may still complete it. Instead, return a
+                # pending result; the pipeline will hand the generation_id
+                # to the background reconcile loop, and /job-status will
+                # also lazy-reconcile on read.
                 timeout_seconds = max_attempts * 2
-                logger.error(f"❌ Generation TIMED OUT after {timeout_seconds} seconds ({max_attempts} attempts)")
-                logger.error(f"   Last known status: {status if 'status' in locals() else 'unknown'}")
-                logger.error(f"   Generation ID: {generation_id}")
-                logger.error(f"   This means Gamma API took too long to complete the slideshow")
-                raise Exception(
-                    f"Generation timed out after {timeout_seconds} seconds. "
-                    f"Last status: {status if 'status' in locals() else 'unknown'}. "
-                    f"Gamma API did not complete within the timeout period."
+                last_status = status if 'status' in locals() else 'unknown'
+                logger.warning(
+                    f"⏳ Polling window exhausted after {timeout_seconds}s "
+                    f"({max_attempts} attempts). Last status: {last_status}. "
+                    f"Generation ID {generation_id} handed off to reconcile."
                 )
+                return {
+                    "url": None,
+                    "id": generation_id,
+                    "status": "pending",
+                    "last_known_status": last_status,
+                }
 
         except httpx.HTTPStatusError as e:
             error_body = ""
@@ -2523,6 +2560,150 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         except Exception as e:
             logger.error(f"Unexpected error with Gamma API: {e}")
             raise
+
+    async def check_generation_status(self, generation_id: str) -> Dict[str, Any]:
+        """
+        Single non-polling status check against Gamma's generations endpoint.
+
+        Used by both the inline lazy reconcile in /job-status and the
+        background reconcile loop. Always returns a structured dict; never
+        raises for routine HTTP/connection errors so callers can decide what
+        to do based on the returned status.
+
+        Returns:
+            {
+                "status": "pending" | "processing" | "generating" |
+                          "completed" | "failed" | "error",
+                "url":    str | None,
+                "id":     generation_id,
+                "error":  str | None,
+            }
+        """
+        headers = {"X-API-KEY": self.api_key, "Content-Type": "application/json"}
+
+        try:
+            async with httpx.AsyncClient(timeout=15) as client:
+                response = await client.get(
+                    f"{self.status_url}/{generation_id}",
+                    headers=headers,
+                )
+                response.raise_for_status()
+                status_data = response.json()
+        except httpx.HTTPStatusError as e:
+            return {
+                "status": "error",
+                "url": None,
+                "id": generation_id,
+                "error": f"Gamma status HTTP {e.response.status_code}",
+            }
+        except httpx.RequestError as e:
+            return {
+                "status": "error",
+                "url": None,
+                "id": generation_id,
+                "error": f"Gamma status connection error: {e}",
+            }
+
+        gamma_status = status_data.get("status")
+
+        if gamma_status == "completed":
+            url = self._extract_url(status_data, generation_id)
+            return {
+                "status": "completed",
+                "url": url,
+                "id": generation_id,
+                "error": None,
+            }
+        if gamma_status == "failed":
+            return {
+                "status": "failed",
+                "url": None,
+                "id": generation_id,
+                "error": status_data.get("error", "Gamma generation failed"),
+            }
+
+        # pending / processing / generating / unknown — caller keeps polling
+        return {
+            "status": gamma_status or "pending",
+            "url": None,
+            "id": generation_id,
+            "error": None,
+        }
+
+    @staticmethod
+    def _extract_url(status_data: Dict[str, Any], generation_id: str) -> Optional[str]:
+        """
+        Mirror the URL-extraction fallback chain used by _send_to_gamma so the
+        single-shot status check returns the same URL the polling loop would.
+        """
+        url = (
+            status_data.get("gammaUrl")
+            or status_data.get("url")
+            or status_data.get("webUrl")
+            or status_data.get("gamma_url")
+        )
+        if not url:
+            for key, value in status_data.items():
+                if isinstance(value, str) and ("gamma.app" in value or "http" in value):
+                    url = value
+                    break
+        if not url and isinstance(status_data.get("gamma"), dict):
+            url = status_data["gamma"].get("url") or status_data["gamma"].get("webUrl")
+        if not url and isinstance(status_data.get("data"), dict):
+            url = status_data["data"].get("url") or status_data["data"].get("gammaUrl")
+        if not url:
+            url = (
+                status_data.get("link")
+                or status_data.get("viewLink")
+                or status_data.get("shareLink")
+            )
+        if not url and generation_id:
+            url = f"https://gamma.app/docs/{generation_id}"
+        return url
+
+    async def reconcile_pending_generation(
+        self,
+        generation_id: str,
+        max_total_seconds: int = 1800,
+        poll_interval_seconds: int = 5,
+    ) -> Dict[str, Any]:
+        """
+        Background reconcile loop for generations that outlasted the
+        per-request polling window in _send_to_gamma. Polls Gamma every
+        `poll_interval_seconds` until a terminal state is reached or
+        `max_total_seconds` elapses.
+
+        Default hard cap is 30 minutes — well beyond the worst observed
+        Gamma queue depth — but still finite so a stuck generation can't
+        leak background tasks indefinitely.
+
+        Returns the same structured dict shape as check_generation_status.
+        """
+        max_attempts = max(1, max_total_seconds // max(1, poll_interval_seconds))
+        last_result: Dict[str, Any] = {
+            "status": "pending",
+            "url": None,
+            "id": generation_id,
+            "error": None,
+        }
+
+        for attempt in range(1, max_attempts + 1):
+            result = await self.check_generation_status(generation_id)
+            last_result = result
+            terminal = result["status"] in ("completed", "failed")
+            if terminal:
+                logger.info(
+                    f"Reconcile for generation_id={generation_id} reached "
+                    f"{result['status']} after {attempt} polls"
+                )
+                return result
+            await asyncio.sleep(poll_interval_seconds)
+
+        logger.warning(
+            f"Reconcile for generation_id={generation_id} hit hard cap "
+            f"({max_total_seconds}s) — final status: {last_result['status']}"
+        )
+        return last_result
 
     async def create_batch_slideshows(
         self,

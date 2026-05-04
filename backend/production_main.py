@@ -2654,14 +2654,29 @@ async def process_company_profile(job_id: str, company_data: dict):
 
         # Log what slideshow data we're including in the result
         slideshow_url_to_return = slideshow_result.get("slideshow_url")
-        logger.info(f"📊 Final result will include slideshow_url: {slideshow_url_to_return or 'NONE (generation failed)'}")
+        slideshow_id_to_return = slideshow_result.get("slideshow_id")
+        slideshow_status_to_return = slideshow_result.get("slideshow_status") or (
+            "completed" if slideshow_url_to_return else "failed"
+        )
+        logger.info(
+            f"📊 Final result will include slideshow_url={slideshow_url_to_return or 'NONE'} "
+            f"slideshow_status={slideshow_status_to_return} "
+            f"slideshow_id={slideshow_id_to_return or 'NONE'}"
+        )
+
+        # If the slideshow is still pending (Gamma outlasted the per-request
+        # polling window), hand off to the background reconcile task. The
+        # task lives on the event loop after this worker returns.
+        if slideshow_status_to_return == "pending" and slideshow_id_to_return:
+            _spawn_slideshow_reconcile(job_id, slideshow_id_to_return)
 
         jobs_store[job_id]["result"] = {
             "success": True,
             "company_name": validated_data.get("company_name", company_data["company_name"]),
             "domain": validated_data.get("domain", company_data["domain"]),
             "slideshow_url": slideshow_url_to_return,
-            "slideshow_id": slideshow_result.get("slideshow_id"),
+            "slideshow_id": slideshow_id_to_return,
+            "slideshow_status": slideshow_status_to_return,
             "confidence_score": validated_data.get("confidence_score", 0.85),
             # Core company data fields for the overview
             # Fallback chain: validated_data (LLM Council) → apollo → pdl → zoominfo → company_data
@@ -3697,6 +3712,12 @@ async def create_profile_request(
 async def get_job_status(job_id: str):
     """
     Get job status with real-time progress.
+
+    If the job's slideshow is still pending (background reconciliation in
+    flight), perform a single non-blocking Gamma status check inline and
+    update jobs_store before responding. This lazy reconcile is the safety
+    net for cases where the dedicated background task died (e.g. worker
+    restart), so the next poll naturally picks up the slideshow URL.
     """
     logger.info(f"Status check for job: {job_id}")
 
@@ -3707,6 +3728,8 @@ async def get_job_status(job_id: str):
             status_code=404,
             detail=f"Job {job_id} not found"
         )
+
+    await _lazy_reconcile_slideshow_if_pending(job_id, job)
 
     return JobStatus(
         job_id=job_id,
@@ -3723,6 +3746,163 @@ async def get_job_status(job_id: str):
         news_data=job.get("news_data"),
         created_at=job.get("created_at")
     )
+
+
+# Active background reconcile tasks held in a module-level set so the
+# event loop doesn't garbage-collect them while they're running. The
+# done-callback drops each task once it completes.
+_BACKGROUND_SLIDESHOW_RECONCILE_TASKS: set = set()
+
+
+def _spawn_slideshow_reconcile(job_id: str, generation_id: str) -> None:
+    """
+    Fire-and-forget background reconcile for a pending Gamma generation.
+
+    Picks up where _send_to_gamma's per-request poll left off, polls Gamma
+    on a slower cadence, and writes the URL into jobs_store when ready.
+    Survives beyond the worker request that spawned it (stays on the event
+    loop), but does NOT survive a worker restart — the lazy reconcile in
+    /job-status is the safety net for that case.
+    """
+    async def _runner():
+        try:
+            from worker.gamma_slideshow import GammaSlideshowCreator
+            creator = GammaSlideshowCreator(GAMMA_API_KEY)
+            outcome = await creator.reconcile_pending_generation(generation_id)
+        except Exception as e:
+            logger.error(
+                f"Background slideshow reconcile crashed for job={job_id} "
+                f"gen={generation_id}: {e}"
+            )
+            return
+
+        job = jobs_store.get(job_id)
+        if not job:
+            logger.warning(
+                f"Background reconcile completed for job={job_id} but "
+                f"jobs_store evicted the job — discarding outcome"
+            )
+            return
+
+        result = job.get("result") or {}
+        sd = job.get("slideshow_data") or {}
+
+        if outcome.get("status") == "completed" and outcome.get("url"):
+            result["slideshow_url"] = outcome["url"]
+            result["slideshow_status"] = "completed"
+            sd.update({
+                "success": True,
+                "slideshow_url": outcome["url"],
+                "slideshow_id": generation_id,
+                "slideshow_status": "completed",
+            })
+            logger.info(
+                f"Background reconcile landed slideshow for job={job_id}: "
+                f"{outcome['url']}"
+            )
+        elif outcome.get("status") == "failed":
+            result["slideshow_status"] = "failed"
+            sd.update({
+                "success": False,
+                "slideshow_status": "failed",
+                "error": outcome.get("error", "Gamma generation failed"),
+            })
+            logger.warning(
+                f"Background reconcile reports Gamma failed for job={job_id}: "
+                f"{outcome.get('error')}"
+            )
+        else:
+            # Hard-cap reached without a terminal status. Mark as failed so
+            # the frontend stops polling forever.
+            result["slideshow_status"] = "failed"
+            sd.update({
+                "success": False,
+                "slideshow_status": "failed",
+                "error": (
+                    f"Slideshow reconcile hit hard cap without completion "
+                    f"(last status: {outcome.get('status')})"
+                ),
+            })
+            logger.warning(
+                f"Background reconcile hard-capped for job={job_id} "
+                f"gen={generation_id}, last status={outcome.get('status')}"
+            )
+
+        job["slideshow_data"] = sd
+
+    if not GAMMA_API_KEY:
+        logger.warning(
+            f"GAMMA_API_KEY missing — cannot spawn slideshow reconcile for "
+            f"job={job_id}"
+        )
+        return
+
+    task = asyncio.create_task(_runner())
+    _BACKGROUND_SLIDESHOW_RECONCILE_TASKS.add(task)
+    task.add_done_callback(_BACKGROUND_SLIDESHOW_RECONCILE_TASKS.discard)
+    logger.info(
+        f"Spawned background slideshow reconcile for job={job_id} "
+        f"gen={generation_id}"
+    )
+
+
+async def _lazy_reconcile_slideshow_if_pending(job_id: str, job: dict) -> None:
+    """
+    If a job's slideshow is still pending and we have a generation_id, do
+    a single non-polling Gamma status check and update the job in place
+    when the generation has reached a terminal state.
+
+    Belt-and-suspenders for the dedicated background reconcile task: if
+    that task died (worker restart, exception), the next /job-status read
+    still picks up the URL.
+    """
+    result = job.get("result") or {}
+    if result.get("slideshow_status") != "pending":
+        return
+    generation_id = result.get("slideshow_id")
+    if not generation_id:
+        return
+    if not GAMMA_API_KEY:
+        return
+
+    try:
+        from worker.gamma_slideshow import GammaSlideshowCreator
+        creator = GammaSlideshowCreator(GAMMA_API_KEY)
+        check = await creator.check_generation_status(generation_id)
+    except Exception as e:
+        logger.warning(f"Lazy slideshow reconcile failed for {job_id}: {e}")
+        return
+
+    status = check.get("status")
+    if status == "completed" and check.get("url"):
+        result["slideshow_url"] = check["url"]
+        result["slideshow_status"] = "completed"
+        # Mirror into slideshow_data for backwards-compat consumers
+        sd = job.get("slideshow_data") or {}
+        sd.update({
+            "success": True,
+            "slideshow_url": check["url"],
+            "slideshow_id": generation_id,
+            "slideshow_status": "completed",
+        })
+        job["slideshow_data"] = sd
+        logger.info(
+            f"Lazy reconcile resolved slideshow for {job_id}: {check['url']}"
+        )
+    elif status == "failed":
+        result["slideshow_status"] = "failed"
+        sd = job.get("slideshow_data") or {}
+        sd.update({
+            "success": False,
+            "slideshow_status": "failed",
+            "error": check.get("error", "Gamma generation failed"),
+        })
+        job["slideshow_data"] = sd
+        logger.warning(
+            f"Lazy reconcile saw Gamma report failed for {job_id}: "
+            f"{check.get('error')}"
+        )
+    # else: still pending — leave the job untouched, frontend keeps polling
 
 
 # ============================================================================

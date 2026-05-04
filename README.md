@@ -21,6 +21,39 @@
 
 ---
 
+## Gamma Slideshow Pending-Recovery (2026-05-04)
+
+### Problem
+Slideshow generations that outlasted the per-request polling window (5 min) were declared a hard failure. The polling loop in `_send_to_gamma` raised an exception on timeout and **discarded the `generation_id`**, so a slideshow that Gamma eventually finished was unrecoverable. Triggered by the BC Liquor 2026-05-03 incident, where Gamma's queue held the job in `pending` for >5 min.
+
+### Fix A — Extended Polling Buffer
+Raised the per-request polling ceiling from `150 → 300` attempts (5 min → **10 min** at 2 s/attempt) in `GammaSlideshowCreator`. Exposed as the instance attribute `polling_max_attempts` so tests can override it without monkeypatching constants.
+
+**Rationale**: Doubling the buffer absorbs Gamma's slower template-based queue without any architectural change. Cheap, low-risk, and resolves the majority of incidents on its own.
+
+### Fix B — Async Reconciliation
+When the (now-extended) polling window still exhausts, `_send_to_gamma` no longer raises. Instead it **returns** `{status: "pending", id: <generation_id>, url: None}`, preserving the only handle the system has for later recovery. The result envelope from `create_slideshow` propagates `slideshow_status="pending"` and `slideshow_id=<gen_id>` upstream.
+
+Two reconciliation paths then race to land the URL:
+
+1. **Background reconcile task** (`_spawn_slideshow_reconcile` in `production_main.py`): a fire-and-forget `asyncio.Task` that polls Gamma every 5 s for up to 30 min via the new `reconcile_pending_generation()` method. The task is registered in a module-level set so the event loop doesn't garbage-collect it. On terminal status, it writes the URL into `jobs_store[job_id]["result"]` so the next `/job-status` poll picks it up.
+
+2. **Lazy reconcile on read** (`_lazy_reconcile_slideshow_if_pending`): on every `GET /job-status/{job_id}`, if the job's `slideshow_status` is still `pending`, the endpoint performs **one** non-polling Gamma status check via the new `check_generation_status()` method and updates the job in place if the generation has reached a terminal state.
+
+**Rationale for two paths**: The background task is the fast path under normal conditions; the lazy reconcile is the safety net when the worker restarts or the background task dies (which would otherwise orphan the generation forever). Belt-and-suspenders is appropriate here because the failure mode is invisible to the user — the dashboard just silently lacks a slideshow link.
+
+### Files Modified
+- `backend/worker/gamma_slideshow.py` — `polling_max_attempts` (300), pending-return on timeout, new `check_generation_status()` and `reconcile_pending_generation()` methods, shared `_extract_url()` helper
+- `backend/production_main.py` — `_spawn_slideshow_reconcile()` background task, `_lazy_reconcile_slideshow_if_pending()` on `/job-status`, `slideshow_status` propagation in `process_company_profile`
+- `backend/tests/test_gamma_pending_recovery.py` — 11 TDD tests (all passing) covering polling ceiling, pending-return, status propagation, single-shot status check, reconcile loop, hard cap, and lazy-reconcile endpoint behavior
+
+### Verification
+```
+backend/tests/test_gamma_pending_recovery.py ...  11 passed in 0.54s
+```
+
+---
+
 ## HP Content Audit Integration (2026-03-21)
 
 ### Content Audit Tab — Browsable Asset Library
