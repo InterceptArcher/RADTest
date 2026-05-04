@@ -154,3 +154,53 @@ def test_pain_points_format_reads_fallback_chain():
     output = creator._format_for_template(company)
     assert "**Nested pain**" in output
     assert "From the detailed nest." in output
+
+
+# ---------------------------------------------------------------------------
+# Task 4: Sales opportunities format — # bold title + blank line + blurb
+# ---------------------------------------------------------------------------
+
+def _make_validated_with_opportunities():
+    return {
+        "company_name": "Acme Co",
+        "validated_data": {"company_name": "Acme Co"},
+        "sales_opportunities": [
+            {"title": "Endpoint refresh", "description": "Validate appetite for a fleet refresh aligned to FY26 capex."},
+            {"title": "Hybrid work enablement", "description": "Confirm hybrid mandate and current device gaps."},
+            {"title": "Security posture", "description": "Probe maturity of endpoint security tooling and policy."},
+        ],
+    }
+
+
+def test_sales_opportunities_format_template_path():
+    """
+    Each opportunity emits as **N. title** on one line, blank, then blurb.
+    Numbers are 1-indexed and visible in the bold span.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = _make_validated_with_opportunities()
+    output = creator._format_for_template(company)
+
+    assert "**1. Endpoint refresh**" in output
+    assert "**2. Hybrid work enablement**" in output
+    assert "**3. Security posture**" in output
+    assert "Validate appetite for a fleet refresh aligned to FY26 capex." in output
+
+    # Verify blank line between numbered title and blurb
+    idx_title = output.index("**1. Endpoint refresh**")
+    idx_blurb = output.index("Validate appetite for a fleet refresh")
+    between = output[idx_title:idx_blurb]
+    assert "\n\n" in between
+
+
+def test_sales_opportunities_caps_at_three():
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = _make_validated_with_opportunities()
+    company["sales_opportunities"].append(
+        {"title": "Extra", "description": "Should not render."}
+    )
+    output = creator._format_for_template(company)
+    assert "**4. Extra**" not in output
+    assert "Should not render." not in output

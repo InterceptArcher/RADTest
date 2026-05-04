@@ -522,18 +522,28 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                 else:
                     data += f"**{p}**\n\n"
 
-        # Opportunities
-        opportunities = validated_data.get('sales_opportunities', [])
+        # Opportunities — v3 format: numbered + bolded title, blank line, validation blurb. Cap at 3.
+        opportunities = (
+            company_data.get('sales_opportunities')
+            or validated_data.get('sales_opportunities')
+            or company_data.get('opportunity_themes_detailed', {}).get('sales_opportunities')
+            or validated_data.get('opportunity_themes_detailed', {}).get('sales_opportunities')
+            or company_data.get('opportunities')
+            or validated_data.get('opportunities')
+            or []
+        )
         if opportunities:
             data += "=== SALES OPPORTUNITIES ===\n\n"
-            for i, opp in enumerate(opportunities, 1):
+            for i, opp in enumerate(opportunities[:3], 1):
                 if isinstance(opp, dict):
-                    data += f"{i}. {opp.get('title', opp)}\n"
-                    if opp.get('description'):
-                        data += f"   {opp['description']}\n"
+                    title = opp.get('title', '')
+                    desc = opp.get('description', '')
+                    if desc:
+                        data += f"**{i}. {title}**\n\n{desc}\n\n"
+                    else:
+                        data += f"**{i}. {title}**\n\n"
                 else:
-                    data += f"{i}. {opp}\n"
-                data += "\n"
+                    data += f"**{i}. {opp}**\n\n"
 
         # Solutions
         solutions = validated_data.get('recommended_solutions', [])
@@ -1636,7 +1646,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                     'description': f'Many organizations carry a significant internal support burden that they have grown accustomed to but never fully quantified. Exploring how {company_name} currently handles provisioning, break-fix, and ongoing management — and where those processes create friction or bottlenecks — can reveal whether a managed services approach would free up internal resources for higher-value work. The conversation should focus on understanding their pain points with the current support model and where they see the biggest operational drag.'
                 })
 
-        for i, opp in enumerate(opportunities, 1):
+        for i, opp in enumerate(opportunities[:3], 1):
             if isinstance(opp, dict):
                 opp_title = opp.get('title', opp.get('name', f'Opportunity {i}'))
                 opp_desc = opp.get('description', opp.get('details', ''))
@@ -1649,7 +1659,7 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 if opp_desc:
                     markdown += f"{opp_desc}\n\n"
             else:
-                markdown += f"**{i}.** {str(opp)}\n\n"
+                markdown += f"**{i}. {str(opp)}**\n\n"
 
         # Recommended solution areas
         markdown += "## Recommended solution areas\n\n"
