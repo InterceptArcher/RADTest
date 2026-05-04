@@ -36,3 +36,41 @@ def test_explicit_template_id_overrides_default():
         template_id="g_some_other_id",
     )
     assert creator.template_id == "g_some_other_id"
+
+
+# ---------------------------------------------------------------------------
+# Task 2: Account type normalization (5 → 4 bucket pass-through)
+# ---------------------------------------------------------------------------
+
+def test_normalize_account_type_passthrough_buckets():
+    """Public, Private, Government, Non-Profit pass through verbatim."""
+    from worker.gamma_slideshow import _normalize_account_type
+    assert _normalize_account_type("Public") == "Public"
+    assert _normalize_account_type("Private") == "Private"
+    assert _normalize_account_type("Government") == "Government"
+    assert _normalize_account_type("Non-Profit") == "Non-Profit"
+
+
+def test_normalize_account_type_subsidiary_to_private():
+    """Subsidiary collapses to Private — held privately by parent."""
+    from worker.gamma_slideshow import _normalize_account_type
+    assert _normalize_account_type("Subsidiary") == "Private"
+
+
+def test_normalize_account_type_case_insensitive():
+    """Accept lowercase and mixed-case variants from the LLM."""
+    from worker.gamma_slideshow import _normalize_account_type
+    assert _normalize_account_type("public") == "Public"
+    assert _normalize_account_type("PUBLIC") == "Public"
+    assert _normalize_account_type("Publicly traded") == "Public"
+    assert _normalize_account_type("government agency") == "Government"
+    assert _normalize_account_type("non-profit organization") == "Non-Profit"
+    assert _normalize_account_type("nonprofit") == "Non-Profit"
+
+
+def test_normalize_account_type_unknown_defaults_to_private():
+    """Empty / unrecognized strings default to Private."""
+    from worker.gamma_slideshow import _normalize_account_type
+    assert _normalize_account_type("") == "Private"
+    assert _normalize_account_type("???") == "Private"
+    assert _normalize_account_type(None) == "Private"

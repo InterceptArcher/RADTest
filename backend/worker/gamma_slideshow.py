@@ -18,6 +18,38 @@ from content_audit import (
 logger = logging.getLogger(__name__)
 
 
+def _normalize_account_type(company_type) -> str:
+    """
+    Map LLM-emitted company_type values into the 4-bucket account-type
+    taxonomy used by Gamma template v3.
+
+    LLM input (5 buckets): Public | Private | Subsidiary | Government | Non-Profit
+    Output (4 buckets):    Public | Private | Government | Non-Profit
+
+    Subsidiary collapses to Private (subsidiary is privately held by parent).
+    Unknown / empty / None defaults to Private (defensive — most companies
+    in our data set are private).
+
+    Match is case-insensitive substring. "publicly traded" -> Public,
+    "government agency" -> Government, "nonprofit" -> Non-Profit, etc.
+    """
+    if not company_type or not isinstance(company_type, str):
+        return "Private"
+    s = company_type.strip().lower()
+    # Order matters: check more specific terms before generic ones.
+    if "non-profit" in s or "nonprofit" in s or "non profit" in s:
+        return "Non-Profit"
+    if "government" in s or s.startswith("gov"):
+        return "Government"
+    if "public" in s:
+        return "Public"
+    if "subsidiary" in s:
+        return "Private"
+    if "private" in s:
+        return "Private"
+    return "Private"
+
+
 class GammaSlideshowCreator:
     """
     Creates slideshows using Gamma API from company data.
@@ -274,7 +306,7 @@ Sub-Industry: {validated_data.get('sub_industry', 'Not available')}
 Industry Category: {validated_data.get('industry_category', 'Not available')}
 SIC Codes: {', '.join(map(str, validated_data.get('sic_codes', []))) if validated_data.get('sic_codes') else 'Not available'}
 NAICS Codes: {', '.join(map(str, validated_data.get('naics_codes', []))) if validated_data.get('naics_codes') else 'Not available'}
-Account Type: {validated_data.get('account_type', validated_data.get('target_market', validated_data.get('company_type', 'Private Sector')))}
+Account Type: {_normalize_account_type(validated_data.get('company_type') or validated_data.get('type') or validated_data.get('account_type') or '')}
 Ownership Type: {validated_data.get('ownership_type', 'Not available')}
 
 Founded: {validated_data.get('founded_year', 'Not available')}
@@ -1218,14 +1250,15 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 markdown += f"{company_name} is an organization operating in the {validated_data.get('industry', 'technology')} sector. Further details available through company research.\n\n"
 
         # Account Type
-        account_type = validated_data.get('account_type', '')
-        if not account_type:
-            # Infer from company type or industry
-            company_type = validated_data.get('type', validated_data.get('company_type', ''))
-            if 'government' in str(company_type).lower() or 'public' in str(company_type).lower():
-                account_type = 'Public Sector'
-            else:
-                account_type = 'Private Sector'
+        # v3 template: 4-bucket account-type taxonomy. Prefer LLM company_type
+        # over upstream account_type so we get the canonical Public/Private/
+        # Government/Non-Profit label.
+        account_type = _normalize_account_type(
+            validated_data.get('company_type')
+            or validated_data.get('type')
+            or validated_data.get('account_type')
+            or ""
+        )
         markdown += f"**Account Type:** {account_type}\n\n"
 
         # Industry
