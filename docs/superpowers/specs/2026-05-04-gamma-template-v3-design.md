@@ -102,17 +102,24 @@ Per item, emit:
 
 …for the first 3 entries from `validated_data.sales_opportunities` (or fallback chain).
 
-### 5. Stakeholder map — "Key Decision Makers at {company}" line
+### 5. Stakeholder map — `[company]` placeholder substitution on slide 7
 
-**File:** `backend/worker/gamma_slideshow.py` — the role-profile-alignment slide block.
+**File:** `backend/worker/gamma_slideshow.py` — slide-7 lock instruction at lines 253 and 648.
 
-Inject a literal line near the top of that slide:
+The new template (`g_uost7x0lutmwtwd`) introduces a `[company]` bracket placeholder on slide 7 ("Stakeholder Map: Role Profile Alignment") in the line *"Key Decision Makers at [company]"*. The current code carries a hard lock instruction that tells Gamma's template engine *"Do NOT generate, modify, or add any content on slide 7"* — which Gamma may interpret as "don't substitute placeholders either".
+
+Refine the lock instruction at both occurrences (lines 253 and 648) to explicitly permit bracket-placeholder substitution while preserving the no-new-content guarantee. New wording:
 
 ```
-Key Decision Makers at {company_name}
+ONLY slide 7 ("Stakeholder Map: Role Profile Alignment") has its layout
+LOCKED. Do NOT generate, modify, or add any content sections on slide 7
+— its existing template layout is final. However, bracket placeholders
+on slide 7 (e.g. [company], [name], [title]) MUST be substituted with
+the appropriate values from the data sections above. Substitution is
+not modification.
 ```
 
-…where `company_name` comes from `validated_data.company_name` with the same fallback used elsewhere in the file (i.e., upstream `company_data["company_name"]`).
+The company name already flows into Gamma via the executive snapshot block at the top of `inputText` (line 277 area), so no new emission is required — only the lock-instruction wording needs updating so Gamma's renderer feels free to substitute.
 
 ### 6. Stakeholder slide cap to 4 canonical roles
 
