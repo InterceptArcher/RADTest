@@ -468,9 +468,9 @@ Estimated Revenue: {validated_data.get('estimated_revenue', 'Not available')}
 Estimated IT Budget: {self._estimate_it_budget(validated_data)}
 
 Contact Information:
+- Corporate Email: {validated_data.get('corporate_email', 'Not available')}
 - Phone: {validated_data.get('phone', 'Not available')}
 - Fax: {validated_data.get('fax', 'Not available')}
-- Corporate Email: {validated_data.get('corporate_email', 'Not available')}
 
 Social Media & Web Presence:
 - LinkedIn: {validated_data.get('linkedin_url', 'Not available')}
@@ -814,11 +814,46 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                 if phone and phone not in shown_phones:
                     data += f"Phone: {phone}\n"
                     shown_phones.add(phone)
-                if not shown_phones:
-                    data += "Phone: Currently unavailable\n"
 
                 if linkedin and linkedin != 'Not available':
                     data += f"LinkedIn: {linkedin}\n"
+
+                # v3 communication preferences: Email → Phone → LinkedIn order,
+                # only render channels with populated values.
+                _ct = stakeholder.get('contact') or {}
+                if not isinstance(_ct, dict):
+                    _ct = {}
+                email_val = (stakeholder.get('email') or _ct.get('email') or '').strip()
+                phone_val = (
+                    _tpl_phone(stakeholder.get('direct_phone'))
+                    or _tpl_phone(stakeholder.get('directPhone'))
+                    or _tpl_phone(_ct.get('directPhone'))
+                    or _tpl_phone(stakeholder.get('mobile_phone'))
+                    or _tpl_phone(stakeholder.get('mobile'))
+                    or _tpl_phone(_ct.get('mobilePhone'))
+                    or _tpl_phone(stakeholder.get('phone'))
+                    or _tpl_phone(stakeholder.get('phone_number'))
+                    or _tpl_phone(_ct.get('phone'))
+                    or _tpl_phone(stakeholder.get('company_phone'))
+                    or _tpl_phone(stakeholder.get('companyPhone'))
+                    or _tpl_phone(_ct.get('companyPhone'))
+                )
+                linkedin_val = (
+                    stakeholder.get('linkedin')
+                    or stakeholder.get('linkedinUrl')
+                    or stakeholder.get('linkedin_url')
+                    or _ct.get('linkedinUrl')
+                    or ''
+                ).strip()
+                if email_val or phone_val or linkedin_val:
+                    data += "### Communication Preferences\n"
+                    if email_val:
+                        data += f"- Email: {email_val}\n"
+                    if phone_val:
+                        data += f"- Phone: {phone_val}\n"
+                    if linkedin_val:
+                        data += f"- LinkedIn: {linkedin_val}\n"
+                    data += "\n"
 
                 # About / Bio — provide fallback if AI profile didn't generate one
                 bio = stakeholder.get('bio', stakeholder.get('about', stakeholder.get('description', '')))

@@ -490,3 +490,95 @@ def test_stakeholder_profile_emits_name_and_title_separately():
            "**Jane Doe**\nChief Technology Officer" in output, (
         "name and title must appear on separate consecutive lines"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 8: Communication preferences filter — Email | Phone | LinkedIn,
+# omit empty channels, preserve order
+# ---------------------------------------------------------------------------
+
+def test_comm_prefs_all_three_channels_populated():
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme",
+        "validated_data": {
+            "company_name": "Acme",
+            "stakeholder_map": {
+                "stakeholders": [
+                    {"name": "All Channels", "title": "Chief Technology Officer",
+                     "csuiteCategory": "CTO",
+                     "email": "all@acme.com",
+                     "phone": "+1-555-1234",
+                     "linkedin": "https://linkedin.com/in/all"},
+                ],
+            },
+        },
+    }
+    output = creator._format_for_template(company)
+    # All three channels present in Email → Phone → LinkedIn order.
+    idx_email = output.find("Email:")
+    idx_phone = output.find("Phone:")
+    idx_li = output.find("LinkedIn:")
+    assert idx_email >= 0 and idx_phone >= 0 and idx_li >= 0
+    assert idx_email < idx_phone < idx_li, (
+        f"comm prefs must be ordered Email→Phone→LinkedIn; "
+        f"got positions {idx_email}, {idx_phone}, {idx_li}"
+    )
+
+
+def test_comm_prefs_skips_empty_channels():
+    """A contact with email + linkedin but no phone shows 2 bullets, not 3."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme",
+        "validated_data": {
+            "company_name": "Acme",
+            "stakeholder_map": {
+                "stakeholders": [
+                    {"name": "No Phone", "title": "Chief Technology Officer",
+                     "csuiteCategory": "CTO",
+                     "email": "np@acme.com",
+                     "phone": "",
+                     "linkedin": "https://linkedin.com/in/np"},
+                ],
+            },
+        },
+    }
+    output = creator._format_for_template(company)
+    # Find the per-stakeholder slide block — Phone line must not appear in it.
+    section = output[output.find("**No Phone**"):]
+    # Cut to a generous window
+    section = section[:1500]
+    assert "Phone:" not in section, (
+        "empty phone channel must not render a Phone: bullet"
+    )
+    assert "Email: np@acme.com" in section
+    assert "LinkedIn: https://linkedin.com/in/np" in section
+
+
+def test_comm_prefs_only_email_present():
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme",
+        "validated_data": {
+            "company_name": "Acme",
+            "stakeholder_map": {
+                "stakeholders": [
+                    {"name": "Email Only", "title": "Chief Technology Officer",
+                     "csuiteCategory": "CTO",
+                     "email": "eo@acme.com",
+                     "phone": "",
+                     "linkedin": ""},
+                ],
+            },
+        },
+    }
+    output = creator._format_for_template(company)
+    section = output[output.find("**Email Only**"):]
+    section = section[:1500]
+    assert "Email: eo@acme.com" in section
+    assert "Phone:" not in section
+    assert "LinkedIn:" not in section
