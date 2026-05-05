@@ -402,7 +402,7 @@ async def health_check():
         "mode": "production" if all_configured else "degraded",
         "api_status": api_status,
         "timestamp": datetime.utcnow().isoformat(),
-        "deploy_version": "hp-outreach-templates-v2",
+        "deploy_version": "gamma-template-v3",
     }
 
 
