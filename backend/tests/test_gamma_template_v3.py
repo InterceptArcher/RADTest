@@ -455,3 +455,38 @@ def test_picker_returns_empty_list_when_no_data():
     creator = GammaSlideshowCreator(gamma_api_key="test-key")
     assert creator._pick_canonical_stakeholders({}) == []
     assert creator._pick_canonical_stakeholders({"stakeholders": []}) == []
+
+
+# ---------------------------------------------------------------------------
+# Task 7: Stakeholder profile structure — name + title separated under Contact
+# ---------------------------------------------------------------------------
+
+def test_stakeholder_profile_emits_name_and_title_separately():
+    """
+    Each stakeholder profile slide emits **name** on its own line and
+    title on the next line under a "Contact" subheading.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme",
+        "validated_data": {
+            "company_name": "Acme",
+            "stakeholder_map": {
+                "stakeholders": [
+                    {"name": "Jane Doe",
+                     "title": "Chief Technology Officer",
+                     "csuiteCategory": "CTO",
+                     "email": "jane@acme.com"},
+                ],
+            },
+        },
+    }
+    output = creator._format_for_template(company)
+    # name and title on separate lines under Contact heading
+    assert "**Jane Doe**" in output
+    # The title line should be its own line, not concatenated with the name.
+    assert "Jane Doe\nChief Technology Officer" in output or \
+           "**Jane Doe**\nChief Technology Officer" in output, (
+        "name and title must appear on separate consecutive lines"
+    )

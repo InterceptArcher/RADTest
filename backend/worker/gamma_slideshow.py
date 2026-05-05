@@ -757,6 +757,12 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                 data += f"Name: {name}\n"
                 data += f"Title: {title}\n"
 
+                # v3 template: Contact heading with bolded name + bare title
+                # for slide 8-12 placeholder binding.
+                data += "\n### Contact\n"
+                data += f"**{name}**\n"
+                data += f"{title}\n\n"
+
                 # Department
                 department = stakeholder.get('department', '')
                 if not department:
