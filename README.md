@@ -5,7 +5,7 @@
 **Configuration**: ✅ 100% Complete
 **API Integrations**: ✅ Apollo, PDL, GNews, Hunter.io, ZoomInfo Active
 **LLM Enrichment**: ✅ Pain Points, Opportunities, Intent Signals Generated
-**Gamma Templates**: ✅ Template g_b18rs7bet2if0n9 Used by Default
+**Gamma Templates**: ✅ Template g_uost7x0lutmwtwd (v3) Used by Default
 **Email Verification**: ✅ Hunter.io Integrated
 **Code Status**: ✅ Pushed to GitHub (Latest commit)
 **Deployment**: 🔄 Auto-deploying on Render.com
@@ -18,6 +18,46 @@
 - ⚙️ [Apollo Setup](APOLLO_SETUP.md) - Intelligence gathering configuration
 - 📊 [Configuration Status](CONFIGURATION_COMPLETE.md) - What was configured
 - 🎨 [Gamma API Setup](GAMMA_SETUP.md) - Slideshow generation configuration (✅ OPERATIONAL)
+
+---
+
+## Gamma Template v3 Migration (2026-05-05)
+
+### Why
+The new Gamma template `g_uost7x0lutmwtwd` (v3) refines the v2 layout with bolded section titles, a numbered sales-opportunity list, a 4-role canonical stakeholder map (CTO/CFO/CIO/COO), and explicit `[bracket]` placeholders on slide 7. The v2 emission format and stakeholder selection logic produced output that no longer matched the new template's placeholder bindings. This 10-task migration brings the backend into alignment.
+
+### What changed (10 commits)
+1. **Default template ID** swapped to `g_uost7x0lutmwtwd` (`19ccd89`).
+2. **Account-type 4-bucket normalization** via `_normalize_account_type()` collapses LLM's 5 buckets (incl. Subsidiary → Private) into the 4 the v3 template displays (`1aa39f4`).
+3. **Pain points** emit `**title**\n\ndescription\n\n` instead of `1. title\n   description\n` (`5365f47`).
+4. **Sales opportunities** emit numbered `**N. title**\n\nblurb\n\n` capped at 3 entries with a graceful title fallback chain (`title → name → 'Opportunity {i}'`) so missing keys never produce `**1. **` (`64d55ad`, `69e5b96`).
+5. **Slide-7 lock wording** rewritten to permit `[company]` / `[name]` / `[title]` substitution while still preventing new content sections — distinguishes substitution from modification (`71f6b7e`).
+6. **Canonical stakeholder picker** `_pick_canonical_stakeholders` returns up to 4 contacts in CTO→CFO→CIO→COO order with tiered selection (csuiteCategory → title-keyword → seniority); CIO gets a Tier-3 CISO fallback when no real CIO exists. `otherContacts` and legacy `stakeholder_profiles` become candidate pools only — they no longer get separate slides. Old `_contact_quality` / `_EXACT_ROLE_KEYWORDS` / `_RELEVANT_ROLES_TPL` helpers removed (`f4d1308`).
+7. **Per-stakeholder profile slides** now emit `### Contact` followed by `**name**` and `title` on separate lines so Gamma binds the v3 template's `[name]` and `[title]` placeholders independently (`a5ade0f`).
+8. **Communication preferences filter** emits `### Communication Preferences` with only the channels that have populated values, in fixed Email→Phone→LinkedIn order. The `Phone: Currently unavailable` fallback was removed so empty channels render zero bullets (`afceef8`).
+9. **LLM prompt reinforced** so the no-SKU constraint repeats in all 3 `recommended_solution_areas` slot descriptions, with concrete acceptable / unacceptable title examples in slot #1. Reduces drift toward niche product titles like `HP Wolf Pro Security Service` (`ecf3e29`).
+10. **Deploy version tag** bumped from `hp-outreach-templates-v2` to `gamma-template-v3` so post-deploy `curl /health` confirms the new revision is live (`49d68bf`).
+
+### Methodology
+- **Subagent-driven TDD per `superpowers:subagent-driven-development`.** Each task: implementer → spec-compliance reviewer → code-quality reviewer (separate Haiku/Sonnet subagents). All three must pass before marking a task complete. The largest task (canonical stakeholder picker) used Sonnet for the implementer; everything else used Haiku.
+- **Tests-first.** Every behavioral change has at least one failing test written before the implementation, per CLAUDE.md TDD discipline. Final state: 27 v3-specific tests + 11 pending-recovery regression tests = 38 passing.
+- **Plan and spec are first-class artifacts.** `docs/superpowers/specs/2026-05-04-gamma-template-v3-design.md` (locked spec) and `docs/superpowers/plans/2026-05-04-gamma-template-v3.md` (10-task plan with prescribed code) drove every commit. The plan's line-number references drift as commits land — implementers grep for landmarks rather than trust line numbers.
+
+### Files modified
+- `backend/worker/gamma_slideshow.py` — template default, picker helpers, formatter blocks, lock-instruction wording
+- `backend/llm_council.py` — `recommended_solution_areas` prompt strengthened across all 3 slots
+- `backend/production_main.py` — `deploy_version` tag
+- `backend/tests/test_gamma_template_v3.py` — 27 TDD tests covering Tasks 1–9
+- `docs/superpowers/specs/2026-05-04-gamma-template-v3-design.md`, `docs/superpowers/plans/2026-05-04-gamma-template-v3.md` — design + plan
+
+### Verification
+```
+backend/tests/test_gamma_template_v3.py ........... 27 passed
+backend/tests/test_gamma_pending_recovery.py ..... 11 passed
+                                                   38 passed in 0.56s
+```
+
+A regenerated deck against the v3 template should: render `Government` (or one of the 4 canonical buckets) in the executive snapshot, show 3 bolded pain points with separate description paragraphs, 3 numbered bolded sales opportunities, slide 7 with `[bracket]` placeholders auto-filled by Gamma, ≤4 stakeholder slides chosen by canonical-role, each profile with name+title on separate lines and a populated-channels-only comm-prefs list, and recommended-solution titles at capability-category granularity (never SKU level).
 
 ---
 
