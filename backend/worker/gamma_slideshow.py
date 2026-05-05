@@ -282,7 +282,7 @@ class GammaSlideshowCreator:
 
         # Build comprehensive, data-rich structured content
         data = f"""⚠️ GENERATION INSTRUCTIONS:
-- ONLY slide 7 ("Stakeholder Map: Role Profile Alignment") is LOCKED. Do NOT generate, modify, or add any content on slide 7. Use its existing template layout exactly as-is with zero changes.
+- ONLY slide 7 ("Stakeholder Map: Role Profile Alignment") has its LAYOUT locked. Do NOT generate, modify, or add any content sections on slide 7 — its existing template layout is final. However, bracket placeholders on slide 7 (e.g. [company], [name], [title]) MUST be substituted with the appropriate values from the data sections above. Substitution is not modification.
 - Slides 8-12 (individual stakeholder profile slides): Populate ALL existing template fields using the data below — all conversation starters, all phone numbers, strategic priorities, communication preferences, recommended approach. Do NOT add new sections or elements that are not already in the template (e.g. do NOT add a "Key Contacts" section). Just fill in the existing fields completely.
 - Supporting asset slides: Each section (Email Template, LinkedIn InMail Copy, Outreach Call Script, Voicemail Script, Objection Handling) should be placed on its own separate slide. Do not merge or combine different asset types onto the same slide.
 - All other slides: populate normally using the data provided below.
@@ -694,7 +694,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             return s
 
         if all_stakeholders:
-            data += "⚠️ REMINDER: ONLY slide 7 ('Stakeholder Map: Role Profile Alignment') is locked — do not touch it. Slides 8-12 (individual stakeholder profiles): populate all existing template fields fully but do NOT add new sections (no 'Key Contacts' or other invented sections). Just fill in the fields that already exist in the template.\n\n"
+            data += "⚠️ REMINDER: ONLY slide 7 ('Stakeholder Map: Role Profile Alignment') has its LAYOUT locked. Do NOT generate, modify, or add any content sections on slide 7 — its existing template layout is final. However, bracket placeholders on slide 7 (e.g. [company], [name], [title]) MUST be substituted with the appropriate values from the data sections above. Substitution is not modification. Slides 8-12 (individual stakeholder profiles): populate all existing template fields fully but do NOT add new sections (no 'Key Contacts' or other invented sections). Just fill in the fields that already exist in the template.\n\n"
             data += "=== KEY STAKEHOLDERS (ONE SLIDE PER CONTACT) ===\n\n"
             for idx, stakeholder in enumerate(all_stakeholders, 1):
                 name = stakeholder.get('name', stakeholder.get('fullName', 'Not available'))

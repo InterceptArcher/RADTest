@@ -236,3 +236,36 @@ def test_sales_opportunities_missing_title_falls_back_gracefully():
     assert "**2. Opportunity 2**" in output
     # Normal entries still work.
     assert "**3. Has title**" in output
+
+
+# ---------------------------------------------------------------------------
+# Task 5: Slide-7 lock allows bracket placeholder substitution
+# ---------------------------------------------------------------------------
+
+def test_slide_7_lock_permits_bracket_substitution():
+    """
+    The v3 template puts a [company] placeholder on slide 7
+    ("Stakeholder Map: Role Profile Alignment"). The lock instruction
+    we send to Gamma must explicitly permit bracket substitution while
+    still preventing new content sections from being generated.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "BC Liquor Distribution Branch",
+        "validated_data": {"company_name": "BC Liquor Distribution Branch"},
+    }
+    output = creator._format_for_template(company)
+
+    # Lock should still be present so Gamma doesn't generate new sections.
+    assert "slide 7" in output.lower() and "lock" in output.lower(), (
+        "slide-7 lock instruction must still be present in the inputText"
+    )
+    # New wording must explicitly mention bracket substitution.
+    assert "bracket" in output.lower() or "[company]" in output, (
+        "lock wording must explicitly permit [company] / bracket substitution"
+    )
+    # Reassuring keyword: substitution is not modification.
+    assert "substitut" in output.lower(), (
+        "expected wording that distinguishes substitution from modification"
+    )
