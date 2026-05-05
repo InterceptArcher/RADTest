@@ -257,6 +257,147 @@ class GammaSlideshowCreator:
                 "error": f"{type(e).__name__}: {str(e)}",
             }
 
+    # -------------------------------------------------------------------------
+    # Canonical-role stakeholder picker (v3 template).
+    # "information" is intentionally NOT a CIO keyword — it would otherwise
+    # pull CISO titles into the CIO slot. CISO is handled via Tier 3 fallback
+    # (see _pick_canonical_stakeholders).
+    # -------------------------------------------------------------------------
+    _CANONICAL_ROLES = ["CTO", "CFO", "CIO", "COO"]
+    _ROLE_KEYWORDS: Dict[str, List[str]] = {
+        "CTO": ["chief technology officer", "vp engineering", "vp technology",
+                "head of engineering", "head of technology", "technology",
+                "engineering", "digital", "innovation", "architect"],
+        "CFO": ["chief financial officer", "vp finance", "head of finance",
+                "finance", "financial", "treasurer", "controller", "accounting"],
+        "CIO": ["chief information officer", "vp information", "head of it",
+                "vp of it", "director of it", "infrastructure",
+                "information technology", "it ", "systems", "data"],
+        "COO": ["chief operating officer", "vp operations", "head of operations",
+                "vp of operations", "director of operations",
+                "operations", "operating", "field services", "service delivery"],
+    }
+    _CISO_KEYWORDS: List[str] = ["chief information security", "ciso",
+                                  "information security officer"]
+    _SENIORITY_RANKS: List[str] = [
+        "chief", "svp", "evp", "senior vice president",
+        "executive vice president", "vp", "vice president",
+        "head of", "director", "manager",
+    ]
+
+    def _seniority_score(self, title: str) -> int:
+        """Lower = more senior. Returns large int when no rank matches."""
+        if not title:
+            return 99
+        t = title.lower()
+        for i, rank in enumerate(self._SENIORITY_RANKS):
+            if rank in t:
+                return i
+        return 99
+
+    def _matches_role(self, title: str, role: str) -> bool:
+        if not title:
+            return False
+        t = title.lower()
+        for kw in self._ROLE_KEYWORDS[role]:
+            if kw in t:
+                return True
+        return False
+
+    def _is_security_title(self, title: str) -> bool:
+        if not title:
+            return False
+        t = title.lower()
+        return "security" in t or "ciso" in t
+
+    def _is_ciso_title(self, title: str) -> bool:
+        if not title:
+            return False
+        t = title.lower()
+        return any(kw in t for kw in self._CISO_KEYWORDS)
+
+    def _canonical_stakeholders_by_role(
+        self,
+        stakeholder_map: Dict[str, Any],
+        fallback_profiles: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Dict[str, Any]]:
+        """
+        Returns a dict keyed by canonical role ('CTO'/'CFO'/'CIO'/'COO') —
+        one contact per role, selected via tiered matching. Used both by
+        _pick_canonical_stakeholders (list output) and by the template-path
+        block that also needs best_per_role for persona_contacts population.
+        """
+        candidates: List[Dict[str, Any]] = []
+        if stakeholder_map:
+            for c in (stakeholder_map.get("stakeholders") or []):
+                if isinstance(c, dict):
+                    candidates.append(c)
+            for c in (stakeholder_map.get("otherContacts") or []):
+                if isinstance(c, dict):
+                    candidates.append(c)
+        for c in (fallback_profiles or []):
+            if isinstance(c, dict):
+                candidates.append(c)
+        if not candidates:
+            return {}
+
+        chosen_ids: set = set()
+        results: Dict[str, Dict[str, Any]] = {}
+
+        for role in self._CANONICAL_ROLES:
+            best = None
+            best_score = (99, 99)  # (tier, seniority) — lower is better
+            for c in candidates:
+                if id(c) in chosen_ids:
+                    continue
+                cat = (c.get("csuiteCategory") or "").upper()
+                title = c.get("title") or ""
+                seniority = self._seniority_score(title)
+
+                if role == "CIO":
+                    # Tier 1: csuiteCategory == 'CIO'
+                    if cat == "CIO":
+                        score = (1, seniority)
+                    # Tier 2: title-keyword match excluding security titles
+                    elif self._matches_role(title, "CIO") and not self._is_security_title(title):
+                        score = (2, seniority)
+                    # Tier 3: CISO fallback (last resort only)
+                    elif self._is_ciso_title(title):
+                        score = (3, seniority)
+                    else:
+                        continue
+                else:
+                    # Other roles: 2-tier — direct csuiteCategory or keyword match
+                    if cat == role:
+                        score = (1, seniority)
+                    elif self._matches_role(title, role):
+                        score = (2, seniority)
+                    else:
+                        continue
+
+                if score < best_score:
+                    best_score = score
+                    best = c
+
+            if best is not None:
+                chosen_ids.add(id(best))
+                results[role] = best
+
+        return results
+
+    def _pick_canonical_stakeholders(
+        self,
+        stakeholder_map: Dict[str, Any],
+        fallback_profiles: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        Returns up to 4 contacts — one each for CTO/CFO/CIO/COO in that
+        order. Skips a role if no plausible match exists in the entire
+        candidate pool. See spec for the tiered selection rules.
+        """
+        by_role = self._canonical_stakeholders_by_role(stakeholder_map, fallback_profiles)
+        return [by_role[r] for r in self._CANONICAL_ROLES if r in by_role]
+
     def _format_for_template(self, company_data: Dict[str, Any], user_email: str = None) -> str:
         """
         Format company data as structured text for template population.
@@ -558,131 +699,30 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                     data += f"{i}. {sol}\n"
                 data += "\n"
 
-        # Stakeholders for template: 1 BEST contact per C-suite role + relevant others.
-        # Template has fixed slides per role — can't duplicate. So we pick the
-        # highest-quality contact for each csuiteCategory.
-        #
-        # Quality ranking (higher = better):
-        #   +3 for true C-suite title (Chief X Officer, CEO, CTO, etc.)
-        #   +1 for each of: linkedin, any phone, email
-        # Ties broken by list order (earlier = higher priority from upstream sort).
+        # v3: deterministic canonical 4-role picker (CTO/CFO/CIO/COO).
+        # otherContacts and legacy stakeholder_profiles are candidate
+        # sources only — they never get their own slides.
         stakeholder_map = validated_data.get('stakeholder_map', {})
 
-        _RELEVANT_ROLES_TPL = {
-            'sales', 'partnership', 'partnerships', 'strategy',
-            'strategic', 'communication', 'communications',
-            'business development', 'channel', 'alliances',
-            'account', 'revenue',
-        }
+        legacy_profiles = validated_data.get('stakeholder_profiles', [])
+        if isinstance(legacy_profiles, dict):
+            # Old shape: dict keyed by role_type — flatten to list.
+            flat = []
+            for role_type, profile in legacy_profiles.items():
+                if isinstance(profile, dict):
+                    entry = {**profile}
+                    if not entry.get('csuiteCategory'):
+                        entry['csuiteCategory'] = role_type
+                    flat.append(entry)
+            legacy_profiles = flat
+        elif not isinstance(legacy_profiles, list):
+            legacy_profiles = []
 
-        # C-suite title keywords that indicate a true chief officer
-        _CSUITE_TITLES = {'chief', 'ceo', 'cto', 'cfo', 'cio', 'ciso', 'coo', 'cpo', 'cmo',
-                          'president', 'founder', 'co-founder'}
-
-        # Mapping from csuiteCategory to title keywords that indicate an exact role match
-        _EXACT_ROLE_KEYWORDS = {
-            'CEO': ['ceo', 'chief executive'],
-            'CTO': ['cto', 'chief technology'],
-            'CIO': ['cio', 'chief information officer'],
-            'CISO': ['ciso', 'chief information security', 'chief security officer'],
-            'CFO': ['cfo', 'chief financial'],
-            'COO': ['coo', 'chief operating'],
-            'CMO': ['cmo', 'chief marketing'],
-            'CPO': ['cpo', 'chief product', 'chief people'],
-        }
-
-        def _contact_quality(s, category=''):
-            """Score a contact for sales outreach quality (higher = better).
-
-            Scoring:
-              +5  exact C-suite title match for the category (e.g. CTO title in CTO slot)
-              +3  any C-suite-level title (chief/president/founder)
-              +2  has email (critical for outreach)
-              +2  has any phone number
-              +2  has linkedin profile
-            Contacts with all three contact channels (email+phone+linkedin) are strongly
-            preferred, matching the rule: ideally linkedin, phone, AND email present.
-            """
-            score = 0
-            _c = s.get('contact') or {}
-            if not isinstance(_c, dict):
-                _c = {}
-
-            # Has email? (+2 — essential for outreach)
-            if s.get('email') or _c.get('email'):
-                score += 2
-
-            # Has any phone? (+2 — high-value for direct contact)
-            has_phone = any([
-                s.get('direct_phone'), s.get('mobile_phone'), s.get('company_phone'),
-                s.get('phone'), s.get('directPhone'), s.get('companyPhone'),
-                _c.get('directPhone'), _c.get('mobilePhone'),
-                _c.get('companyPhone'), _c.get('phone'),
-            ])
-            if has_phone:
-                score += 2
-
-            # Has linkedin? (+2 — essential for professional outreach)
-            if s.get('linkedin_url') or s.get('linkedinUrl') or _c.get('linkedinUrl'):
-                score += 2
-
-            # Exact role match: title contains the specific C-suite abbreviation
-            # for the category this contact is being evaluated for (e.g. "CTO" in CTO slot)
-            title_lower = (s.get('title') or '').lower()
-            if category and category in _EXACT_ROLE_KEYWORDS:
-                if any(kw in title_lower for kw in _EXACT_ROLE_KEYWORDS[category]):
-                    score += 5
-
-            # General C-suite title bonus (any chief/president/founder)
-            if any(kw in title_lower for kw in _CSUITE_TITLES):
-                score += 3
-
-            return score
-
-        # 1. Executive stakeholders — pick 1 best per csuiteCategory
-        # Rule: 1 slide per C-suite role, pick the contact whose title most closely
-        # matches the role AND has the most complete contact info (linkedin+phone+email)
-        best_per_role = {}  # csuiteCategory -> best contact
-        if stakeholder_map and stakeholder_map.get('stakeholders'):
-            for s in stakeholder_map['stakeholders']:
-                if not isinstance(s, dict):
-                    continue
-                cat = s.get('csuiteCategory', '')
-                if not cat:
-                    continue
-                existing = best_per_role.get(cat)
-                if not existing or _contact_quality(s, cat) > _contact_quality(existing, cat):
-                    best_per_role[cat] = s
-
-        executive_stakeholders = list(best_per_role.values())
-
-        # 2. Relevant other contacts filtered by role
-        relevant_other_contacts = []
-        if stakeholder_map and stakeholder_map.get('otherContacts'):
-            for contact in stakeholder_map['otherContacts']:
-                if not isinstance(contact, dict):
-                    continue
-                combined = f"{(contact.get('title') or '')} {(contact.get('department') or '')} {(contact.get('roleType') or '')}".lower()
-                if any(role in combined for role in _RELEVANT_ROLES_TPL):
-                    relevant_other_contacts.append(contact)
-
-        # Fallback to legacy stakeholder_profiles
-        if not executive_stakeholders and not relevant_other_contacts:
-            stakeholder_profiles = validated_data.get('stakeholder_profiles', [])
-            if isinstance(stakeholder_profiles, list):
-                executive_stakeholders = [s for s in stakeholder_profiles if isinstance(s, dict)]
-            elif isinstance(stakeholder_profiles, dict):
-                # LLM council returns {role_type: profile_dict} — convert to list
-                for role_type, profile in stakeholder_profiles.items():
-                    if isinstance(profile, dict):
-                        entry = dict(profile)
-                        if not entry.get('title'):
-                            entry['title'] = role_type
-                        if not entry.get('csuiteCategory'):
-                            entry['csuiteCategory'] = role_type
-                        executive_stakeholders.append(entry)
-
-        all_stakeholders = executive_stakeholders + relevant_other_contacts
+        best_per_role = self._canonical_stakeholders_by_role(
+            stakeholder_map,
+            fallback_profiles=legacy_profiles,
+        )
+        all_stakeholders = [best_per_role[r] for r in ['CTO', 'CFO', 'CIO', 'COO'] if r in best_per_role]
 
         def _tpl_phone(val):
             """Coerce phone value to clean string or empty."""

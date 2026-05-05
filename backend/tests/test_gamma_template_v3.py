@@ -269,3 +269,189 @@ def test_slide_7_lock_permits_bracket_substitution():
     assert "substitut" in output.lower(), (
         "expected wording that distinguishes substitution from modification"
     )
+
+
+# ---------------------------------------------------------------------------
+# Task 6: _pick_canonical_stakeholders — 4-role canonical picker with
+# tiered CIO/CISO fallback and seniority ranking
+# ---------------------------------------------------------------------------
+
+def _stake(name, title, csuite=None, email="", phone="", linkedin=""):
+    return {
+        "name": name,
+        "title": title,
+        "csuiteCategory": csuite,
+        "email": email,
+        "phone": phone,
+        "linkedin": linkedin,
+    }
+
+
+def test_picker_returns_all_four_when_csuite_categories_match():
+    """
+    With direct csuiteCategory matches for CTO, CFO, CIO, COO, the picker
+    returns exactly those 4 in CTO → CFO → CIO → COO order.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    sm = {
+        "stakeholders": [
+            _stake("Alice CFO",  "Chief Financial Officer", csuite="CFO"),
+            _stake("Bob CIO",    "Chief Information Officer", csuite="CIO"),
+            _stake("Carol COO",  "Chief Operating Officer",  csuite="COO"),
+            _stake("Dan CTO",    "Chief Technology Officer", csuite="CTO"),
+        ],
+    }
+    picked = creator._pick_canonical_stakeholders(sm)
+    titles = [p["title"] for p in picked]
+    assert titles == [
+        "Chief Technology Officer",
+        "Chief Financial Officer",
+        "Chief Information Officer",
+        "Chief Operating Officer",
+    ]
+
+
+def test_picker_skips_role_when_no_match_exists():
+    """No COO match → 3 stakeholders returned, not 4 with a blank slot."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    sm = {
+        "stakeholders": [
+            _stake("CTO", "Chief Technology Officer", csuite="CTO"),
+            _stake("CFO", "Chief Financial Officer",  csuite="CFO"),
+            _stake("CIO", "Chief Information Officer", csuite="CIO"),
+        ],
+    }
+    picked = creator._pick_canonical_stakeholders(sm)
+    assert len(picked) == 3
+
+
+def test_picker_falls_back_to_title_keywords_when_csuite_missing():
+    """
+    No csuiteCategory tags at all — picker uses title-keyword matching.
+    "VP of Operations" fills COO; "Director of Information Technology" fills CIO.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    sm = {
+        "stakeholders": [
+            _stake("Tech",  "VP of Engineering"),         # → CTO
+            _stake("Money", "VP of Finance"),             # → CFO
+            _stake("Info",  "Director of Information Technology"),  # → CIO
+            _stake("Ops",   "VP of Operations"),          # → COO
+        ],
+    }
+    picked = creator._pick_canonical_stakeholders(sm)
+    assert {p["name"] for p in picked} == {"Tech", "Money", "Info", "Ops"}
+
+
+def test_picker_seniority_ranks_higher_when_multiple_match():
+    """
+    When multiple contacts match the same role, prefer Chief > VP > Director.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    sm = {
+        "stakeholders": [
+            _stake("Junior",  "Director of Operations"),
+            _stake("Mid",     "VP of Operations"),
+            _stake("Senior",  "Chief Operating Officer"),
+        ],
+    }
+    picked = creator._pick_canonical_stakeholders(sm)
+    coo_pick = [p for p in picked if p["name"] == "Senior"]
+    assert coo_pick, f"expected Chief to win COO slot, got {[p['name'] for p in picked]}"
+
+
+def test_picker_dedupes_same_person_across_slots():
+    """
+    A contact whose title matches both CTO and CIO keywords (e.g.,
+    "Chief Technology and Information Officer") fills the earlier slot
+    only; the later slot then looks for its own next-best match.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    sm = {
+        "stakeholders": [
+            _stake("Combo", "Chief Technology and Information Officer"),
+            _stake("Backup CIO", "VP Information Technology"),
+        ],
+    }
+    picked = creator._pick_canonical_stakeholders(sm)
+    names = [p["name"] for p in picked]
+    # "Combo" takes CTO; "Backup CIO" takes CIO.
+    assert "Combo" in names
+    assert names.count("Combo") == 1, (
+        f"contact must not appear twice across slots, got {names}"
+    )
+
+
+def test_picker_ciso_only_fills_cio_when_no_cio_exists():
+    """
+    Tier-3 CISO fallback: when the only "Information"-titled person is a
+    CISO and no other CIO match exists, the CISO fills the CIO slot.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    sm = {
+        "stakeholders": [
+            _stake("CTO Person",  "Chief Technology Officer", csuite="CTO"),
+            _stake("CISO Person", "Chief Information Security Officer", csuite="CISO"),
+        ],
+    }
+    picked = creator._pick_canonical_stakeholders(sm)
+    cio_pick = [p for p in picked if "Security" in p["title"]]
+    assert cio_pick, "CISO should fall back into CIO slot when no real CIO exists"
+
+
+def test_picker_ciso_does_not_displace_real_cio():
+    """
+    When both a CIO and a CISO are present, the real CIO takes the CIO
+    slot; the CISO is dropped (no separate CISO slide).
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    sm = {
+        "stakeholders": [
+            _stake("Real CIO",  "Chief Information Officer", csuite="CIO"),
+            _stake("CISO",      "Chief Information Security Officer", csuite="CISO"),
+        ],
+    }
+    picked = creator._pick_canonical_stakeholders(sm)
+    cio_titles = [p["title"] for p in picked]
+    assert "Chief Information Officer" in cio_titles
+    assert "Chief Information Security Officer" not in cio_titles
+
+
+def test_picker_uses_other_contacts_as_candidate_pool_only():
+    """
+    otherContacts are eligible candidates for canonical-role fallback
+    but never get their own slides directly. A "VP Operations" listed
+    in otherContacts (not in stakeholders) MUST be eligible for COO.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    sm = {
+        "stakeholders": [
+            _stake("CTO Only", "Chief Technology Officer", csuite="CTO"),
+        ],
+        "otherContacts": [
+            _stake("From Other", "VP of Operations"),
+        ],
+    }
+    picked = creator._pick_canonical_stakeholders(sm)
+    names = [p["name"] for p in picked]
+    assert "From Other" in names, (
+        f"otherContacts must be eligible as canonical-role candidates, got {names}"
+    )
+    # And they don't show up twice (no separate "otherContacts" slide).
+    assert names.count("From Other") == 1
+
+
+def test_picker_returns_empty_list_when_no_data():
+    """Empty stakeholder_map and no fallbacks → empty list."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    assert creator._pick_canonical_stakeholders({}) == []
+    assert creator._pick_canonical_stakeholders({"stakeholders": []}) == []
