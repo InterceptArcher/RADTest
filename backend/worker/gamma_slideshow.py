@@ -536,7 +536,7 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
             data += "=== SALES OPPORTUNITIES ===\n\n"
             for i, opp in enumerate(opportunities[:3], 1):
                 if isinstance(opp, dict):
-                    title = opp.get('title', '')
+                    title = opp.get('title', opp.get('name', f'Opportunity {i}'))
                     desc = opp.get('description', '')
                     if desc:
                         data += f"**{i}. {title}**\n\n{desc}\n\n"

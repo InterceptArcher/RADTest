@@ -204,3 +204,35 @@ def test_sales_opportunities_caps_at_three():
     output = creator._format_for_template(company)
     assert "**4. Extra**" not in output
     assert "Should not render." not in output
+
+
+def test_sales_opportunities_missing_title_falls_back_gracefully():
+    """
+    When an opportunity dict has no `title`, the template path must NOT emit
+    an empty bold span like `**1. **`. It should fall back to `name` first,
+    then to a generic `Opportunity {i}` label — mirroring the markdown path
+    and the pain-points pattern.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme Co",
+        "validated_data": {"company_name": "Acme Co"},
+        "sales_opportunities": [
+            {"name": "Named only", "description": "Falls back to name."},
+            {"description": "No title or name at all."},
+            {"title": "Has title", "description": "Normal."},
+        ],
+    }
+    output = creator._format_for_template(company)
+
+    # Must not emit ugly empty bold span.
+    assert "**1. **" not in output
+    assert "**2. **" not in output
+
+    # `name` is used when `title` is absent.
+    assert "**1. Named only**" in output
+    # When neither title nor name exists, a generic label is used.
+    assert "**2. Opportunity 2**" in output
+    # Normal entries still work.
+    assert "**3. Has title**" in output
