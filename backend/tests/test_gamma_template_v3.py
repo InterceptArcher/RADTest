@@ -582,3 +582,46 @@ def test_comm_prefs_only_email_present():
     assert "Email: eo@acme.com" in section
     assert "Phone:" not in section
     assert "LinkedIn:" not in section
+
+
+# ---------------------------------------------------------------------------
+# Task 9: LLM prompt reinforcement — anti-SKU constraint in all 3 slots
+# ---------------------------------------------------------------------------
+
+def test_llm_prompt_anti_sku_constraint_in_all_three_slots():
+    """
+    The recommended_solution_areas prompt block must repeat the no-SKU
+    constraint in all three slot descriptions. Read the source of
+    backend/llm_council.py and assert the constraint marker appears
+    at least 3 times within the recommended_solution_areas block.
+    """
+    import os, re
+    # Tests run with cwd=backend, so resolve relative to the test file:
+    # backend/tests/test_gamma_template_v3.py → ../llm_council.py
+    src_path = os.path.join(os.path.dirname(__file__), "..", "llm_council.py")
+    with open(src_path) as f:
+        src = f.read()
+
+    # Extract the recommended_solution_areas list block.
+    m = re.search(
+        r'"recommended_solution_areas"\s*:\s*\[(.*?)\]\s*\}\}',
+        src, re.DOTALL,
+    )
+    assert m, "could not locate recommended_solution_areas block in llm_council.py"
+    block = m.group(1)
+
+    # The reinforced prompt repeats the constraint in all 3 slot descriptions.
+    # We accept any of these markers as evidence of the constraint:
+    markers = ["MUST NOT", "product names", "no SKU", "no specific HP product"]
+    occurrences = sum(block.count(marker) for marker in markers)
+    assert occurrences >= 3, (
+        f"expected the no-SKU constraint to appear in all 3 slots "
+        f"(>=3 marker occurrences), found {occurrences}. Block:\n{block}"
+    )
+
+    # Concrete examples should be in the prompt as further reinforcement.
+    assert "endpoint security posture" in block.lower() or \
+           "ai-ready" in block.lower() or \
+           "managed device lifecycle" in block.lower(), (
+        "expected at least one concrete acceptable-title example in the prompt"
+    )

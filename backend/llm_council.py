@@ -502,9 +502,9 @@ Output a clean JSON object with BOTH original and EXPANDED fields:
             {{"title": "Third opportunity area", "description": "4-6 sentence in-depth blurb."}}
         ],
         "recommended_solution_areas": [
-            {{"title": "High-level HP strategic area (contextual hook)", "description": "3-5 sentence explanation of how to position HP as a strategic partner in this area. Frame as high-level ways HP can help — e.g. device standardization, endpoint security posture, lifecycle management, workplace modernization — NOT specific HP product lines or SKUs. Write from the perspective of giving a salesperson strategic framing they can run with."}},
-            {{"title": "Second HP strategic area (contextual hook)", "description": "3-5 sentence high-level HP strategic rationale."}},
-            {{"title": "Third HP strategic area (contextual hook)", "description": "3-5 sentence high-level HP strategic rationale."}}
+            {{"title": "High-level HP strategic area (broad capability category)", "description": "3-5 sentence explanation of how to position HP as a strategic partner in this area. Title MUST NOT be a specific HP product line, SKU, or model number — it MUST be a broad capability category. Acceptable titles: 'endpoint security posture', 'AI-ready workstation fleet', 'managed device lifecycle', 'hybrid-work device strategy'. Unacceptable titles: 'HP Wolf Pro Security Service', 'HP Z by HP', 'HP EliteBook 840 G10', 'HP Anyware'. Frame as high-level ways HP can help — e.g. device standardization, endpoint security posture, lifecycle management, workplace modernization. Write from the perspective of giving a salesperson strategic framing they can run with."}},
+            {{"title": "Second HP strategic area (broad capability category — MUST NOT be a product name or SKU)", "description": "3-5 sentence high-level HP strategic rationale. Title MUST be a broad capability category, never a specific HP product name, SKU, or model number."}},
+            {{"title": "Third HP strategic area (broad capability category — MUST NOT be a product name or SKU)", "description": "3-5 sentence high-level HP strategic rationale. Title MUST be a broad capability category, never a specific HP product name, SKU, or model number."}}
         ]
     }},
 
