@@ -772,7 +772,7 @@ Company Pain Points:
 Generate a comprehensive profile with:
 1. bio: 2-3 sentence bio describing their role focus and background (realistic, not generic)
 2. strategic_priorities: 3 priorities (each with name and description) specific to this role and company
-3. communication_preference: Preferred contact methods (e.g., "Email / LinkedIn / Executive Events")
+3. communication_preference: Preferred contact methods drawn ONLY from the set {Phone, Email, LinkedIn} — list only the channels for which contact data is actually available, joined by " / " in Phone → Email → LinkedIn order. Do NOT include "Events" or any other channel.
 4. conversation_starters: 3 conversation starters (each with topic and specific question) tied to pain points
 
 Format as JSON:

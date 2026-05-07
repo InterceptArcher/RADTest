@@ -39,16 +39,38 @@ def test_explicit_template_id_overrides_default():
 
 
 # ---------------------------------------------------------------------------
-# Task 2: Account type normalization (5 → 4 bucket pass-through)
+# Task 2: Account type normalization — strict 2-bucket Public/Private.
+# Public = publicly traded company. Private = everything else (incl.
+# Government, Non-Profit, Subsidiary, Unknown).
 # ---------------------------------------------------------------------------
 
-def test_normalize_account_type_passthrough_buckets():
-    """Public, Private, Government, Non-Profit pass through verbatim."""
+def test_normalize_account_type_public_passthrough():
+    """Public passes through verbatim (publicly traded company)."""
     from worker.gamma_slideshow import _normalize_account_type
     assert _normalize_account_type("Public") == "Public"
+
+
+def test_normalize_account_type_private_passthrough():
+    """Private passes through verbatim."""
+    from worker.gamma_slideshow import _normalize_account_type
     assert _normalize_account_type("Private") == "Private"
-    assert _normalize_account_type("Government") == "Government"
-    assert _normalize_account_type("Non-Profit") == "Non-Profit"
+
+
+def test_normalize_account_type_government_collapses_to_private():
+    """Government is no longer a distinct bucket — it collapses to Private."""
+    from worker.gamma_slideshow import _normalize_account_type
+    assert _normalize_account_type("Government") == "Private"
+    assert _normalize_account_type("government agency") == "Private"
+    assert _normalize_account_type("Federal Government") == "Private"
+
+
+def test_normalize_account_type_nonprofit_collapses_to_private():
+    """Non-Profit is no longer a distinct bucket — it collapses to Private."""
+    from worker.gamma_slideshow import _normalize_account_type
+    assert _normalize_account_type("Non-Profit") == "Private"
+    assert _normalize_account_type("non-profit organization") == "Private"
+    assert _normalize_account_type("nonprofit") == "Private"
+    assert _normalize_account_type("non profit") == "Private"
 
 
 def test_normalize_account_type_subsidiary_to_private():
@@ -63,9 +85,7 @@ def test_normalize_account_type_case_insensitive():
     assert _normalize_account_type("public") == "Public"
     assert _normalize_account_type("PUBLIC") == "Public"
     assert _normalize_account_type("Publicly traded") == "Public"
-    assert _normalize_account_type("government agency") == "Government"
-    assert _normalize_account_type("non-profit organization") == "Non-Profit"
-    assert _normalize_account_type("nonprofit") == "Non-Profit"
+    assert _normalize_account_type("publicly-traded company") == "Public"
 
 
 def test_normalize_account_type_unknown_defaults_to_private():
@@ -192,6 +212,26 @@ def test_sales_opportunities_format_template_path():
     idx_blurb = output.index("Validate appetite for a fleet refresh")
     between = output[idx_title:idx_blurb]
     assert "\n\n" in between
+
+
+def test_sales_opportunities_visible_blank_line_between_title_and_description():
+    """
+    Between the bolded numbered title (e.g. '**1. ...**') and its description,
+    we emit an explicit '&nbsp;' empty-line marker so Gamma renders a
+    visible empty line instead of collapsing the paragraph break.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = _make_validated_with_opportunities()
+    output = creator._format_for_template(company)
+
+    idx_title = output.index("**1. Endpoint refresh**")
+    idx_blurb = output.index("Validate appetite for a fleet refresh")
+    between = output[idx_title:idx_blurb]
+    assert "&nbsp;" in between, (
+        "expected an &nbsp; empty-line marker between numbered title and "
+        "description so Gamma renders a visible empty line; got: " + repr(between)
+    )
 
 
 def test_sales_opportunities_caps_at_three():
@@ -582,6 +622,266 @@ def test_comm_prefs_only_email_present():
     assert "Email: eo@acme.com" in section
     assert "Phone:" not in section
     assert "LinkedIn:" not in section
+
+
+# ---------------------------------------------------------------------------
+# Communication Preference summary line — "Phone / Email / LinkedIn",
+# Events dropped entirely, channels only listed if data is available.
+# ---------------------------------------------------------------------------
+
+def _comm_pref_section(output: str, name: str) -> str:
+    """Slice the per-stakeholder block, starting at the **name** marker."""
+    start = output.find(f"**{name}**")
+    assert start >= 0, f"could not find stakeholder section for {name}"
+    return output[start:start + 2000]
+
+
+def test_preferred_contact_lists_all_three_when_all_available():
+    """All three channels available → 'Phone / Email / LinkedIn'."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme",
+        "validated_data": {
+            "company_name": "Acme",
+            "stakeholder_map": {
+                "stakeholders": [
+                    {"name": "All Three", "title": "Chief Technology Officer",
+                     "csuiteCategory": "CTO",
+                     "email": "all3@acme.com",
+                     "phone": "+1-555-1234",
+                     "linkedin": "https://linkedin.com/in/all3"},
+                ],
+            },
+        },
+    }
+    output = creator._format_for_template(company)
+    section = _comm_pref_section(output, "All Three")
+    assert "Preferred Contact: Phone / Email / LinkedIn" in section
+
+
+def test_preferred_contact_omits_events_channel():
+    """Events must never appear in the Preferred Contact line."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme",
+        "validated_data": {
+            "company_name": "Acme",
+            "stakeholder_map": {
+                "stakeholders": [
+                    {"name": "No Events", "title": "Chief Technology Officer",
+                     "csuiteCategory": "CTO",
+                     "email": "ne@acme.com",
+                     "phone": "+1-555-9999",
+                     "linkedin": "https://linkedin.com/in/ne"},
+                ],
+            },
+        },
+    }
+    output = creator._format_for_template(company)
+    section = _comm_pref_section(output, "No Events")
+    # Events must not appear anywhere in the Preferred Contact summary line.
+    pref_line_start = section.find("Preferred Contact:")
+    assert pref_line_start >= 0
+    pref_line = section[pref_line_start:section.find("\n", pref_line_start)]
+    assert "Event" not in pref_line, (
+        f"Preferred Contact line must not mention Events; got: {pref_line!r}"
+    )
+
+
+def test_preferred_contact_drops_phone_when_phone_missing():
+    """No phone available → 'Email / LinkedIn' (no Phone token)."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme",
+        "validated_data": {
+            "company_name": "Acme",
+            "stakeholder_map": {
+                "stakeholders": [
+                    {"name": "No Phone Pref", "title": "Chief Technology Officer",
+                     "csuiteCategory": "CTO",
+                     "email": "npp@acme.com",
+                     "phone": "",
+                     "linkedin": "https://linkedin.com/in/npp"},
+                ],
+            },
+        },
+    }
+    output = creator._format_for_template(company)
+    section = _comm_pref_section(output, "No Phone Pref")
+    pref_line_start = section.find("Preferred Contact:")
+    assert pref_line_start >= 0
+    pref_line = section[pref_line_start:section.find("\n", pref_line_start)]
+    # Must list Email and LinkedIn but not Phone.
+    assert "Email" in pref_line
+    assert "LinkedIn" in pref_line
+    assert "Phone" not in pref_line, f"got: {pref_line!r}"
+
+
+def test_preferred_contact_email_only_when_only_email_present():
+    """Only email available → 'Email' (no separators)."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme",
+        "validated_data": {
+            "company_name": "Acme",
+            "stakeholder_map": {
+                "stakeholders": [
+                    {"name": "Email Pref Only", "title": "Chief Technology Officer",
+                     "csuiteCategory": "CTO",
+                     "email": "eop@acme.com",
+                     "phone": "",
+                     "linkedin": ""},
+                ],
+            },
+        },
+    }
+    output = creator._format_for_template(company)
+    section = _comm_pref_section(output, "Email Pref Only")
+    assert "Preferred Contact: Email" in section
+    pref_line_start = section.find("Preferred Contact:")
+    pref_line = section[pref_line_start:section.find("\n", pref_line_start)]
+    assert "Phone" not in pref_line
+    assert "LinkedIn" not in pref_line
+
+
+def test_preferred_contact_order_is_phone_email_linkedin():
+    """When multiple channels are present, order must be Phone → Email → LinkedIn."""
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    company = {
+        "company_name": "Acme",
+        "validated_data": {
+            "company_name": "Acme",
+            "stakeholder_map": {
+                "stakeholders": [
+                    {"name": "Order Check", "title": "Chief Technology Officer",
+                     "csuiteCategory": "CTO",
+                     "email": "oc@acme.com",
+                     "phone": "+1-555-7777",
+                     "linkedin": "https://linkedin.com/in/oc"},
+                ],
+            },
+        },
+    }
+    output = creator._format_for_template(company)
+    section = _comm_pref_section(output, "Order Check")
+    pref_line_start = section.find("Preferred Contact:")
+    pref_line = section[pref_line_start:section.find("\n", pref_line_start)]
+    p_idx = pref_line.find("Phone")
+    e_idx = pref_line.find("Email")
+    l_idx = pref_line.find("LinkedIn")
+    assert p_idx < e_idx < l_idx, (
+        f"Preferred Contact order must be Phone → Email → LinkedIn; got: {pref_line!r}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Key Signals: visible empty line between Signal blurb and "What this means".
+# Active path emits explicit '**Signal:** ... &nbsp; **What this means:** ...'
+# so Gamma cannot collapse the paragraph break. Markdown path mirrors this.
+# ---------------------------------------------------------------------------
+
+def _make_validated_with_signals():
+    return {
+        "company_name": "Acme Co",
+        "validated_data": {
+            "company_name": "Acme Co",
+            "news_triggers": {
+                "funding": "Acme raised $25M Series B in Q1 2026.",
+                "expansions": "Opened new offices in Austin and Dublin.",
+                "partnerships": "Announced strategic partnership with Globex.",
+            },
+        },
+    }
+
+
+def test_key_signals_template_emits_signal_and_what_this_means_with_visible_separator():
+    """
+    The active template path emits explicit Key Signals structure with
+    '**Signal:** {blurb}' and '**What this means:** {analysis}', separated
+    by an '&nbsp;' empty-line marker so Gamma renders a visible empty line.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    output = creator._format_for_template(_make_validated_with_signals())
+
+    # The funding signal must emit Signal: + What this means: structure.
+    idx_signal = output.find("**Signal:**")
+    idx_wtm = output.find("**What this means:**")
+    assert idx_signal >= 0, "expected explicit '**Signal:**' label in template data"
+    assert idx_wtm >= 0, "expected explicit '**What this means:**' label in template data"
+    assert idx_signal < idx_wtm, "Signal must come before What this means"
+
+    between = output[idx_signal:idx_wtm]
+    assert "&nbsp;" in between, (
+        "expected an '&nbsp;' empty-line marker between Signal blurb and "
+        "What this means section; got: " + repr(between[:400])
+    )
+
+
+def test_key_signals_markdown_path_emits_visible_separator():
+    """
+    The legacy markdown path (used when no template_id is set) also inserts
+    the '&nbsp;' empty-line marker between Signal and What this means.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    md = creator._generate_markdown(_make_validated_with_signals())
+
+    idx_signal = md.find("**Signal:**")
+    idx_wtm = md.find("**What this means:**")
+    assert idx_signal >= 0 and idx_wtm >= 0
+    assert idx_signal < idx_wtm
+    between = md[idx_signal:idx_wtm]
+    assert "&nbsp;" in between, (
+        "markdown path must also include '&nbsp;' separator between Signal "
+        "and What this means; got: " + repr(between[:400])
+    )
+
+
+# ---------------------------------------------------------------------------
+# Opportunity Themes (markdown path): visible empty line after bolded numbered
+# subhead before its description.
+# ---------------------------------------------------------------------------
+
+def test_sales_opportunities_markdown_path_visible_separator_after_numbered_title():
+    """
+    Markdown path reads sales_opportunities from validated_data and strips
+    leading 'Validate:' / 'Qualify:' tokens, so the fixture description here
+    avoids those prefixes to keep the assertion stable.
+    """
+    from worker.gamma_slideshow import GammaSlideshowCreator
+    creator = GammaSlideshowCreator(gamma_api_key="test-key")
+    md_opps = [
+        {"title": "Endpoint refresh",
+         "description": "Explore appetite for a fleet refresh aligned to FY26 capex."},
+        {"title": "Hybrid work enablement",
+         "description": "Confirm hybrid mandate and current device gaps."},
+        {"title": "Security posture",
+         "description": "Probe maturity of endpoint security tooling and policy."},
+    ]
+    company = {
+        "company_name": "Acme Co",
+        "validated_data": {
+            "company_name": "Acme Co",
+            "sales_opportunities": md_opps,
+            "industry": "technology",
+            "employee_count": 5000,
+        },
+    }
+    md = creator._generate_markdown(company)
+
+    idx_title = md.index("**1. Endpoint refresh**")
+    idx_blurb = md.index("Explore appetite for a fleet refresh")
+    between = md[idx_title:idx_blurb]
+    assert "&nbsp;" in between, (
+        "markdown path must include '&nbsp;' between numbered title and "
+        "description; got: " + repr(between)
+    )
 
 
 # ---------------------------------------------------------------------------

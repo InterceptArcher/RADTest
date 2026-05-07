@@ -28,13 +28,13 @@ The new Gamma template `g_uost7x0lutmwtwd` (v3) refines the v2 layout with bolde
 
 ### What changed (10 commits)
 1. **Default template ID** swapped to `g_uost7x0lutmwtwd` (`19ccd89`).
-2. **Account-type 4-bucket normalization** via `_normalize_account_type()` collapses LLM's 5 buckets (incl. Subsidiary → Private) into the 4 the v3 template displays (`1aa39f4`).
+2. **Account-type strict 2-bucket normalization** via `_normalize_account_type()` returns `Public` only for publicly-traded companies; everything else (Government, Non-Profit, Subsidiary, Private, Unknown) collapses to `Private` (`1aa39f4`, plus 2026-05-07 follow-up tightening Government/Non-Profit → Private).
 3. **Pain points** emit `**title**\n\ndescription\n\n` instead of `1. title\n   description\n` (`5365f47`).
 4. **Sales opportunities** emit numbered `**N. title**\n\nblurb\n\n` capped at 3 entries with a graceful title fallback chain (`title → name → 'Opportunity {i}'`) so missing keys never produce `**1. **` (`64d55ad`, `69e5b96`).
 5. **Slide-7 lock wording** rewritten to permit `[company]` / `[name]` / `[title]` substitution while still preventing new content sections — distinguishes substitution from modification (`71f6b7e`).
 6. **Canonical stakeholder picker** `_pick_canonical_stakeholders` returns up to 4 contacts in CTO→CFO→CIO→COO order with tiered selection (csuiteCategory → title-keyword → seniority); CIO gets a Tier-3 CISO fallback when no real CIO exists. `otherContacts` and legacy `stakeholder_profiles` become candidate pools only — they no longer get separate slides. Old `_contact_quality` / `_EXACT_ROLE_KEYWORDS` / `_RELEVANT_ROLES_TPL` helpers removed (`f4d1308`).
 7. **Per-stakeholder profile slides** now emit `### Contact` followed by `**name**` and `title` on separate lines so Gamma binds the v3 template's `[name]` and `[title]` placeholders independently (`a5ade0f`).
-8. **Communication preferences filter** emits `### Communication Preferences` with only the channels that have populated values, in fixed Email→Phone→LinkedIn order. The `Phone: Currently unavailable` fallback was removed so empty channels render zero bullets (`afceef8`).
+8. **Communication preferences filter** emits `### Communication Preferences` with only the channels that have populated values, in fixed Email→Phone→LinkedIn order. The `Phone: Currently unavailable` fallback was removed so empty channels render zero bullets (`afceef8`). The summary "Preferred Contact:" / "Communication preference" line is now also computed from available channels — Phone / Email / LinkedIn order, joined by ` / `, dropping the legacy "Events" channel entirely (2026-05-07).
 9. **LLM prompt reinforced** so the no-SKU constraint repeats in all 3 `recommended_solution_areas` slot descriptions, with concrete acceptable / unacceptable title examples in slot #1. Reduces drift toward niche product titles like `HP Wolf Pro Security Service` (`ecf3e29`).
 10. **Deploy version tag** bumped from `hp-outreach-templates-v2` to `gamma-template-v3` so post-deploy `curl /health` confirms the new revision is live (`49d68bf`).
 
@@ -57,7 +57,7 @@ backend/tests/test_gamma_pending_recovery.py ..... 11 passed
                                                    38 passed in 0.56s
 ```
 
-A regenerated deck against the v3 template should: render `Government` (or one of the 4 canonical buckets) in the executive snapshot, show 3 bolded pain points with separate description paragraphs, 3 numbered bolded sales opportunities, slide 7 with `[bracket]` placeholders auto-filled by Gamma, ≤4 stakeholder slides chosen by canonical-role, each profile with name+title on separate lines and a populated-channels-only comm-prefs list, and recommended-solution titles at capability-category granularity (never SKU level).
+A regenerated deck against the v3 template should: render `Public` or `Private` (the strict 2-bucket account type) in the executive snapshot, show 3 bolded pain points with separate description paragraphs, 3 numbered bolded sales opportunities each with a visible empty line (`&nbsp;` marker) between title and description, a Key Signals slide where each Signal blurb is separated from its What-this-means analysis by a visible empty line, slide 7 with `[bracket]` placeholders auto-filled by Gamma, ≤4 stakeholder slides chosen by canonical-role, each profile with name+title on separate lines, a populated-channels-only comm-prefs list, and a "Phone / Email / LinkedIn"-style summary line listing only the channels actually available, and recommended-solution titles at capability-category granularity (never SKU level).
 
 ---
 

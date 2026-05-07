@@ -205,4 +205,8 @@ def test_contact_details_on_individual_slide():
     assert "Seasoned technology leader" in markdown
     assert "Cloud Migration" in markdown
     assert "AI Adoption" in markdown
-    assert "Email and LinkedIn" in markdown
+    # Communication preference is now computed from available channels in
+    # Phone / Email / LinkedIn order; the LLM-supplied free-text value is
+    # no longer rendered. This stakeholder has phone + email + linkedin,
+    # so all three channels must appear in the comm-pref line.
+    assert "Phone / Email / LinkedIn" in markdown

@@ -20,33 +20,22 @@ logger = logging.getLogger(__name__)
 
 def _normalize_account_type(company_type) -> str:
     """
-    Map LLM-emitted company_type values into the 4-bucket account-type
-    taxonomy used by Gamma template v3.
+    Map LLM-emitted company_type values into a strict 2-bucket taxonomy:
+    Public (publicly traded) vs Private (everything else).
 
-    LLM input (5 buckets): Public | Private | Subsidiary | Government | Non-Profit
-    Output (4 buckets):    Public | Private | Government | Non-Profit
+    Public = company is publicly traded on a stock exchange.
+    Private = every other ownership form, including private companies,
+             subsidiaries, government entities, and non-profits.
 
-    Subsidiary collapses to Private (subsidiary is privately held by parent).
-    Unknown / empty / None defaults to Private (defensive — most companies
-    in our data set are private).
-
-    Match is case-insensitive substring. "publicly traded" -> Public,
-    "government agency" -> Government, "nonprofit" -> Non-Profit, etc.
+    Match is case-insensitive substring. Anything containing "public" or
+    "publicly traded" maps to Public; everything else (incl. unknown,
+    empty, None) maps to Private.
     """
     if not company_type or not isinstance(company_type, str):
         return "Private"
     s = company_type.strip().lower()
-    # Order matters: check more specific terms before generic ones.
-    if "non-profit" in s or "nonprofit" in s or "non profit" in s:
-        return "Non-Profit"
-    if "government" in s or s.startswith("gov"):
-        return "Government"
     if "public" in s:
         return "Public"
-    if "subsidiary" in s:
-        return "Private"
-    if "private" in s:
-        return "Private"
     return "Private"
 
 
@@ -643,6 +632,93 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                         data += "\n"
                 data += "\n"
 
+        # === KEY SIGNALS (slide 3) ===
+        # Explicit "Signal:" / "What this means:" structure so the v3 template
+        # has the labeled, separated form it should render. Each pair is split
+        # by an "&nbsp;" empty-line marker so Gamma renders a visible blank
+        # line between the Signal blurb and the What-this-means analysis.
+        _signal_pairs = []
+        _funding_blurb = news_triggers.get('funding') or validated_data.get('funding_news', '')
+        if isinstance(_funding_blurb, list):
+            _funding_blurb = " ".join(str(f) for f in _funding_blurb)
+        if _funding_blurb:
+            _signal_pairs.append((
+                "[1] Funding / Capital Markets Signal",
+                str(_funding_blurb),
+                "Recent funding indicates growth capital available for "
+                "infrastructure investments, technology upgrades, and "
+                "expansion initiatives. This suggests timing for strategic "
+                "partnerships and solution deployments.",
+            ))
+        else:
+            _signal_pairs.append((
+                "[1] Funding / Capital Markets Signal",
+                "No recent funding announcements.",
+                "This is an established, potentially self-funded organization. "
+                "Focus on operational efficiency and ROI-driven solutions.",
+            ))
+
+        _expansions = news_triggers.get('expansions') or validated_data.get('expansion_news', '')
+        _exec_changes = news_triggers.get('executive_changes') or validated_data.get('executive_hires', '')
+        _hiring_parts = []
+        for _v in (_expansions, _exec_changes):
+            if not _v:
+                continue
+            if isinstance(_v, list):
+                _hiring_parts.extend(str(x) for x in _v)
+            else:
+                _hiring_parts.append(str(_v))
+        if _hiring_parts:
+            _signal_pairs.append((
+                "[2] Hiring / Expansion Signal",
+                " ".join(_hiring_parts),
+                "Workforce expansion and/or leadership changes suggest "
+                "organizational growth or transformation. This creates demand "
+                "for workplace technology, device procurement, and "
+                "infrastructure to support new teams and sites.",
+            ))
+        else:
+            _signal_pairs.append((
+                "[2] Hiring / Expansion Signal",
+                "No recent hiring or expansion announcements detected.",
+                "Monitor for future growth signals that may trigger "
+                "infrastructure and workplace technology needs.",
+            ))
+
+        _partnerships = news_triggers.get('partnerships') or validated_data.get('partnership_news', '')
+        _products = news_triggers.get('products') or validated_data.get('product_news', '')
+        _strategic_parts = []
+        for _v in (_partnerships, _products):
+            if not _v:
+                continue
+            if isinstance(_v, list):
+                _strategic_parts.extend(str(x) for x in _v)
+            else:
+                _strategic_parts.append(str(_v))
+        if _strategic_parts:
+            _signal_pairs.append((
+                "[3] Operational Change / Strategic Partnerships",
+                " ".join(_strategic_parts),
+                "Strategic initiatives and partnerships indicate business "
+                "transformation and investment in new capabilities. This "
+                "creates opportunities for technology solutions that support "
+                "integration, collaboration, and operational scaling.",
+            ))
+        else:
+            _signal_pairs.append((
+                "[3] Operational Change / Strategic Partnerships",
+                "No recent partnership or product announcements detected.",
+                "Monitor for upcoming strategic initiatives and product "
+                "launches that may drive technology requirements.",
+            ))
+
+        data += "=== KEY SIGNALS ===\n\n"
+        for _heading, _signal_text, _what_this_means in _signal_pairs:
+            data += f"**{_heading}**\n\n"
+            data += f"**Signal:** {_signal_text}\n\n"
+            data += "&nbsp;\n\n"
+            data += f"**What this means:** {_what_this_means}\n\n"
+
         # Pain Points — v3 format: bolded title, blank line, description paragraph. Cap at 3.
         pain_points = (
             company_data.get('pain_points')
@@ -680,7 +756,10 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                     title = opp.get('title', opp.get('name', f'Opportunity {i}'))
                     desc = opp.get('description', '')
                     if desc:
-                        data += f"**{i}. {title}**\n\n{desc}\n\n"
+                        # &nbsp; empty-line marker between bolded numbered
+                        # title and description so Gamma renders a visible
+                        # blank line on the Opportunity Themes slide.
+                        data += f"**{i}. {title}**\n\n&nbsp;\n\n{desc}\n\n"
                     else:
                         data += f"**{i}. {title}**\n\n"
                 else:
@@ -894,9 +973,19 @@ Data Quality Score: {validated_data.get('data_quality_score', 'Not available')}
                     else:
                         data += f"Strategic Priorities:\n  1. Enable strategic business objectives for {company_name} in {industry}\n  2. Drive innovation and competitive advantage through technology\n  3. Optimize organizational effectiveness and decision-making\n"
 
-                # Communication Preference
-                comm_pref = stakeholder.get('communication_preference', stakeholder.get('communicationPreference', ''))
-                data += f"Preferred Contact: {comm_pref or 'Email / LinkedIn / Phone / Events'}\n"
+                # Communication Preference — list only available channels
+                # in Phone / Email / LinkedIn order. Drop Events entirely.
+                # Each channel is included only when its value is populated
+                # in the per-stakeholder data above.
+                _pref_channels = []
+                if phone_val:
+                    _pref_channels.append("Phone")
+                if email_val:
+                    _pref_channels.append("Email")
+                if linkedin_val:
+                    _pref_channels.append("LinkedIn")
+                if _pref_channels:
+                    data += f"Preferred Contact: {' / '.join(_pref_channels)}\n"
 
                 # Recommended Play / Approach
                 rec_play = stakeholder.get('recommended_play', stakeholder.get('recommendedPlay', ''))
@@ -1348,9 +1437,9 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 markdown += f"{company_name} is an organization operating in the {validated_data.get('industry', 'technology')} sector. Further details available through company research.\n\n"
 
         # Account Type
-        # v3 template: 4-bucket account-type taxonomy. Prefer LLM company_type
-        # over upstream account_type so we get the canonical Public/Private/
-        # Government/Non-Profit label.
+        # v3 template: strict 2-bucket Public/Private (publicly traded vs.
+        # everything else, including gov/non-profit/subsidiary). Prefer LLM
+        # company_type over upstream account_type so the canonical label wins.
         account_type = _normalize_account_type(
             validated_data.get('company_type')
             or validated_data.get('type')
@@ -1575,6 +1664,11 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
         # Get news/triggers data
         news_triggers = validated_data.get('news_triggers') or validated_data.get('buying_signals', {}).get('triggers', {})
 
+        # Visible empty-line marker between Signal blurb and "What this means:"
+        # so Gamma renders a blank line in the slide rather than collapsing
+        # the paragraph break.
+        _SIG_GAP = "&nbsp;\n\n"
+
         # Funding / Capital Markets Signal
         markdown += "**[1] Funding / Capital Markets Signal**\n\n"
         funding = news_triggers.get('funding') or validated_data.get('funding_news', '')
@@ -1583,9 +1677,11 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 markdown += "**Signal:** " + " ".join(str(f) for f in funding) + "\n\n"
             else:
                 markdown += f"**Signal:** {funding}\n\n"
+            markdown += _SIG_GAP
             markdown += "**What this means:** Recent funding indicates growth capital available for infrastructure investments, technology upgrades, and expansion initiatives. This suggests timing for strategic partnerships and solution deployments.\n\n"
         else:
             markdown += "**Signal:** No recent funding announcements.\n\n"
+            markdown += _SIG_GAP
             markdown += "**What this means:** This is an established, potentially self-funded organization. Focus on operational efficiency and ROI-driven solutions.\n\n"
 
         # Hiring / Expansion (Operations)
@@ -1606,9 +1702,11 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 else:
                     signal_text.append(str(exec_changes))
             markdown += "**Signal:** " + " ".join(signal_text) + "\n\n"
+            markdown += _SIG_GAP
             markdown += "**What this means:** Workforce expansion and/or leadership changes suggest organizational growth or transformation. This creates demand for workplace technology, device procurement, and infrastructure to support new teams and sites.\n\n"
         else:
             markdown += "**Signal:** No recent hiring or expansion announcements detected.\n\n"
+            markdown += _SIG_GAP
             markdown += "**What this means:** Monitor for future growth signals that may trigger infrastructure and workplace technology needs.\n\n"
 
         # Operational Change / Partnerships & Acquisitions
@@ -1629,9 +1727,11 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 else:
                     signal_text.append(str(products))
             markdown += "**Signal:** " + " ".join(signal_text) + "\n\n"
+            markdown += _SIG_GAP
             markdown += "**What this means:** Strategic initiatives and partnerships indicate business transformation and investment in new capabilities. This creates opportunities for technology solutions that support integration, collaboration, and operational scaling.\n\n"
         else:
             markdown += "**Signal:** No recent partnership or product announcements detected.\n\n"
+            markdown += _SIG_GAP
             markdown += "**What this means:** Monitor for upcoming strategic initiatives and product launches that may drive technology requirements.\n\n"
 
         markdown += "---\n\n"
@@ -1738,6 +1838,9 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                     opp_desc = re.sub(r'\s*Qualify\s+[^.]*\.\s*$', '', opp_desc).strip()
                 markdown += f"**{i}. {opp_title}**\n\n"
                 if opp_desc:
+                    # Visible empty-line marker so Gamma renders a blank line
+                    # between the bolded numbered title and its description.
+                    markdown += "&nbsp;\n\n"
                     markdown += f"{opp_desc}\n\n"
             else:
                 markdown += f"**{i}. {str(opp)}**\n\n"
@@ -1801,6 +1904,9 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                 solution_desc = solution.get('description', solution.get('solution', ''))
                 markdown += f"**{i}. {solution_title}**\n\n"
                 if solution_desc:
+                    # Visible empty-line marker between numbered title and
+                    # description (matches sales-opportunities formatting).
+                    markdown += "&nbsp;\n\n"
                     markdown += f"{solution_desc}\n\n"
             else:
                 markdown += f"**{i}.** {str(solution)}\n\n"
@@ -2070,13 +2176,28 @@ CRITICAL DESIGN INSTRUCTIONS - MUST FOLLOW:
                         markdown += f"**[3] Optimize organizational effectiveness**\n\n"
                         markdown += f"Improve operational efficiency and decision-making through better technology and data insights.\n\n"
 
-                # Communication Preferences
-                markdown += "## Communication preference\n\n"
-                comm_pref = stakeholder.get('communication_preference', stakeholder.get('communication_preferences', ''))
-                if comm_pref:
-                    markdown += f"{comm_pref}\n\n"
-                else:
-                    markdown += "Email / LinkedIn / Phone / Events\n\n"
+                # Communication Preferences — list only available channels
+                # in Phone / Email / LinkedIn order. Drop Events entirely.
+                _pref_phone = (stakeholder.get('phone')
+                               or stakeholder.get('phone_number')
+                               or stakeholder.get('direct_phone')
+                               or stakeholder.get('mobile_phone')
+                               or '')
+                _pref_email = stakeholder.get('email') or ''
+                _pref_linkedin = (stakeholder.get('linkedin')
+                                  or stakeholder.get('linkedin_url')
+                                  or stakeholder.get('linkedinUrl')
+                                  or '')
+                _pref_channels = []
+                if _pref_phone:
+                    _pref_channels.append("Phone")
+                if _pref_email:
+                    _pref_channels.append("Email")
+                if _pref_linkedin:
+                    _pref_channels.append("LinkedIn")
+                if _pref_channels:
+                    markdown += "## Communication preference\n\n"
+                    markdown += f"{' / '.join(_pref_channels)}\n\n"
 
                 # Conversation Starters - persona-tailored with context
                 markdown += "## Conversation starters\n\n"
