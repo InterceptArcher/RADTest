@@ -190,6 +190,41 @@ def _content_audit_links(validated_data: dict, canonical, slide_contacts: dict):
     return hyperlink_slots, outreach_hyperlinks
 
 
+def _is_reachable(c) -> bool:
+    """A contact is reachable when we have an email AND at least one phone."""
+    return bool(getattr(c, "email", "")) and bool(
+        getattr(c, "phone", "") or getattr(c, "direct_phone", "") or getattr(c, "mobile_phone", ""))
+
+
+async def _ensure_contactable(sel, providers, company_name: str, *, max_alts: int = 3) -> None:
+    """For each persona whose selected contact isn't reachable (email+phone) after
+    the initial enrich, walk the relevance-ranked role-matched alternatives, enrich
+    each, and swap to the most-relevant one that becomes reachable.
+
+    Core philosophy preserved: alternatives are role matches (proximity <= Director),
+    ranked by relevance; we trade DOWN in relevance only to gain a real email+phone,
+    and only if an alternative actually achieves it. If none do, the original (most
+    relevant) pick is kept — relevance never loses to a worse-matched contact."""
+    from bi_resolver import PERSONAS, rank_by_proximity, Proximity
+
+    if not hasattr(providers, "enrich_one"):
+        return
+    for persona in PERSONAS:
+        chosen = [c for c in sel.slide_contacts.get(persona, []) if not getattr(c, "is_sentinel", False)]
+        if not chosen or all(_is_reachable(c) for c in chosen):
+            continue
+        chosen_ids = {id(c) for c in chosen}
+        alts = [c for c in sel.contact_catalogue.get(persona, [])
+                if not getattr(c, "is_sentinel", False) and id(c) not in chosen_ids
+                and getattr(c, "proximity", 9) <= int(Proximity.DIRECTOR)]
+        for cand in rank_by_proximity(alts)[:max_alts]:
+            await providers.enrich_one(cand, company_name)
+            if _is_reachable(cand):
+                cand.mark("swapped_in_for_reachability")
+                sel.slide_contacts[persona] = [cand]
+                break
+
+
 async def assemble_v31(providers, formatter, renderer, canonical, validated_facts: dict,
                        job_id: str, canada_only: bool = False) -> dict:
     """Stage 3 (surgical contacts) + Stage 5/6 (author + render). Pure of I/O
@@ -279,13 +314,25 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     sel = await run_stage3(providers, canonical, canada_only=bool(company_data.get("canada_only")))
 
     # Final pass on ONLY the selected contacts: ZI Contact-Enrich (email/phone/
-    # LinkedIn) + author per-contact bio/priorities/starters. Bounded to the ≤N
-    # on the deck, so it's cheap, and it fills the slots that rendered blank.
+    # LinkedIn by id, then by name) + bounded web search. Bounded to the ≤N on the
+    # deck, so it's cheap, and it fills the slots that rendered blank.
     selected = [c for v in sel.slide_contacts.values() for c in v]
     try:
         await providers.enrich_final(selected, canonical.name)
     except Exception as e:  # noqa: BLE001 — enrichment is best-effort
         logger.warning("v3.1 enrich_final failed (continuing): %s", e)
+
+    # Completeness-aware fallback: for any persona whose pick is still not reachable
+    # (no email AND no phone) after enrichment, walk the relevance-ranked alternates
+    # and swap to the most-relevant one we CAN reach. Relevance-first stays intact —
+    # alternates are role-matched; we only trade down in relevance to gain a real
+    # email+phone. May mutate sel.slide_contacts, so rebuild `selected` afterward.
+    try:
+        await _ensure_contactable(sel, providers, canonical.name)
+    except Exception as e:  # noqa: BLE001 — best-effort
+        logger.warning("v3.1 ensure_contactable failed (continuing): %s", e)
+    selected = [c for v in sel.slide_contacts.values() for c in v]
+
     try:
         await formatter.author_contacts(selected, validated_data)
     except Exception as e:  # noqa: BLE001

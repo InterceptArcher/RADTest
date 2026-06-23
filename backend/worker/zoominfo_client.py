@@ -1165,10 +1165,49 @@ class ZoomInfoClient:
         """
         if not person_ids:
             return {"success": True, "people": [], "error": None}
-
         match_input = [{"personId": pid} for pid in person_ids]
+        return await self._enrich_by_match(match_input)
 
-        # Try extended fields first (includes linkedinUrl), fall back to base
+    async def enrich_contacts_by_name(
+        self,
+        people: List[Dict[str, str]],
+    ) -> Dict[str, Any]:
+        """Enrich contacts by NAME + company when no personId is known.
+
+        `people` is a list of {"first_name", "last_name", "company_name"} (or a
+        single "full_name" + "company_name"). Used for stakeholders found via web
+        search (no ZoomInfo personId yet) so the RIGHT exec still gets their email /
+        phone / personId from ZoomInfo. Returns the same shape as enrich_contacts.
+
+        ZoomInfo's ContactEnrich matchPersonInput accepts a name+company match; we
+        send firstName/lastName/companyName (falling back to fullName) and let ZI
+        resolve the best match.
+        """
+        match_input: List[Dict[str, str]] = []
+        for p in people:
+            first = (p.get("first_name") or "").strip()
+            last = (p.get("last_name") or "").strip()
+            full = (p.get("full_name") or "").strip()
+            company = (p.get("company_name") or "").strip()
+            if not company or (not (first and last) and not full):
+                continue  # ZI needs a name AND a company to match
+            entry: Dict[str, str] = {"companyName": company}
+            if first and last:
+                entry["firstName"], entry["lastName"] = first, last
+            else:
+                entry["fullName"] = full
+            match_input.append(entry)
+        if not match_input:
+            return {"success": True, "people": [], "error": None}
+        return await self._enrich_by_match(match_input)
+
+    async def _enrich_by_match(self, match_input: List[Dict[str, Any]]) -> Dict[str, Any]:
+        """Shared ContactEnrich POST for any matchPersonInput (by personId or by
+        name+company). Tries extended fields first (linkedinUrl), falls back to base
+        on PFAPI0005, normalizes the result. Used by enrich_contacts[_by_name]."""
+        if not match_input:
+            return {"success": True, "people": [], "error": None}
+
         field_tiers = [CONTACT_ENRICH_EXTENDED_FIELDS, CONTACT_ENRICH_OUTPUT_FIELDS]
         last_error: Optional[str] = None
 

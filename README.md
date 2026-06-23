@@ -141,6 +141,22 @@ The content library was upgraded to the **V2 internal audit (54 assets)**, repla
 
 ---
 
+## RAD Pipeline v3.1 — Full Contact Completeness (2026-06-23)
+
+Follow-up to the relevance fix: the *right* execs were now selected but web-discovered ones lacked email/phone, one person could headline two personas, and a few unrelated titles still slipped through. Four changes make the supporting data layer pull as hard as the relevance layer:
+
+**ZoomInfo enrich-by-name.** `ZoomInfoClient.enrich_contacts_by_name` (sharing a new `_enrich_by_match` core with `enrich_contacts`) looks a contact up by `firstName/lastName/companyName`. `enrich_final` now runs three tiers — ZI Contact-Enrich by `personId`, then **by name** for anyone still missing email/phone (covers web-found execs like Amy Hood / Kevin Scott who have no ZI `personId` yet but ARE in ZoomInfo), then the citation-gated web search for LinkedIn/start. So the relevant exec also gets their real email + phone.
+
+**Completeness-aware fallback (`_ensure_contactable`).** If a persona's most-relevant pick still isn't reachable (email AND phone) after enrichment, the hook walks the **relevance-ranked, role-matched** alternates (proximity ≤ Director), enriches each, and swaps to the most-relevant one that *is* reachable. Relevance-first is preserved — alternates are role matches, and we trade down in relevance only to gain a real email+phone; if none qualify, the original top pick is kept. This is the "pick the next relevant contact who has the info" behavior.
+
+**Dedupe by all identities.** Cross-slide dedupe now matches on LinkedIn **or** email **or** normalized name (was: first-non-empty key only), so the same person can't headline two personas when one source has a LinkedIn URL and another doesn't (fixed Sun Life's Laura Money appearing as both CIO and CTO).
+
+**Stricter title-adjacency judge.** The Haiku adjacency check is now domain-scoped (CIO/CTO=technology/IT/engineering; CISO=security; CFO=finance; COO=operations; CPO=product) and explicitly rejects unrelated senior titles (communications, HR, legal, brand, investigations, CEO-office), so a "Investigations Director" no longer counts as a CIO and the slide falls to the real-exec web fallback instead.
+
+**Tests:** `enrich_contacts_by_name` payload + skip; `_ensure_contactable` swap + relevance-preserved; cross-slide dedupe-by-name. All sync suites pass.
+
+---
+
 ## RAD Pipeline v3.1 — Contact Relevance + Canada Filter (2026-06-23)
 
 A holistic-evaluation pass surfaced that selected stakeholders were frequently the **wrong people** (e.g. Microsoft "CTO" = a *Senior Manager, Executive Communications*). Root cause + fixes:

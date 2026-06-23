@@ -138,6 +138,45 @@ def test_deck_basename_blank_company_falls_back():
     assert deck_basename("", "2026-06-23") == "hprad_company_2026-06-23"
 
 
+def test_ensure_contactable_swaps_to_reachable_alternate():
+    from pipeline_v31_hook import _ensure_contactable
+    from bi_resolver import StakeholderRecord, SelectionResult, Proximity
+    # Most-relevant pick is unreachable (no email/phone); a role-matched alternate
+    # becomes reachable on enrich -> we trade down in relevance to gain email+phone.
+    top = StakeholderRecord(persona="CFO", name="Top Exec", title="Chief Financial Officer",
+                            linkedin_url="https://li/top", proximity=int(Proximity.EXACT))
+    alt = StakeholderRecord(persona="CFO", name="Alt Exec", title="VP Finance",
+                            proximity=int(Proximity.CANONICAL))
+    sel = SelectionResult(slide_contacts={"CFO": [top]},
+                          contact_catalogue={"CFO": [top, alt]}, enrichment_trace=[], warnings=[])
+
+    class FakeP:
+        async def enrich_one(self, c, company):
+            if c.name == "Alt Exec":
+                c.email, c.phone = "alt@x.com", "+1-555"
+
+    run(_ensure_contactable(sel, FakeP(), "Acme"))
+    assert [c.name for c in sel.slide_contacts["CFO"]] == ["Alt Exec"]
+
+
+def test_ensure_contactable_keeps_relevant_pick_when_no_alternate_reachable():
+    from pipeline_v31_hook import _ensure_contactable
+    from bi_resolver import StakeholderRecord, SelectionResult, Proximity
+    top = StakeholderRecord(persona="CFO", name="Top Exec", title="Chief Financial Officer",
+                            linkedin_url="https://li/top", proximity=int(Proximity.EXACT))
+    alt = StakeholderRecord(persona="CFO", name="Alt Exec", title="VP Finance",
+                            proximity=int(Proximity.CANONICAL))
+    sel = SelectionResult(slide_contacts={"CFO": [top]},
+                          contact_catalogue={"CFO": [top, alt]}, enrichment_trace=[], warnings=[])
+
+    class FakeP:
+        async def enrich_one(self, c, company):
+            pass  # nobody becomes reachable
+
+    run(_ensure_contactable(sel, FakeP(), "Acme"))
+    assert [c.name for c in sel.slide_contacts["CFO"]] == ["Top Exec"]  # relevance preserved
+
+
 def test_deck_basename_canada_only_suffix_avoids_collision():
     # The Canada-only run must not overwrite the company's global deck same-day.
     assert deck_basename("Microsoft", "2026-06-23", canada_only=True) == "hprad_microsoft_2026-06-23_ca"

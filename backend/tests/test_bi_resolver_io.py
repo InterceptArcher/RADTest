@@ -100,6 +100,19 @@ def test_cross_slide_dedupe_in_io():
     assert len(s1) == 1 and s2 == []
 
 
+def test_cross_slide_dedupe_by_name_even_with_different_linkedin():
+    # The SAME person (same name) must not headline two personas, even when the two
+    # sources carry DIFFERENT LinkedIn URLs + emails (e.g. ZI record vs web agent).
+    a = StakeholderRecord(persona="CIO", name="Pat Lee", title="Chief Information Officer",
+                          email="pat@cio.com", linkedin_url="https://li/pat-a", start_date="2024")
+    b = StakeholderRecord(persona="CTO", name="Pat Lee", title="Chief Technology Officer",
+                          email="pat@cto.com", linkedin_url="https://li/pat-b", start_date="2024")
+    fp = FakeProviders({("CIO", "zoominfo", "csuite"): [a], ("CTO", "zoominfo", "csuite"): [b]})
+    result = run(run_stage3(fp, canonical=None))
+    assert "Pat Lee" in [c.name for c in result.slide_contacts["CIO"]]
+    assert "Pat Lee" not in [c.name for c in result.slide_contacts["CTO"] if not c.is_sentinel]
+
+
 def test_run_stage3_floor_fill_with_fallback():
     table = {
         ("CTO", "zoominfo", "csuite"): [rec("CTO", "T", "Chief Technology Officer")],

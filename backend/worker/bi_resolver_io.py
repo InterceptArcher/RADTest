@@ -66,6 +66,24 @@ def _dedupe_key(rec) -> Optional[str]:
     return None
 
 
+def _identities(rec) -> set:
+    """ALL identities a contact can be matched on (LinkedIn, email, normalized name).
+
+    Cross-slide dedupe matches on ANY of these — otherwise the same person can
+    headline two personas when one source carries a LinkedIn URL and another
+    doesn't (e.g. a ZI record vs the same exec returned by the web agent with a
+    differently-formatted LinkedIn URL → the name still catches it)."""
+    out: set = set()
+    for v in (getattr(rec, "linkedin_url", ""), getattr(rec, "email", ""), getattr(rec, "name", "")):
+        if v and str(v).strip():
+            out.add(str(v).strip().lower())
+    return out
+
+
+def _is_used(rec, used: set) -> bool:
+    return bool(_identities(rec) & used)
+
+
 def _tier_depth(source: str, kind: str) -> int:
     return _SOURCE_BASE.get(source, 15) + _KIND_OFFSET.get(kind, 4)
 
@@ -146,8 +164,7 @@ async def select_persona_contacts_io(
         # contact data: selection is RELEVANCE-first.
         fresh: list[StakeholderRecord] = []
         for cand in ranked:
-            ck = _dedupe_key(cand)
-            if ck and ck in already_used_linkedins:
+            if _is_used(cand, already_used_linkedins):
                 cand.mark("duplicate_skipped")
                 _trace(trace, persona=persona, source=source, candidate_name=cand.name,
                        outcome="duplicate_skipped")
@@ -173,9 +190,7 @@ async def select_persona_contacts_io(
             # persona with near-duplicates.
             for w in [c for c in fresh if c.proximity == best_prox][:2]:
                 selected.append(w)
-                k = _dedupe_key(w)
-                if k:
-                    already_used_linkedins.add(k)
+                already_used_linkedins |= _identities(w)
                 _trace(trace, persona=persona, source=source, candidate_name=w.name,
                        outcome=f"selected_proximity:{best_prox}")
             return selected, examined  # surgical stop at the first tier with a real match
@@ -212,7 +227,7 @@ async def run_stage3(
         # Only consider candidates not already headlining another slide, so each
         # persona gets a DISTINCT person (no one filling all six buckets).
         pool = [r for r in catalogue[persona]
-                if not r.is_sentinel and (_dedupe_key(r) not in used)]
+                if not r.is_sentinel and not _is_used(r, used)]
         best = best_proximate(pool)
         # Relevance over data: keep a catalogue contact here ONLY if it's a real-ish
         # title match (<= Director). If the only ZI candidates are weak/UNKNOWN — the
@@ -229,15 +244,12 @@ async def run_stage3(
                 # No web match either — fall back to the weak ZI contact (better than
                 # an empty slide), else a sentinel below.
                 choice, rung = best, "floor_fill_relaxed_completeness"
-        ck = _dedupe_key(choice) if choice else None
-        if choice is None or (ck and ck in used):
+        if choice is None or _is_used(choice, used):
             choice = no_contact_sentinel(persona)
             rung = "no_contact_found_for_persona"
         if not choice.is_sentinel:
             choice.mark(rung)
-            ck = _dedupe_key(choice)
-            if ck:
-                used.add(ck)
+            used |= _identities(choice)
         slide_contacts[persona].append(choice)
         warnings.append(f"{rung}:{persona}")
         _trace(trace, persona=persona, source=choice.source or "floor_fill", outcome=rung)

@@ -178,11 +178,35 @@ class LiveProviders:
                 r.mark("canada_only_filtered")
         return records
 
+    @staticmethod
+    def _missing_contact_method(c) -> bool:
+        """True if the contact lacks email OR any phone (i.e. not fully reachable)."""
+        return not (c.email and (c.phone or c.direct_phone or c.mobile_phone))
+
+    @staticmethod
+    def _apply_enrich(c, p: dict) -> None:
+        """Fill empty contact fields on record `c` from a ZI-normalized person `p`."""
+        c.email = c.email or p.get("email", "")
+        c.phone = c.phone or p.get("phone", "")
+        c.direct_phone = c.direct_phone or p.get("direct_phone", "")
+        c.mobile_phone = c.mobile_phone or p.get("mobile_phone", "")
+        c.linkedin_url = c.linkedin_url or p.get("linkedin", "") or p.get("linkedin_url", "")
+        c.start_date = c.start_date or p.get("hire_date", "") or p.get("start_date", "")
+        c.department = c.department or p.get("department", "")
+        c.person_id = c.person_id or str(p.get("person_id") or p.get("id") or "")
+        if c.email:
+            c.email_sources.add("zoominfo")
+
     async def enrich_final(self, contacts: list, company_name: str = "") -> None:
-        """Final pass on the SELECTED contacts (≤N, cheap): ZoomInfo Contact-Enrich
-        for email/phone, then a bounded web search to fill LinkedIn + start_date
-        (which ZI enrich doesn't provide). Mutates records in place."""
+        """Fill the SELECTED contacts to completeness (email/phone/LinkedIn/start),
+        mutating in place. Order: (1) ZoomInfo Contact-Enrich by person_id, then
+        (2) ZoomInfo Contact-Enrich by NAME+company for anyone still missing
+        email/phone — this covers web-discovered execs that have no ZI person_id
+        yet but ARE in ZoomInfo — then (3) a bounded web search for LinkedIn +
+        start_date. The goal is that the RIGHT person ends up fully reachable."""
         real = [c for c in contacts if not c.is_sentinel]
+        if not real:
+            return
 
         # 1) ZoomInfo Contact-Enrich (email/phone) by person_id.
         ids = [c.person_id for c in real if getattr(c, "person_id", "")]
@@ -193,22 +217,31 @@ class LiveProviders:
                 by_id = {str(p.get("person_id") or p.get("id") or ""): p for p in people}
                 for c in real:
                     p = by_id.get(c.person_id)
-                    if not p:
-                        continue
-                    c.email = c.email or p.get("email", "")
-                    c.phone = c.phone or p.get("phone", "")
-                    c.direct_phone = c.direct_phone or p.get("direct_phone", "")
-                    c.mobile_phone = c.mobile_phone or p.get("mobile_phone", "")
-                    c.linkedin_url = c.linkedin_url or p.get("linkedin", "") or p.get("linkedin_url", "")
-                    c.start_date = c.start_date or p.get("hire_date", "") or p.get("start_date", "")
-                    c.department = c.department or p.get("department", "")
-                    if c.email:
-                        c.email_sources.add("zoominfo")
-                    c.mark("zi_contact_enriched")
+                    if p:
+                        self._apply_enrich(c, p)
+                        c.mark("zi_contact_enriched")
             except Exception:  # noqa: BLE001
                 pass
 
-        # 2) Web search for LinkedIn URL + start_date where still missing (citation required).
+        # 2) ZoomInfo Contact-Enrich by NAME for contacts still missing a contact
+        #    method (web-found execs with no person_id, or person_id misses).
+        need_name = [c for c in real if c.name and self._missing_contact_method(c)]
+        if self.zi is not None and need_name:
+            try:
+                payload = [{**self._split_name(c.name), "company_name": company_name}
+                           for c in need_name]
+                res = await self.zi.enrich_contacts_by_name(payload)
+                people = (res or {}).get("people", []) if isinstance(res, dict) else []
+                by_name = {self._norm_name(p.get("name", "")): p for p in people if p.get("name")}
+                for c in need_name:
+                    p = by_name.get(self._norm_name(c.name))
+                    if p:
+                        self._apply_enrich(c, p)
+                        c.mark("zi_name_enriched")
+            except Exception:  # noqa: BLE001
+                pass
+
+        # 3) Web search for LinkedIn URL + start_date where still missing (citation required).
         if self._anthropic_or_none() is None:
             return
         for c in real:
@@ -228,10 +261,40 @@ class LiveProviders:
                 c.start_date = c.start_date or str(data.get("start_date") or "")
                 c.mark("web_enriched_linkedin_start")
 
+    async def enrich_one(self, contact, company_name: str = "") -> None:
+        """Enrich a SINGLE contact to completeness (delegates to enrich_final). Used
+        by the hook's relevance-ranked fallback walk when the top pick can't be made
+        reachable and we try the next-most-relevant candidate."""
+        await self.enrich_final([contact], company_name)
+
+    @staticmethod
+    def _split_name(full: str) -> dict:
+        parts = (full or "").strip().split()
+        if len(parts) >= 2:
+            return {"first_name": parts[0], "last_name": parts[-1], "full_name": full}
+        return {"full_name": full}
+
+    @staticmethod
+    def _norm_name(name: str) -> str:
+        return " ".join((name or "").lower().split())
+
     async def judge_adjacency(self, title: str, persona: str) -> bool:
+        # Strict, domain-scoped adjacency: a title is a proxy ONLY if it sits in the
+        # persona's functional domain at a senior level. This rejects unrelated
+        # senior titles (Communications, HR, Legal, Investigations, Brand, etc.)
+        # that ZoomInfo's generic C-Level pool surfaces — they used to slip through
+        # a loose "reasonable proxy" judgement and win a slide over the real exec.
         text = await self._haiku_text(
-            system="You judge whether a job title is a reasonable proxy for a target executive persona. Answer strictly 'yes' or 'no'.",
-            user=f"Is the title '{title}' a reasonable proxy for the {persona} of a company? Answer yes or no.",
+            system=(
+                "You decide if a job title belongs to the SAME functional domain as a target "
+                "C-suite persona. Domains: CIO/CTO = technology / IT / engineering / digital / data; "
+                "CISO = security / information security / cybersecurity; CFO = finance / accounting / "
+                "treasury; COO = operations / supply chain / general management; CPO = product. "
+                "Answer 'yes' ONLY if the title clearly sits in the persona's domain at a senior level "
+                "(C-level, SVP, VP, Head, or Director). Titles in unrelated functions — communications, "
+                "HR/people, legal, marketing, sales, brand, investigations, facilities, administration, "
+                "or an executive/CEO office role — are NOT proxies. Answer strictly 'yes' or 'no'."),
+            user=f"Persona: {persona}. Title: '{title}'. Same functional domain at a senior level? yes or no.",
             max_tokens=8,
         )
         return text.strip().lower().startswith("y")

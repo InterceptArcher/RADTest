@@ -329,6 +329,40 @@ class TestContactSearchPayloadFormat:
         assert captured[0]["jobTitle"] == ["Chief Technology Officer"]
 
     @pytest.mark.asyncio
+    async def test_enrich_by_name_builds_name_company_match_input(self):
+        """enrich_contacts_by_name must send a name+company matchPersonInput so a
+        web-discovered exec (no personId) can still be enriched from ZoomInfo."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        captured = []
+
+        async def capture(endpoint, payload, _is_retry=False, params=None):
+            captured.append(payload["data"]["attributes"]["matchPersonInput"])
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.enrich_contacts_by_name([
+                {"first_name": "Amy", "last_name": "Hood", "company_name": "Microsoft"}])
+
+        assert captured, "no enrich issued"
+        mi = captured[0][0]
+        assert mi == {"companyName": "Microsoft", "firstName": "Amy", "lastName": "Hood"}
+
+    @pytest.mark.asyncio
+    async def test_enrich_by_name_skips_entries_without_name_and_company(self):
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        called = []
+
+        async def capture(endpoint, payload, _is_retry=False, params=None):
+            called.append(payload)
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            res = await client.enrich_contacts_by_name([{"first_name": "Amy"}])  # no company
+        assert called == [] and res["people"] == []  # nothing to match -> no API call
+
+    @pytest.mark.asyncio
     async def test_canada_only_restricts_country_and_skips_global(self):
         """canada_only must scope EVERY search to Canada and never fall back to a
         global (no-country) search, so a Canada-only run can't leak US/global hits."""
