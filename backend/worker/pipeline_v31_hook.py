@@ -98,6 +98,10 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
         primary_domain=validated_data.get("domain") or company_data.get("domain", ""),
         industry=validated_data.get("industry", ""),
     )
+    # Ensure the seller name is available to the factual-token fill (the legacy
+    # flow sets it after this block, so set it here for the "Prepared for" line).
+    if not validated_data.get("salesperson_name"):
+        validated_data["salesperson_name"] = company_data.get("salesperson_name", "")
 
     base = os.environ["SUPABASE_URL"].rstrip("/")
     bucket = os.getenv("SUPABASE_STORAGE_BUCKET_DECKS", "decks")

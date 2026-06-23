@@ -245,10 +245,26 @@ class PptxRenderer:
 
     @staticmethod
     def _fill_shape(shape, mapping: dict[str, str]) -> None:
-        """Replace tokens in a shape's text frame, run-split safe, format-preserving."""
+        """Replace tokens in a shape's text frame. Per-paragraph (format-preserving)
+        for in-paragraph tokens; falls back to frame-level replace for tokens that
+        SPAN multiple paragraphs (e.g. the pain-point / strategic-priority blobs),
+        which per-paragraph replacement can't see."""
         if not shape.has_text_frame:
             return
-        for para in shape.text_frame.paragraphs:
+        tf = shape.text_frame
+        joined = tf.text
+        if not joined or "[" not in joined:
+            return
+        para_texts = [p.text for p in tf.paragraphs]
+        spans_paragraphs = any(
+            tok in joined and not any(tok in pt for pt in para_texts)
+            for tok in mapping if tok in joined
+        )
+        if spans_paragraphs:
+            # Frame-level replace (collapses to one run; acceptable for these blobs).
+            tf.text = replace_tokens(joined, mapping)
+            return
+        for para in tf.paragraphs:
             runs = para.runs
             if not runs:
                 continue
@@ -256,18 +272,16 @@ class PptxRenderer:
             for run, new in zip(runs, new_texts):
                 run.text = new
 
-    def _clone_slide(self, prs, src_index: int, dest_index: int):
-        """Deep-copy a slide part (incl. rels) and place it at dest_index.
-
-        Implementation note: python-pptx has no public duplicate API; this uses
-        the documented XML-clone approach (copy <p:sld> part + .rels, register a
-        new slide part, insert the <p:sldId> at the target position). Exercised
-        in CI.
+    def _clone_slide(self, prs, src_slide, dest_index: int):
+        """Deep-copy a slide's shapes onto a new slide on the same layout, placed
+        at dest_index. Takes the source SLIDE OBJECT (not an index) — critical:
+        inserting clones shifts indices, so cloning by a fixed index would copy an
+        already-filled clone. python-pptx has no public duplicate API.
         """
         import copy
         from pptx.oxml.ns import qn
 
-        src = prs.slides[src_index]
+        src = src_slide
         # New slide on the SAME layout — this inherits the master/layout branding,
         # background, logos, and footers without copying any relationships.
         blank = prs.slides.add_slide(src.slide_layout)
@@ -293,6 +307,20 @@ class PptxRenderer:
         sldIdLst.insert(dest_index, ids[-1])
         return blank
 
+    @staticmethod
+    def _remove_slide(prs, slide) -> None:
+        """Remove a slide (e.g. the original contact template after cloning)."""
+        from pptx.oxml.ns import qn
+        sldIdLst = prs.slides._sldIdLst
+        for sldId in list(sldIdLst):
+            rId = sldId.get(qn("r:id"))
+            try:
+                if prs.part.rels[rId].target_part is slide.part:
+                    sldIdLst.remove(sldId)
+                    return
+            except Exception:  # noqa: BLE001
+                continue
+
     async def render(self, *, slide_contacts: dict, company_slots: dict,
                      outreach_slots: dict, job_id: str) -> str:
         """Assemble + fill the deck and upload it. Returns the public URL.
@@ -317,9 +345,11 @@ class PptxRenderer:
         personas_present = [p for p in PERSONAS if any(
             not getattr(c, "is_sentinel", False) for c in slide_contacts.get(p, []))]
 
-        # 1) Clone the contact slide once per contact, just after the intro.
+        # 1) Clone the contact slide once per contact. Capture the template slide
+        #    OBJECT first — cloning by index would break once inserts shift indices.
+        template_slide = prs.slides[CONTACT_SLIDE_INDEX]
         for i, contact in enumerate(contacts):
-            clone = self._clone_slide(prs, CONTACT_SLIDE_INDEX, CONTACT_INSERT_AFTER + 1 + i)
+            clone = self._clone_slide(prs, template_slide, CONTACT_SLIDE_INDEX + 1 + i)
             tokens = self._slide_tokens(clone)
             mapping = build_contact_replacements(contact, tokens)
             # Incomplete contacts (floor-filled / agent-sourced) still render —
@@ -329,6 +359,8 @@ class PptxRenderer:
                 mapping.setdefault(tok, "")
             for shape in clone.shapes:
                 self._fill_shape(shape, mapping)
+        # Remove the original template slide so it doesn't ship as a stray example.
+        self._remove_slide(prs, template_slide)
 
         # 2) Fill single-instance company slides from the formatter's slot map.
         for slide in prs.slides:
