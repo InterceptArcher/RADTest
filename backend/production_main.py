@@ -277,6 +277,7 @@ class CompanyProfileRequest(BaseModel):
     industry: Optional[str] = Field(None, max_length=200)
     requested_by: str = Field(..., description="Email of requester")
     salesperson_name: Optional[str] = Field(None, max_length=200, description="Name of the salesperson")
+    canada_only: bool = Field(False, description="Restrict contact discovery to Canada (no US/global fallback)")
 
 
 class ProfileRequestResponse(BaseModel):
@@ -493,7 +494,7 @@ async def debug_v31():
     """Diagnose why the v3.1 flag-gated pipeline is/ isn't engaging.
     If this endpoint 404s, the latest code has NOT deployed yet."""
     result = {
-        "marker": "v31-diag-2-qa6",
+        "marker": "v31-diag-2-qa7",
         "USE_V31_PIPELINE": os.getenv("USE_V31_PIPELINE", "NOT SET"),
         "flag_active": os.getenv("USE_V31_PIPELINE", "").strip().lower() == "true",
         "ANTHROPIC_API_KEY_set": bool(os.getenv("ANTHROPIC_API_KEY")),
@@ -3755,6 +3756,7 @@ async def create_profile_request(
         "industry": profile_request.industry or "Unknown",
         "requested_by": profile_request.requested_by,
         "salesperson_name": profile_request.salesperson_name or "",
+        "canada_only": profile_request.canada_only,
     }
 
     jobs_store[job_id] = {

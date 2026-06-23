@@ -136,3 +136,9 @@ def test_deck_basename_slugifies_company_and_date():
 
 def test_deck_basename_blank_company_falls_back():
     assert deck_basename("", "2026-06-23") == "hprad_company_2026-06-23"
+
+
+def test_deck_basename_canada_only_suffix_avoids_collision():
+    # The Canada-only run must not overwrite the company's global deck same-day.
+    assert deck_basename("Microsoft", "2026-06-23", canada_only=True) == "hprad_microsoft_2026-06-23_ca"
+    assert deck_basename("Microsoft", "2026-06-23") != deck_basename("Microsoft", "2026-06-23", canada_only=True)

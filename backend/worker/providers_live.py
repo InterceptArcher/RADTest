@@ -163,7 +163,8 @@ class LiveProviders:
         titles = persona_titles_for(persona, "csuite")
         try:
             res = await self.zi.search_contacts(
-                domain=canonical.primary_domain, job_titles=titles, max_results=10)
+                domain=canonical.primary_domain, job_titles=titles, max_results=10,
+                canada_only=canada_only)
             self.breakers.get("zoominfo").record_success()
         except Exception:  # noqa: BLE001
             self.breakers.get("zoominfo").record_failure()
@@ -171,10 +172,10 @@ class LiveProviders:
         people = (res or {}).get("people", []) if isinstance(res, dict) else []
         records = [zi_person_to_record(p, persona) for p in people]
         if canada_only:
-            # The existing client prefers North America but has no strict country
-            # param; flag the limitation rather than silently returning global.
+            # search_contacts now restricts the query to Canada (no global fallback),
+            # so these records ARE Canada-scoped; mark them for the dashboard trace.
             for r in records:
-                r.mark("canada_only_requested:zi_na_preference_only")
+                r.mark("canada_only_filtered")
         return records
 
     async def enrich_final(self, contacts: list, company_name: str = "") -> None:

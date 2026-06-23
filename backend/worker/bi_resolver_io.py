@@ -21,7 +21,7 @@ from typing import Awaitable, Callable, Optional, Protocol
 from bi_resolver import (
     PERSONAS, FLOOR_PRIORITY, MIN_SLIDES, ENRICH_BUDGET_PER_TIER, Proximity,
     StakeholderRecord, SelectionResult, classify_title_proximity,
-    rank_by_proximity, best_proximate, systemic_field_absence,
+    rank_by_proximity, best_proximate,
     compute_data_quality_score, no_contact_sentinel,
 )
 
@@ -137,48 +137,48 @@ async def select_persona_contacts_io(
                 r.proximity = int(Proximity.VP if kind == "vp" else Proximity.DIRECTOR)
             cands = raw
 
-        tier_qualified: list[StakeholderRecord] = []
-        for cand in rank_by_proximity(cands)[:enrich_budget_per_tier]:
+        ranked = rank_by_proximity(cands)[:enrich_budget_per_tier]
+        # Everything we looked at is kept for the dashboard "examined" catalogue.
+        examined.extend(ranked)
+
+        # Real role matches (not weak/UNKNOWN titles) that aren't already headlining
+        # another persona's slide. We deliberately do NOT enrich here or require any
+        # contact data: selection is RELEVANCE-first.
+        fresh: list[StakeholderRecord] = []
+        for cand in ranked:
             ck = _dedupe_key(cand)
             if ck and ck in already_used_linkedins:
                 cand.mark("duplicate_skipped")
                 _trace(trace, persona=persona, source=source, candidate_name=cand.name,
                        outcome="duplicate_skipped")
                 continue
-            # Weak/UNKNOWN-title matches can only ever be floor-fill material, never
-            # win a slide — so DON'T spend an expensive Haiku LinkedIn web search on
-            # them. Keep their raw ZI record (email/phone/linkedin) for the floor.
             if cand.proximity > int(Proximity.DIRECTOR):
-                examined.append(cand)
+                # Weak/UNKNOWN title — floor-fill material only, never wins a slide.
                 _trace(trace, persona=persona, source=source, candidate_name=cand.name,
-                       outcome="weak_kept_unenriched")
+                       outcome="weak_kept_for_floor")
                 continue
-            enriched = await providers.enrich(cand)  # real role match → worth enriching
-            examined.append(enriched)
-            complete = enriched.is_complete()
-            _trace(trace, persona=persona, source=source, candidate_name=enriched.name,
-                   outcome="complete" if complete else "incomplete:" + ",".join(enriched.missing_required_fields()))
-            if complete:
-                tier_qualified.append(enriched)
+            fresh.append(cand)
 
-        if tier_qualified:
-            for e in tier_qualified:
-                selected.append(e)
-                k = _dedupe_key(e)
+        if fresh:
+            # Relevance-first: take the CLOSEST-proximity match(es) from this tier —
+            # co-equal best only (e.g. genuine co-CXOs sharing the exact title), not
+            # every candidate — then STOP descending. Data completeness (phone /
+            # email / LinkedIn) is filled afterward by the enrich pass on the
+            # SELECTED contacts, so we never pass over the most relevant person just
+            # because their raw record isn't pre-populated (the search endpoint
+            # returns no email/phone anyway — only the enrich endpoint does).
+            best_prox = fresh[0].proximity
+            # Co-equal best only, capped at 2 so a tier full of same-proximity
+            # adjacent titles (e.g. several "VP of Engineering") can't flood one
+            # persona with near-duplicates.
+            for w in [c for c in fresh if c.proximity == best_prox][:2]:
+                selected.append(w)
+                k = _dedupe_key(w)
                 if k:
                     already_used_linkedins.add(k)
-            return selected, examined  # surgical stop
-
-        missing = systemic_field_absence(examined)
-        if missing:
-            best = best_proximate(examined)
-            if best is not None:
-                best.mark(f"systemic_field_absence:{missing}")
-                selected.append(best)
-                bk = _dedupe_key(best)
-                if bk:
-                    already_used_linkedins.add(bk)
-            return selected, examined
+                _trace(trace, persona=persona, source=source, candidate_name=w.name,
+                       outcome=f"selected_proximity:{best_prox}")
+            return selected, examined  # surgical stop at the first tier with a real match
 
     return selected, examined
 

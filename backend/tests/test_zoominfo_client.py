@@ -303,6 +303,53 @@ class TestContactSearchPayloadFormat:
         all_titles_lower = [t.lower() for t in all_titles]
         assert any("cto" in t or "chief technology" in t for t in all_titles_lower), "CTO not in job title search"
         assert any("cio" in t or "chief information officer" in t for t in all_titles_lower), "CIO not in job title search"
+
+    @pytest.mark.asyncio
+    async def test_targeted_job_titles_searched_before_generic_clevel(self):
+        """When the caller passes job_titles (the v3.1 per-persona path), the FIRST
+        search must be that jobTitle filter — not the generic managementLevel dump.
+        Otherwise Strategy 1 fills the result pool and the persona's real title match
+        never gets searched (every persona returns the same generic C-Level pool)."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured = []
+
+        async def capture(endpoint, payload, _is_retry=False, params=None):
+            captured.append(payload["data"]["attributes"])
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.search_contacts(
+                domain="example.com", job_titles=["Chief Technology Officer"])
+
+        assert captured, "no search issued"
+        assert "jobTitle" in captured[0], (
+            f"first search must be the targeted jobTitle filter, got {captured[0]!r}")
+        assert captured[0]["jobTitle"] == ["Chief Technology Officer"]
+
+    @pytest.mark.asyncio
+    async def test_canada_only_restricts_country_and_skips_global(self):
+        """canada_only must scope EVERY search to Canada and never fall back to a
+        global (no-country) search, so a Canada-only run can't leak US/global hits."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+
+        captured = []
+
+        async def capture(endpoint, payload, _is_retry=False, params=None):
+            captured.append(payload["data"]["attributes"])
+            return {"data": []}  # force every strategy to run (nothing found)
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.search_contacts(
+                domain="example.com", job_titles=["Chief Technology Officer"],
+                canada_only=True)
+
+        assert captured, "no search issued"
+        for attrs in captured:
+            assert attrs.get("country") == ["Canada"], (
+                f"every canada_only search must filter country=['Canada'], got {attrs.get('country')!r}")
         assert any("cfo" in t or "chief financial" in t for t in all_titles_lower), "CFO not in job title search"
         assert any("coo" in t or "chief operating" in t for t in all_titles_lower), "COO not in job title search"
 

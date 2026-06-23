@@ -70,15 +70,16 @@ DEPARTMENT_BY_PERSONA = {
 }
 
 
-def deck_basename(company_name: str, date_iso: str) -> str:
-    """Storage-key basename for the deck: hprad_<company-slug>_<YYYY-MM-DD>.
+def deck_basename(company_name: str, date_iso: str, canada_only: bool = False) -> str:
+    """Storage-key basename for the deck: hprad_<company-slug>_<YYYY-MM-DD>[_ca].
 
     The slug lowercases the company and keeps [a-z0-9], collapsing every other run
     of characters to a single underscore (so "AT&T, Inc." -> "at_t_inc"). A blank
-    company falls back to 'company' so the key is always well-formed."""
+    company falls back to 'company' so the key is always well-formed. A Canada-only
+    run gets a "_ca" suffix so it never overwrites the company's global deck."""
     import re
     slug = re.sub(r"[^a-z0-9]+", "_", (company_name or "").lower()).strip("_")
-    return f"hprad_{slug or 'company'}_{date_iso}"
+    return f"hprad_{slug or 'company'}_{date_iso}" + ("_ca" if canada_only else "")
 
 
 def _parse_employee_count(raw) -> Optional[int]:
@@ -332,7 +333,8 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     # Deck filename: hprad_<company>_<date> (human-readable in Storage / on the
     # downloaded file) instead of the opaque internal job id.
     import datetime
-    deck_name = deck_basename(canonical.name, datetime.date.today().isoformat())
+    deck_name = deck_basename(canonical.name, datetime.date.today().isoformat(),
+                              canada_only=bool(company_data.get("canada_only")))
 
     url = await renderer.render(
         slide_contacts=sel.slide_contacts,

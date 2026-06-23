@@ -957,7 +957,8 @@ class ZoomInfoClient:
         self,
         domain: str,
         job_titles: Optional[List[str]] = None,
-        max_results: int = 25
+        max_results: int = 25,
+        canada_only: bool = False,
     ) -> Dict[str, Any]:
         """
         Search for executive and key contacts at a company.
@@ -1038,24 +1039,41 @@ class ZoomInfoClient:
 
         async def _search_na_first(base_attrs: Dict[str, Any], label: str) -> int:
             """
-            Try contact search with North America geo filter first, then global.
-            Maximises NA coverage without hard-failing when geo returns nothing
-            (some companies have no NA contacts in ZoomInfo, or the field isn't
-            supported for a given search type).
+            Geo-filtered contact search. By default: North America first, then a
+            global fallback (some companies have no NA contacts in ZoomInfo, or the
+            field isn't supported for a search type). When `canada_only` is set we
+            restrict to Canada and DO NOT fall back to global — a Canada-only run
+            must never leak US/global contacts.
             """
-            na_attrs = {**base_attrs, "country": NORTH_AMERICA_COUNTRIES}
-            count = await _search(na_attrs, f"{label} [NA]")
-            if count > 0:
-                return count
+            countries = ["Canada"] if canada_only else NORTH_AMERICA_COUNTRIES
+            geo_label = "CA" if canada_only else "NA"
+            geo_attrs = {**base_attrs, "country": countries}
+            count = await _search(geo_attrs, f"{label} [{geo_label}]")
+            if count > 0 or canada_only:
+                return count  # canada_only: stop here (no global fallback)
             logger.info("ZoomInfo %s: NA geo returned 0, falling back to global", label)
             return await _search(base_attrs, f"{label} [global]")
 
         rpp = min(max_results, 10)
 
+        # --- Strategy 0: Targeted jobTitle search FIRST when the caller specifies
+        # titles (the v3.1 per-persona path). This must precede the generic C-Level
+        # dump (Strategy 1): otherwise Strategy 1 fills all `rpp` slots with whatever
+        # C-Level people ZoomInfo ranks highest for the company, the `len < max`
+        # guards short-circuit the rest, and the persona's actual title match never
+        # gets searched — so every persona returns the SAME generic pool. Searching
+        # the requested titles first makes the pool persona-relevant.
+        if job_titles and len(all_people) < max_results:
+            await _search_na_first(
+                {"companyWebsite": website_candidates, "jobTitle": job_titles, "rpp": rpp},
+                "targeted-jobtitle"
+            )
+
         # --- Strategy 1: C-Level by managementLevel (most reliable ZoomInfo filter) ---
         # This is the backbone — ZoomInfo's own classification catches all C-Suite
         # regardless of exact title wording (avoids jobTitle exact-match misses on
-        # large companies like Amazon where titles vary widely).
+        # large companies like Amazon where titles vary widely). For a targeted
+        # search it now only SUPPLEMENTS the persona titles found in Strategy 0.
         if len(all_people) < max_results:
             await _search_na_first(
                 {"companyWebsite": website_candidates, "managementLevel": ["C-Level"], "rpp": rpp},
@@ -1094,7 +1112,9 @@ class ZoomInfoClient:
             )
 
         # --- Strategy 6: No-filter fallback (all roles, all regions) ---
-        if not all_people:
+        # Skipped under canada_only: an unfiltered search returns all regions and
+        # would leak non-Canadian contacts into a Canada-only run.
+        if not all_people and not canada_only:
             await _search(
                 {"companyWebsite": website_candidates, "rpp": max_results},
                 "no-filter fallback"
@@ -1106,10 +1126,10 @@ class ZoomInfoClient:
         if not all_people:
             company_name = self._company_name_from_domain(domain)
             if company_name:
-                await _search(
-                    {"companyName": company_name, "rpp": max_results},
-                    f"companyName={company_name} fallback"
-                )
+                cn_attrs = {"companyName": company_name, "rpp": max_results}
+                if canada_only:
+                    cn_attrs["country"] = ["Canada"]  # keep the company-name fallback Canada-scoped
+                await _search(cn_attrs, f"companyName={company_name} fallback")
 
         # Sort: CTO/CFO/CMO/CIO first → other C-Suite → VP → Director → other.
         # This sorting is the primary mechanism for surfacing priority contacts —

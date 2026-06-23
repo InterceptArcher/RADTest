@@ -141,6 +141,20 @@ The content library was upgraded to the **V2 internal audit (54 assets)**, repla
 
 ---
 
+## RAD Pipeline v3.1 — Contact Relevance + Canada Filter (2026-06-23)
+
+A holistic-evaluation pass surfaced that selected stakeholders were frequently the **wrong people** (e.g. Microsoft "CTO" = a *Senior Manager, Executive Communications*). Root cause + fixes:
+
+**Root cause — ZoomInfo search returned a generic, non-persona pool.** In `search_contacts`, Strategy 1 (a generic `managementLevel=["C-Level"]` dump, `rpp=10`) ran *first* and filled the result pool to `max_results`; the `if len(all_people) < max_results` guards then short-circuited every later strategy, so Strategy 2 (the persona's actual `jobTitle` filter) **never ran**. Every persona therefore got the same generic top-10 C-Level people, and since the Contact **Search** endpoint returns no email/phone (only Contact **Enrich** does), the old completeness gate could never pass during selection — it always degenerated to `best_proximate` over that generic pool. Fix: a new **Strategy 0** runs the caller's `jobTitle` filter *first* whenever titles are supplied (the v3.1 per-persona path), so the pool is persona-relevant before the C-Level dump supplements it.
+
+**Selection is now relevance-first, enrich-second.** `select_persona_contacts_io` no longer enriches per-candidate or gates on data completeness. It picks the **closest-proximity** real title match(es) per persona (co-equal best, capped at 2) and stops; phone/email/LinkedIn are then filled by the post-selection enrich pass on those *selected* contacts. We never pass over the most relevant person because their raw record isn't pre-populated. This also removes wasteful per-candidate Haiku web searches (faster).
+
+**Canada filter — now real.** `canada_only` is a first-class field on `/profile-request` → `company_data` → the v3.1 hook → `run_stage3` → `providers.query` → `search_contacts(canada_only=True)`, which restricts **every** ZoomInfo search to `country=["Canada"]` and disables the NA→global and no-filter fallbacks so a Canada-only run can't leak US/global contacts. The Canada deck is saved with a `_ca` suffix (`hprad_<co>_<date>_ca.pptx`) so it never overwrites the global deck. (Previously `canada_only` wasn't accepted by the API at all, and the provider only *marked* records "NA-preference" — a no-op.)
+
+**Tests:** new `test_targeted_job_titles_searched_before_generic_clevel`, `test_canada_only_restricts_country_and_skips_global`, `deck_basename` Canada-suffix test; existing selection/IO tests updated for the relevance-first stop (co-equal-best). `start_date` stays best-effort (citation-gated web search) — it is intentionally NOT a selection or enrichment hard requirement (phone/email/LinkedIn are).
+
+---
+
 ## RAD Pipeline v3.1 — Slideshow QA Batch 6 (2026-06-23)
 
 Sixth QA pass. One renderer enhancement + a renderer rename hook (both unit-tested where pure), four master-template edits, and two prompt/data fixes.
