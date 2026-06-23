@@ -151,11 +151,36 @@ class ClaudeFormatter:
         authored = await self.author(validated_facts, to_author) if to_author else {}
         company_slots = {**factual, **authored}
 
+        # Per-persona outreach token map (the Email/LinkedIn/Call slides are cloned
+        # per persona by the renderer). Keyed by the master's example token strings.
+        bs = validated_facts.get("buying_signals") or {}
+        topics = bs.get("intent_topics") or [
+            t.get("topic") for t in (bs.get("intent_topics_detailed") or []) if t.get("topic")]
+        topic = str((topics[0] if topics else "") or "")
+        company = str(validated_facts.get("company_name", "") or "")
+        industry = str(validated_facts.get("industry", "") or "")
+        seller = str(validated_facts.get("salesperson_name", "") or "")
         outreach_slots: dict[str, dict] = {}
         for persona, contacts in slide_contacts.items():
             real = [c for c in contacts if not getattr(c, "is_sentinel", False)]
-            if real:
-                outreach_slots[persona] = {"greeting": outreach_greeting(real)}
+            if not real:
+                continue
+            firsts = outreach_greeting(real)
+            outreach_slots[persona] = {
+                "[CTO]": persona,
+                "[Aviva Canada]": company,
+                "[Aviva Canada.]": company,
+                "[Aviva Canada on Cloud Migration]": (f"{company} on {topic}" if topic else company),
+                "[Lisa]": firsts,
+                "[Lisa,]": (firsts + "," if firsts else ""),
+                "[Cloud Migration]": topic,
+                "[Cloud migration]": topic,
+                "[Insurance]": industry,
+                "[Insurance teams]": (f"{industry} teams" if industry else ""),
+                "[Evan Perkins]": seller,
+                "[phone number]": "",
+                "[Maximize productivity with AI workstation laptops]": "",  # resource = fast-follow
+            }
         return {"company_slots": company_slots, "outreach_slots": outreach_slots}
 
     async def author_contacts(self, contacts: list, facts: dict) -> None:

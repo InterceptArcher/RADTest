@@ -85,4 +85,6 @@ def test_formatter_build_splits_factual_and_authored():
     assert cs["[Private]"] == "Public"           # factual -> company_type
     assert cs["[Aviva Canada]"] == "Globex"      # factual -> company_name
     assert cs["[Some authored overview]"] == "AUTHORED"
-    assert out["outreach_slots"]["CFO"]["greeting"] == "Fay/Max"
+    # outreach map is keyed by the master's example token strings now
+    assert out["outreach_slots"]["CFO"]["[Lisa]"] == "Fay/Max"
+    assert out["outreach_slots"]["CFO"]["[Aviva Canada]"] == "Globex"

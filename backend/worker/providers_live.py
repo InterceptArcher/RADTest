@@ -200,6 +200,7 @@ class LiveProviders:
                     c.mobile_phone = c.mobile_phone or p.get("mobile_phone", "")
                     c.linkedin_url = c.linkedin_url or p.get("linkedin", "") or p.get("linkedin_url", "")
                     c.start_date = c.start_date or p.get("hire_date", "") or p.get("start_date", "")
+                    c.department = c.department or p.get("department", "")
                     if c.email:
                         c.email_sources.add("zoominfo")
                     c.mark("zi_contact_enriched")

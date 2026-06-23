@@ -98,10 +98,13 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
         primary_domain=validated_data.get("domain") or company_data.get("domain", ""),
         industry=validated_data.get("industry", ""),
     )
-    # Ensure the seller name is available to the factual-token fill (the legacy
-    # flow sets it after this block, so set it here for the "Prepared for" line).
+    # Ensure the seller name + pull date are available to the factual-token fill
+    # (the legacy flow sets seller after this block; pull date isn't set at all).
     if not validated_data.get("salesperson_name"):
         validated_data["salesperson_name"] = company_data.get("salesperson_name", "")
+    if not validated_data.get("pull_date"):
+        import datetime
+        validated_data["pull_date"] = datetime.date.today().strftime("%B %d, %Y")
 
     base = os.environ["SUPABASE_URL"].rstrip("/")
     bucket = os.getenv("SUPABASE_STORAGE_BUCKET_DECKS", "decks")
@@ -134,6 +137,17 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
         await formatter.author_contacts(selected, validated_data)
     except Exception as e:  # noqa: BLE001
         logger.warning("v3.1 author_contacts failed (continuing): %s", e)
+
+    # Communication preference: derive from the contact methods we actually have.
+    for c in selected:
+        if getattr(c, "is_sentinel", False) or c.communication_preference:
+            continue
+        methods = [m for m, ok in (
+            ("Phone", bool(c.phone or c.direct_phone or c.mobile_phone)),
+            ("Email", bool(c.email)),
+            ("LinkedIn", bool(c.linkedin_url)),
+        ) if ok]
+        c.communication_preference = " / ".join(methods)
 
     # Recompute the score now that contacts are enriched, then persist FIRST so a
     # render failure below still leaves the 6-bucket catalogue + score on the job.

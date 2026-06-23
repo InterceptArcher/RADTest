@@ -261,8 +261,25 @@ class PptxRenderer:
             for tok in mapping if tok in joined
         )
         if spans_paragraphs:
-            # Frame-level replace (collapses to one run; acceptable for these blobs).
+            # Frame-level replace collapses runs, which would drop the font size —
+            # capture the first real run's size/name and re-apply so the text keeps
+            # its 8.5pt sizing instead of jumping to the placeholder default.
+            orig_sz = orig_name = None
+            for p in tf.paragraphs:
+                for r in p.runs:
+                    if (r.text or "").strip():
+                        orig_sz, orig_name = r.font.size, r.font.name
+                        break
+                if orig_sz is not None or orig_name is not None:
+                    break
             tf.text = replace_tokens(joined, mapping)
+            if orig_sz is not None or orig_name:
+                for p in tf.paragraphs:
+                    for r in p.runs:
+                        if orig_sz is not None:
+                            r.font.size = orig_sz
+                        if orig_name:
+                            r.font.name = orig_name
             return
         for para in tf.paragraphs:
             runs = para.runs
@@ -345,25 +362,41 @@ class PptxRenderer:
         personas_present = [p for p in PERSONAS if any(
             not getattr(c, "is_sentinel", False) for c in slide_contacts.get(p, []))]
 
-        # 1) Clone the contact slide once per contact. Capture the template slide
-        #    OBJECT and its <p:sldId> ELEMENT first — cloning by index breaks once
-        #    inserts shift indices, and we remove the exact element afterward.
-        template_slide = prs.slides[CONTACT_SLIDE_INDEX]
-        template_sldId = list(prs.slides._sldIdLst)[CONTACT_SLIDE_INDEX]
+        # Capture template slides + their <p:sldId> ELEMENTS before inserting
+        #    anything (inserts shift indices; we clone from the captured OBJECTS and
+        #    remove the exact elements afterward).
+        sldIdLst = prs.slides._sldIdLst
+        contact_tmpl = prs.slides[CONTACT_SLIDE_INDEX]
+        contact_sldId = list(sldIdLst)[CONTACT_SLIDE_INDEX]
+        outreach_tmpls = [prs.slides[i] for i in OUTREACH_SLIDE_INDICES]
+        outreach_sldIds = [list(sldIdLst)[i] for i in OUTREACH_SLIDE_INDICES]
+
+        # 1) One contact slide per selected contact, right after the contact template.
         for i, contact in enumerate(contacts):
-            clone = self._clone_slide(prs, template_slide, CONTACT_SLIDE_INDEX + 1 + i)
+            pos = list(sldIdLst).index(contact_sldId) + 1 + i
+            clone = self._clone_slide(prs, contact_tmpl, pos)
             tokens = self._slide_tokens(clone)
             mapping = build_contact_replacements(contact, tokens)
-            # Incomplete contacts (floor-filled / agent-sourced) still render —
-            # missing fields become blanks rather than failing the whole deck.
-            # Any unmapped token gets blanked too, so no literal "[..]" leaks onto a slide.
             for tok in tokens:
-                mapping.setdefault(tok, "")
+                mapping.setdefault(tok, "")  # blank unmapped so no literal "[..]" leaks
             for shape in clone.shapes:
                 self._fill_shape(shape, mapping)
-        # Remove the original template slide (by its exact sldId element) so the
-        # unfilled example ("Lisa Leo"/"Aviva Canada") never ships.
-        prs.slides._sldIdLst.remove(template_sldId)
+
+        # 2) One outreach group (Email / LinkedIn / Call) per persona present,
+        #    inserted right after the original outreach block.
+        insert_at = list(sldIdLst).index(outreach_sldIds[-1]) + 1
+        for persona in personas_present:
+            omap = outreach_slots.get(persona, {})
+            for tmpl in outreach_tmpls:
+                clone = self._clone_slide(prs, tmpl, insert_at)
+                insert_at += 1
+                for shape in clone.shapes:
+                    self._fill_shape(shape, omap)
+
+        # 3) Remove the original template slides (contact + outreach) so only the
+        #    cloned, filled copies ship (no "Lisa Leo"/"Aviva Canada" example).
+        for sid in [contact_sldId] + outreach_sldIds:
+            sldIdLst.remove(sid)
 
         # 2) Fill single-instance company slides from the formatter's slot map.
         for slide in prs.slides:
@@ -374,10 +407,14 @@ class PptxRenderer:
         #    leaks onto a slide (contact clones were already filled in step 1).
         for slide in prs.slides:
             for shape in slide.shapes:
-                if shape.has_text_frame:
-                    leftover = {t: "" for t in extract_tokens(shape.text_frame.text)}
-                    if leftover:
-                        self._fill_shape(shape, leftover)
+                if not shape.has_text_frame:
+                    continue
+                full = shape.text_frame.text
+                leftover = {t: "" for t in extract_tokens(full)}
+                if leftover:
+                    self._fill_shape(shape, leftover)
+                elif full.strip() in ("[", "]", "[]", "[ ]"):
+                    shape.text_frame.text = ""  # stray decorative bracket (e.g. title-slide date)
 
         # 3) (Outreach per-persona cloning handled here in CI.) Fill outreach.
         #    The original master ships one outreach group; per-persona cloning of
