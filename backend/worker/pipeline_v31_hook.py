@@ -115,23 +115,32 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     formatter = ClaudeFormatter()
     renderer = PptxRenderer(tmp.name, uploader=_make_storage_uploader(base))
 
-    out = await assemble_v31(providers, formatter, renderer, canonical, validated_data,
-                             job_id, bool(company_data.get("canada_only")))
-    sel = out["selection"]
-
-    # Success only past here — mutate validated_data so the result + dashboard
-    # carry the new surgical contacts (the guarded frontend components read these).
+    # --- Stage 3: surgical contacts (validated, reliable). Persist FIRST, so a
+    # render failure below still leaves the 6-bucket catalogue + score on the job.
+    sel = await run_stage3(providers, canonical, canada_only=bool(company_data.get("canada_only")))
     validated_data["slide_contacts"] = _serialize(sel.slide_contacts)
     validated_data["contact_catalogue"] = _serialize(sel.contact_catalogue)
     validated_data["data_quality_score"] = sel.data_quality_score
     validated_data["enrichment_trace"] = sel.enrichment_trace
-    validated_data["slideshow_url"] = out["slideshow_url"]
-    logger.info("v3.1 pipeline ok: %d contacts, dqs=%.2f, deck=%s",
-                sum(len(v) for v in sel.slide_contacts.values()),
-                sel.data_quality_score, out["slideshow_url"])
+    logger.info("v3.1 contacts: %d across personas, dqs=%.2f",
+                sum(len(v) for v in sel.slide_contacts.values()), sel.data_quality_score)
+
+    # --- Stage 5/6: author + render the deck. If this raises, the caller catches
+    # it, records the error, and falls back to the Gamma deck — but the contacts
+    # above are already on the job (so the dashboard shows them either way).
+    company_tokens = renderer.introspect_company_tokens()
+    formatted = await formatter.build(validated_data, company_tokens, sel.slide_contacts)
+    url = await renderer.render(
+        slide_contacts=sel.slide_contacts,
+        company_slots=formatted["company_slots"],
+        outreach_slots=formatted["outreach_slots"],
+        job_id=job_id,
+    )
+    validated_data["slideshow_url"] = url
+    logger.info("v3.1 deck rendered: %s", url)
     return {
         "success": True,
-        "slideshow_url": out["slideshow_url"],
+        "slideshow_url": url,
         "slideshow_id": job_id,
         "slideshow_status": "completed",
         "data_quality_score": sel.data_quality_score,

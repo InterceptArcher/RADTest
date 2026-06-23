@@ -268,19 +268,25 @@ class PptxRenderer:
         from pptx.oxml.ns import qn
 
         src = prs.slides[src_index]
-        # Create a blank slide on the same layout, then replace its shape tree.
+        # New slide on the SAME layout — this inherits the master/layout branding,
+        # background, logos, and footers without copying any relationships.
         blank = prs.slides.add_slide(src.slide_layout)
         for shape in list(blank.shapes):
             shape._element.getparent().remove(shape._element)
-        for el in src.shapes._spTree:  # copy every shape element
-            if el.tag == qn("p:nvGrpSpPr") or el.tag == qn("p:grpSpPr"):
+
+        spTree = blank.shapes._spTree
+        for el in src.shapes._spTree:
+            tag = el.tag
+            if tag in (qn("p:nvGrpSpPr"), qn("p:grpSpPr")):
                 continue
-            blank.shapes._spTree.append(copy.deepcopy(el))
-        # Copy image/relationship parts referenced by the source slide.
-        for rid, rel in src.part.rels.items():
-            if "image" in rel.reltype:
-                blank.part.rels.add_relationship(rel.reltype, rel._target, rel.rId)
-        # Move the new slide's <p:sldId> to the desired position.
+            # Skip pictures: they carry slide-level image relationships (r:embed)
+            # that would need cross-slide rel copying (the fragile part). The
+            # headshot is a v1 fast-follow; brand imagery comes from the layout.
+            if tag == qn("p:pic"):
+                continue
+            spTree.append(copy.deepcopy(el))
+
+        # Move the newly-appended slide to the desired position.
         sldIdLst = prs.slides._sldIdLst
         ids = list(sldIdLst)
         sldIdLst.remove(ids[-1])

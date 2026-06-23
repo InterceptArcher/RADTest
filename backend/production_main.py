@@ -2766,6 +2766,12 @@ async def process_company_profile(job_id: str, company_data: dict):
             "ticker": zoominfo_data.get("ticker") or validated_data.get("ticker"),
             "zoominfo_company_id": zoominfo_data.get("company_id") or None,
             "validated_data": validated_data,
+            # v3.1 surgical contact pipeline outputs (top-level for the frontend
+            # ContactCatalogue + ConfidenceBadge; present only when the flag ran)
+            "contact_catalogue": validated_data.get("contact_catalogue"),
+            "slide_contacts": validated_data.get("slide_contacts"),
+            "data_quality_score": validated_data.get("data_quality_score"),
+            "enrichment_trace": validated_data.get("enrichment_trace"),
             # New intelligence sections at top level for frontend
             # Build executive_snapshot from nested or flat data
             "executive_snapshot": _build_executive_snapshot(validated_data, company_data),
