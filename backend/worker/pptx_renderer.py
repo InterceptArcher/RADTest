@@ -346,8 +346,10 @@ class PptxRenderer:
             not getattr(c, "is_sentinel", False) for c in slide_contacts.get(p, []))]
 
         # 1) Clone the contact slide once per contact. Capture the template slide
-        #    OBJECT first — cloning by index would break once inserts shift indices.
+        #    OBJECT and its <p:sldId> ELEMENT first — cloning by index breaks once
+        #    inserts shift indices, and we remove the exact element afterward.
         template_slide = prs.slides[CONTACT_SLIDE_INDEX]
+        template_sldId = list(prs.slides._sldIdLst)[CONTACT_SLIDE_INDEX]
         for i, contact in enumerate(contacts):
             clone = self._clone_slide(prs, template_slide, CONTACT_SLIDE_INDEX + 1 + i)
             tokens = self._slide_tokens(clone)
@@ -359,8 +361,9 @@ class PptxRenderer:
                 mapping.setdefault(tok, "")
             for shape in clone.shapes:
                 self._fill_shape(shape, mapping)
-        # Remove the original template slide so it doesn't ship as a stray example.
-        self._remove_slide(prs, template_slide)
+        # Remove the original template slide (by its exact sldId element) so the
+        # unfilled example ("Lisa Leo"/"Aviva Canada") never ships.
+        prs.slides._sldIdLst.remove(template_sldId)
 
         # 2) Fill single-instance company slides from the formatter's slot map.
         for slide in prs.slides:
