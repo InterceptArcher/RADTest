@@ -2510,11 +2510,29 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["current_step"] = "Generating slideshow..."
         logger.info(f"🎨 Starting slideshow generation for {company_data['company_name']}")
 
+        # v3.1 (flag-gated): surgical 6-persona contacts + exact-copy PPTX deck.
+        # Reuses the existing intel/council above; only swaps contacts + slideshow.
+        # On ANY failure it falls through to the legacy Gamma path below.
+        # Flag OFF (default) = current behavior, completely unchanged.
+        _v31_done = False
+        if os.getenv("USE_V31_PIPELINE", "").strip().lower() == "true":
+            try:
+                from worker.pipeline_v31_hook import run_v31_pipeline
+                slideshow_result = await run_v31_pipeline(
+                    company_data, validated_data, job_id, jobs_store
+                )
+                _v31_done = bool(slideshow_result.get("slideshow_url"))
+                logger.info(f"✅ v3.1 pipeline deck: {slideshow_result.get('slideshow_url')}")
+            except Exception as e:
+                logger.error(f"⚠️ v3.1 pipeline failed ({type(e).__name__}: {e}); falling back to Gamma")
+                _v31_done = False
+
         # CRITICAL: Wrap in try-except so job continues even if slideshow fails
         try:
             # Inject salesperson_name so it reaches the gamma slideshow
             validated_data["salesperson_name"] = company_data.get("salesperson_name", "")
-            slideshow_result = await generate_slideshow(company_data["company_name"], validated_data)
+            if not _v31_done:  # v3.1 deck already produced above? skip Gamma.
+                slideshow_result = await generate_slideshow(company_data["company_name"], validated_data)
 
             # Log slideshow result for debugging
             if slideshow_result.get("success"):

@@ -188,6 +188,10 @@ def missing_required_contact_values(replacements: dict[str, str], contact) -> li
 CONTACT_SLIDE_INDEX = 7          # slide 8: stakeholder profile (cloned per contact)
 OUTREACH_SLIDE_INDICES = (9, 10, 11)  # slides 10-12: Email / LinkedIn / Call (per persona)
 CONTACT_INSERT_AFTER = 6         # insert contact clones after slide 7 (Stakeholder Map intro)
+# Single-instance slides (cover, exec, signals, opportunities, sales-program,
+# closing, logo) — the formatter authors/fills these. Excludes the contact
+# template (7) and outreach group (9,10,11), which are filled per clone.
+SINGLE_INSTANCE_SLIDE_INDICES = (0, 1, 2, 3, 4, 5, 6, 8, 12, 13)
 
 
 class PptxRenderer:
@@ -215,6 +219,20 @@ class PptxRenderer:
             return Presentation(self.template_path)
         except Exception as exc:  # noqa: BLE001
             raise MasterTemplateCorruptError(str(exc)) from exc
+
+    def introspect_company_tokens(self) -> list[str]:
+        """Distinct [bracket] tokens on the single-instance slides (prod path —
+        opens the master via python-pptx). The formatter authors/fills these."""
+        prs = self._open()
+        toks: list[str] = []
+        for i, slide in enumerate(prs.slides):
+            if i in SINGLE_INSTANCE_SLIDE_INDICES:
+                toks.extend(self._slide_tokens(slide))
+        seen: list[str] = []
+        for t in toks:
+            if t not in seen:
+                seen.append(t)
+        return seen
 
     @staticmethod
     def _slide_tokens(slide) -> list[str]:

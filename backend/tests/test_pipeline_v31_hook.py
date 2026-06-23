@@ -1,0 +1,88 @@
+"""Tests for the flag-gated v3.1 hook core (assemble_v31) + formatter.build (fakes)."""
+import asyncio
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "worker"))
+
+from bi_resolver import StakeholderRecord, CanonicalCompany, MIN_SLIDES  # noqa: E402
+from claude_formatter import ClaudeFormatter  # noqa: E402
+from pipeline_v31_hook import assemble_v31, _serialize  # noqa: E402
+
+
+def run(coro):
+    return asyncio.new_event_loop().run_until_complete(coro)
+
+
+def _complete(persona, name):
+    return StakeholderRecord(persona=persona, name=name, title="Chief X Officer",
+                             email=f"{name}@a.com", linkedin_url=f"https://li/{name}",
+                             start_date="2024", source="zoominfo", tier=1, proximity=0)
+
+
+class FakeProviders:
+    def __init__(self):
+        self.table = {
+            ("CIO", "zoominfo", "csuite"): [_complete("CIO", "Ivy")],
+            ("CTO", "zoominfo", "csuite"): [_complete("CTO", "Tom")],
+            ("CFO", "zoominfo", "csuite"): [_complete("CFO", "Fay")],
+            ("COO", "zoominfo", "csuite"): [_complete("COO", "Omar")],
+        }
+    async def query(self, persona, source, kind, canonical, canada_only):
+        return list(self.table.get((persona, source, kind), []))
+    async def judge_adjacency(self, title, persona): return True
+    async def enrich(self, record): return record
+    async def fallback(self, persona, canonical, canada_only): return None
+
+
+class FakeFormatter:
+    def __init__(self): self.seen_tokens = None
+    async def build(self, facts, company_tokens, slide_contacts):
+        self.seen_tokens = company_tokens
+        return {"company_slots": {t: "copy" for t in company_tokens},
+                "outreach_slots": {p: {"greeting": "/".join(c.name.split()[0] for c in cs)}
+                                   for p, cs in slide_contacts.items() if cs}}
+
+
+class FakeRenderer:
+    def __init__(self): self.render_args = None
+    def introspect_company_tokens(self): return ["[Aviva Canada]", "[Overview blurb]"]
+    async def render(self, *, slide_contacts, company_slots, outreach_slots, job_id):
+        self.render_args = (slide_contacts, company_slots, outreach_slots)
+        return f"https://supabase/decks/{job_id}.pptx"
+
+
+def test_assemble_v31_runs_contacts_then_renders():
+    renderer = FakeRenderer()
+    out = run(assemble_v31(FakeProviders(), FakeFormatter(), renderer,
+                           CanonicalCompany(name="Globex", primary_domain="g.com"),
+                           {"company_name": "Globex"}, "job9", False))
+    sel = out["selection"]
+    assert sum(len(v) for v in sel.slide_contacts.values()) >= MIN_SLIDES
+    assert out["slideshow_url"].endswith("job9.pptx")
+    # renderer received the formatter's assembled slots
+    assert renderer.render_args[1]["[Overview blurb]"] == "copy"
+
+
+def test_serialize_produces_plain_dicts():
+    out = _serialize({"CTO": [_complete("CTO", "Tom")], "CIO": []})
+    assert out["CTO"][0]["name"] == "Tom" and out["CIO"] == []
+    assert isinstance(out["CTO"][0], dict)
+
+
+def test_formatter_build_splits_factual_and_authored():
+    f = ClaudeFormatter()
+
+    async def fake_author(facts, tokens):  # avoid the real Anthropic call
+        return {t: "AUTHORED" for t in tokens}
+
+    f.author = fake_author
+    facts = {"company_type": "Public", "company_name": "Globex"}
+    tokens = ["[Private]", "[Aviva Canada]", "[Some authored overview]"]
+    contacts = {"CFO": [_complete("CFO", "Fay Roe"), _complete("CFO", "Max Vale")]}
+    out = run(f.build(facts, tokens, contacts))
+    cs = out["company_slots"]
+    assert cs["[Private]"] == "Public"           # factual -> company_type
+    assert cs["[Aviva Canada]"] == "Globex"      # factual -> company_name
+    assert cs["[Some authored overview]"] == "AUTHORED"
+    assert out["outreach_slots"]["CFO"]["greeting"] == "Fay/Max"

@@ -126,6 +126,27 @@ class ClaudeFormatter:
         self._api_key = api_key
         self._model = model
 
+    async def build(self, validated_facts: dict, company_tokens: list[str], slide_contacts: dict) -> dict:
+        """Assemble everything the renderer needs for the single-instance slides
+        and per-persona outreach.
+
+        - company_slots: factual tokens filled from validated facts + authored
+          prose tokens written by Sonnet (one call).
+        - outreach_slots: per persona present, the slash-joined greeting (multi-
+          contact personas → "Lisa/Marcus"). Body copy is persona-generic.
+        """
+        factual = build_factual_replacements(company_tokens, validated_facts)
+        to_author = authored_tokens(company_tokens)
+        authored = await self.author(validated_facts, to_author) if to_author else {}
+        company_slots = {**factual, **authored}
+
+        outreach_slots: dict[str, dict] = {}
+        for persona, contacts in slide_contacts.items():
+            real = [c for c in contacts if not getattr(c, "is_sentinel", False)]
+            if real:
+                outreach_slots[persona] = {"greeting": outreach_greeting(real)}
+        return {"company_slots": company_slots, "outreach_slots": outreach_slots}
+
     async def author(self, facts: dict, tokens_to_author: list[str], *, max_retries: int = 3) -> dict:
         import os
         from anthropic import AsyncAnthropic  # lazy: not an import-time dependency
