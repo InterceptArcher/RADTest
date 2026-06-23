@@ -47,13 +47,24 @@ def is_factual_token(token: str) -> bool:
     return token in FACTUAL_COMPANY_TOKENS
 
 
+def _resolve_fact(facts: dict, key: str) -> str:
+    """Resolve a fact top-level, then from executive_snapshot (where the council
+    nests several fields like estimated_it_spend)."""
+    v = facts.get(key)
+    if v:
+        return str(v)
+    es = facts.get("executive_snapshot") or {}
+    v = es.get(key)
+    return str(v) if v else ""
+
+
 def build_factual_replacements(tokens: list[str], facts: dict) -> dict[str, str]:
     """Fill the factual company tokens present on a slide from validated facts."""
     out: dict[str, str] = {}
     for tok in tokens:
         key = FACTUAL_COMPANY_TOKENS.get(tok)
         if key is not None:
-            out[tok] = str(facts.get(key, "") or "")
+            out[tok] = _resolve_fact(facts, key)
     return out
 
 
@@ -146,6 +157,44 @@ class ClaudeFormatter:
             if real:
                 outreach_slots[persona] = {"greeting": outreach_greeting(real)}
         return {"company_slots": company_slots, "outreach_slots": outreach_slots}
+
+    async def author_contacts(self, contacts: list, facts: dict) -> None:
+        """Author per-contact slide narrative (about / strategic_priorities /
+        conversation_starters) in ONE Sonnet call, mutating the records in place.
+        Without this the contact slides render with blank bio/priorities sections."""
+        targets = [c for c in contacts if not getattr(c, "is_sentinel", False)]
+        if not targets:
+            return
+        import os
+        from anthropic import AsyncAnthropic
+        client = AsyncAnthropic(api_key=self._api_key or os.getenv("ANTHROPIC_API_KEY"))
+        roster = [{"index": i, "name": c.name, "title": c.title, "persona": c.persona}
+                  for i, c in enumerate(targets)]
+        system = ("You write concise, executive-ready stakeholder briefing copy for a sales deck. "
+                  "For each contact return: a 2-3 sentence 'about' bio, 2-4 'strategic_priorities' "
+                  "(short phrases), and a 1-2 sentence 'conversation_starters'. No fabricated facts "
+                  "beyond role-typical inference. Return STRICT JSON: a list of "
+                  '{"index": int, "about": str, "strategic_priorities": [str], "conversation_starters": str}.')
+        user = ("COMPANY:\n" + json.dumps({k: facts.get(k) for k in ("company_name", "industry", "company_overview")}, ensure_ascii=False)
+                + "\n\nCONTACTS:\n" + json.dumps(roster, ensure_ascii=False))
+        try:
+            resp = await client.messages.create(model=self._model, max_tokens=2048, temperature=0.3,
+                                                 system=system, messages=[{"role": "user", "content": user}])
+            text = "".join(getattr(b, "text", "") for b in resp.content)
+            s = text[text.find("["):text.rfind("]") + 1]
+            authored = json.loads(s)
+        except Exception:  # noqa: BLE001 — narrative is best-effort; never block the deck
+            return
+        by_idx = {a.get("index"): a for a in authored if isinstance(a, dict)}
+        for i, c in enumerate(targets):
+            a = by_idx.get(i)
+            if not a:
+                continue
+            c.about = c.about or str(a.get("about", ""))
+            sp = a.get("strategic_priorities") or []
+            if sp and not c.strategic_priorities:
+                c.strategic_priorities = [str(x) for x in sp]
+            c.conversation_starters = c.conversation_starters or str(a.get("conversation_starters", ""))
 
     async def author(self, facts: dict, tokens_to_author: list[str], *, max_retries: int = 3) -> dict:
         import os

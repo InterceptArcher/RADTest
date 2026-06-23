@@ -115,15 +115,32 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     formatter = ClaudeFormatter()
     renderer = PptxRenderer(tmp.name, uploader=_make_storage_uploader(base))
 
-    # --- Stage 3: surgical contacts (validated, reliable). Persist FIRST, so a
-    # render failure below still leaves the 6-bucket catalogue + score on the job.
+    # --- Stage 3: surgical contacts (validated, reliable).
     sel = await run_stage3(providers, canonical, canada_only=bool(company_data.get("canada_only")))
+
+    # Final pass on ONLY the selected contacts: ZI Contact-Enrich (email/phone/
+    # LinkedIn) + author per-contact bio/priorities/starters. Bounded to the ≤N
+    # on the deck, so it's cheap, and it fills the slots that rendered blank.
+    selected = [c for v in sel.slide_contacts.values() for c in v]
+    try:
+        await providers.enrich_final(selected)
+    except Exception as e:  # noqa: BLE001 — enrichment is best-effort
+        logger.warning("v3.1 enrich_final failed (continuing): %s", e)
+    try:
+        await formatter.author_contacts(selected, validated_data)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("v3.1 author_contacts failed (continuing): %s", e)
+
+    # Recompute the score now that contacts are enriched, then persist FIRST so a
+    # render failure below still leaves the 6-bucket catalogue + score on the job.
+    from bi_resolver import compute_data_quality_score
+    sel.data_quality_score = compute_data_quality_score(sel.slide_contacts)
     validated_data["slide_contacts"] = _serialize(sel.slide_contacts)
     validated_data["contact_catalogue"] = _serialize(sel.contact_catalogue)
     validated_data["data_quality_score"] = sel.data_quality_score
     validated_data["enrichment_trace"] = sel.enrichment_trace
     logger.info("v3.1 contacts: %d across personas, dqs=%.2f",
-                sum(len(v) for v in sel.slide_contacts.values()), sel.data_quality_score)
+                len(selected), sel.data_quality_score)
 
     # --- Stage 5/6: author + render the deck. If this raises, the caller catches
     # it, records the error, and falls back to the Gamma deck — but the contacts

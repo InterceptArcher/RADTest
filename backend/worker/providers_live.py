@@ -63,6 +63,7 @@ def zi_person_to_record(person: dict, persona: str) -> StakeholderRecord:
         start_date=person.get("hire_date", "") or person.get("start_date", ""),
         department=person.get("department", ""),
         source="zoominfo",
+        person_id=str(person.get("person_id", "") or person.get("id", "")),
     )
     if rec.email:
         rec.email_sources.add("zoominfo")
@@ -175,6 +176,35 @@ class LiveProviders:
             for r in records:
                 r.mark("canada_only_requested:zi_na_preference_only")
         return records
+
+    async def enrich_final(self, contacts: list) -> None:
+        """Final pass: batch ZoomInfo Contact-Enrich the SELECTED contacts to fill
+        email/phone/LinkedIn (search returns identity only). Bounded to the ≤N
+        contacts actually on the deck, so it's cheap. Mutates records in place."""
+        if self.zi is None:
+            return
+        ids = [c.person_id for c in contacts if getattr(c, "person_id", "") and not c.is_sentinel]
+        if not ids:
+            return
+        try:
+            res = await self.zi.enrich_contacts(ids)
+        except Exception:  # noqa: BLE001
+            return
+        people = (res or {}).get("people", []) if isinstance(res, dict) else []
+        by_id = {str(p.get("person_id") or p.get("id") or ""): p for p in people}
+        for c in contacts:
+            p = by_id.get(c.person_id)
+            if not p:
+                continue
+            c.email = c.email or p.get("email", "")
+            c.phone = c.phone or p.get("phone", "")
+            c.direct_phone = c.direct_phone or p.get("direct_phone", "")
+            c.mobile_phone = c.mobile_phone or p.get("mobile_phone", "")
+            c.linkedin_url = c.linkedin_url or p.get("linkedin", "") or p.get("linkedin_url", "")
+            c.start_date = c.start_date or p.get("hire_date", "") or p.get("start_date", "")
+            if c.email:
+                c.email_sources.add("zoominfo")
+            c.mark("zi_contact_enriched")
 
     async def judge_adjacency(self, title: str, persona: str) -> bool:
         text = await self._haiku_text(

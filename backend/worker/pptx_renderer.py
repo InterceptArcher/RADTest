@@ -335,6 +335,15 @@ class PptxRenderer:
             for shape in slide.shapes:
                 self._fill_shape(shape, company_slots)
 
+        # 3) Final pass: blank any token no stage filled, so no literal "[..]" ever
+        #    leaks onto a slide (contact clones were already filled in step 1).
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                if shape.has_text_frame:
+                    leftover = {t: "" for t in extract_tokens(shape.text_frame.text)}
+                    if leftover:
+                        self._fill_shape(shape, leftover)
+
         # 3) (Outreach per-persona cloning handled here in CI.) Fill outreach.
         #    The original master ships one outreach group; per-persona cloning of
         #    slides 10-12 mirrors the contact-slide clone path above.

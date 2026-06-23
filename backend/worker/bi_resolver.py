@@ -174,6 +174,7 @@ class StakeholderRecord:
     conversation_starters: str = ""
     communication_preference: str = ""
     source: str = ""
+    person_id: str = ""          # ZoomInfo contact id — for the final enrich pass
     tier: int = 1
     proximity: int = int(Proximity.UNKNOWN)
     # Set of sources that independently agreed on this contact's email — drives
