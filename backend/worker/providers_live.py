@@ -1,22 +1,30 @@
 """
 Live Providers adapter — wires the v3.1 pipeline's injection seam to the real
-data clients (ZoomInfo class client, Apollo/PDL via httpx, Hunter, Anthropic).
+data clients. Built on the EXISTING, docs-validated ZoomInfo GTM API v1 client
+(worker.zoominfo_client) plus Anthropic Haiku for adjacency judgement and
+LinkedIn enrichment.
 
-This is the boundary between the locally-tested orchestration and the network.
-The pure helpers (persona -> query titles, ZI person -> StakeholderRecord) are
-unit-tested here; the async methods that actually call clients are verified in
-CI/staging with real credentials. SDK/client imports are lazy.
+Validated 2026-06-23 against docs.zoominfo.com: the contact-search endpoint
+(/gtm/data/v1/contacts/search), JSON:API body, jobTitle/managementLevel/
+companyPastOrPresent filters, page[size] pagination, and application/vnd.api+json
+content-type all match the current docs, so reusing the client is correct.
+
+Pure helpers (persona->titles, ZI person->record) are unit-tested. The async
+methods are mock-tested with fakes; live verification happens on a real prod job.
+SDK/client imports are lazy.
 """
 from __future__ import annotations
 
+import json
+import os
 from typing import Optional
 
-from bi_resolver import (
-    PERSONA_TITLE_BUCKETS, StakeholderRecord, CanonicalCompany,
-)
+from bi_resolver import PERSONA_TITLE_BUCKETS, StakeholderRecord, CanonicalCompany
 from circuit_breaker import CircuitBreakerRegistry
 
-# Role-area title hints for the VP / Director rungs, per persona.
+HAIKU_MODEL = "claude-haiku-4-5-20251001"
+WEB_SEARCH_TOOL = {"type": "web_search_20250305", "name": "web_search", "max_uses": 3}
+
 _VP_DIR_HINTS = {
     "CIO": ["Information Technology", "IT", "Information Systems"],
     "CTO": ["Engineering", "Technology", "Software"],
@@ -28,11 +36,7 @@ _VP_DIR_HINTS = {
 
 
 def persona_titles_for(persona: str, kind: str) -> list[str]:
-    """The job-title filter list to send to a provider for one persona+tier.
-
-    csuite -> the persona's exact + canonical adjacent titles.
-    vp / director -> '<Tier> of <role area>' style hints.
-    """
+    """Job-title filter list for one persona+tier (csuite uses the canonical bucket)."""
     bucket = PERSONA_TITLE_BUCKETS.get(persona, {})
     if kind == "csuite":
         titles = []
@@ -65,57 +69,97 @@ def zi_person_to_record(person: dict, persona: str) -> StakeholderRecord:
     return rec
 
 
+def _extract_json(text: str) -> dict:
+    s = (text or "").strip()
+    start, end = s.find("{"), s.rfind("}")
+    if start == -1 or end == -1:
+        return {}
+    try:
+        return json.loads(s[start:end + 1])
+    except json.JSONDecodeError:
+        return {}
+
+
 class LiveProviders:
-    """Real implementation of the pipeline's Providers seam.
+    """Real Providers seam. zi_client + anthropic_client injected (CI uses mocks)."""
 
-    Args (all injected so CI can supply mocks):
-        zi_client: an instance of worker.zoominfo_client.ZoomInfoClient
-        anthropic_client: AsyncAnthropic (for judge_adjacency / LinkedIn / fallback)
-        http: an httpx.AsyncClient for Apollo/PDL/Hunter REST calls
-        domain: the resolved company's primary domain
-    """
-
-    def __init__(self, *, zi_client=None, anthropic_client=None, http=None,
+    def __init__(self, *, zi_client=None, anthropic_client=None,
                  breakers: Optional[CircuitBreakerRegistry] = None):
         self.zi = zi_client
-        self.anthropic = anthropic_client
-        self.http = http
+        self._anthropic = anthropic_client
         self.breakers = breakers or CircuitBreakerRegistry()
+
+    # --- Anthropic helpers -------------------------------------------------
+    def _anthropic_or_none(self):
+        if self._anthropic is not None:
+            return self._anthropic
+        key = os.getenv("ANTHROPIC_API_KEY")
+        if not key:
+            return None
+        from anthropic import AsyncAnthropic  # lazy
+        self._anthropic = AsyncAnthropic(api_key=key)
+        return self._anthropic
+
+    async def _haiku_text(self, system: str, user: str, *, tools=None, max_tokens=512) -> str:
+        client = self._anthropic_or_none()
+        if client is None:
+            return ""
+        kwargs = dict(model=HAIKU_MODEL, max_tokens=max_tokens, system=system,
+                      messages=[{"role": "user", "content": user}])
+        if tools:
+            kwargs["tools"] = tools
+        resp = await client.messages.create(**kwargs)
+        return "".join(getattr(b, "text", "") for b in resp.content)
 
     # --- Stage 1 -----------------------------------------------------------
     async def resolve_company(self, company_data: dict) -> CanonicalCompany:
-        """Resolve to a canonical company. CI: parallel ZI/Apollo/PDL/Hunter +
-        Haiku reconciler + web-search on ambiguity (see bi_resolver_io helpers)."""
         name = company_data.get("company_name", "")
         domain = company_data.get("domain", "")
-        if self.zi is not None and self.breakers.get("zoominfo").is_open() is False:
-            res = await self.zi.enrich_company(domain=domain or None, company_name=name or None)
+        if self.zi is not None and not self.breakers.get("zoominfo").is_open():
+            try:
+                res = await self.zi.enrich_company(domain=domain or None, company_name=name or None)
+                self.breakers.get("zoominfo").record_success()
+            except Exception:  # noqa: BLE001
+                self.breakers.get("zoominfo").record_failure()
+                res = None
             norm = (res or {}).get("normalized", {}) if isinstance(res, dict) else {}
-            return CanonicalCompany(
-                name=norm.get("company_name", name) or name,
-                primary_domain=norm.get("domain", domain) or domain,
-                industry=norm.get("industry", ""),
-                hq_country=norm.get("country", ""),
-                employee_bucket=str(norm.get("employee_count", "")),
-                confidence=0.8,
-                decision_basis="zoominfo enrich (single-source; reconciliation in CI)",
-            )
-        return CanonicalCompany(name=name, primary_domain=domain, confidence=0.4)
+            if norm:
+                return CanonicalCompany(
+                    name=norm.get("company_name", name) or name,
+                    primary_domain=norm.get("domain", domain) or domain,
+                    industry=norm.get("industry", ""),
+                    hq_country=norm.get("country", ""),
+                    employee_bucket=str(norm.get("employee_count", "")),
+                    confidence=0.8,
+                    decision_basis="zoominfo enrich (multi-source reconciliation = follow-up)",
+                )
+        return CanonicalCompany(name=name, primary_domain=domain, confidence=0.4,
+                                decision_basis="fallback: input echoed (no ZI resolution)")
 
     # --- Stage 2 -----------------------------------------------------------
     async def general_intel(self, canonical: CanonicalCompany) -> dict:
-        """Firmographics/signals/news. CI: reuse the existing intelligence
-        gatherer + GNews (with the 5s timeout guard from bi_resolver_io)."""
-        return {"company_name": canonical.name, "primary_domain": canonical.primary_domain,
-                "industry": canonical.industry}
+        """Minimal firmographics surface. The flag-gated integration reuses the
+        existing rich intel pipeline for this stage; this is the standalone path."""
+        return {
+            "company_name": canonical.name,
+            "primary_domain": canonical.primary_domain,
+            "industry": canonical.industry,
+            "company_type": "",
+            "estimated_it_spend": "",
+        }
 
     # --- Stage 3 -----------------------------------------------------------
     async def query(self, persona, source, kind, canonical, canada_only) -> list[StakeholderRecord]:
-        if source != "zoominfo" or self.zi is None:
-            return []  # Apollo/PDL httpx adapters wired in CI
+        # Reuse the validated ZoomInfo client. Its search already cascades
+        # C-suite->VP->Director internally and returns a priority-sorted pool, so
+        # we issue ONE csuite-scoped call per persona and let bi_resolver grade
+        # proximity. VP/Director/Apollo/PDL rungs are no-ops here (ZI covers them);
+        # they remain available for a future multi-source expansion.
+        if source != "zoominfo" or self.zi is None or kind != "csuite":
+            return []
         if self.breakers.get("zoominfo").is_open():
             return []
-        titles = persona_titles_for(persona, kind)
+        titles = persona_titles_for(persona, "csuite")
         try:
             res = await self.zi.search_contacts(
                 domain=canonical.primary_domain, job_titles=titles, max_results=10)
@@ -124,16 +168,60 @@ class LiveProviders:
             self.breakers.get("zoominfo").record_failure()
             return []
         people = (res or {}).get("people", []) if isinstance(res, dict) else []
-        return [zi_person_to_record(p, persona) for p in people]
+        records = [zi_person_to_record(p, persona) for p in people]
+        if canada_only:
+            # The existing client prefers North America but has no strict country
+            # param; flag the limitation rather than silently returning global.
+            for r in records:
+                r.mark("canada_only_requested:zi_na_preference_only")
+        return records
 
     async def judge_adjacency(self, title: str, persona: str) -> bool:
-        """Haiku yes/no on whether a novel title is a reasonable proxy. CI."""
-        return False  # conservative default until the live Haiku call is wired
+        text = await self._haiku_text(
+            system="You judge whether a job title is a reasonable proxy for a target executive persona. Answer strictly 'yes' or 'no'.",
+            user=f"Is the title '{title}' a reasonable proxy for the {persona} of a company? Answer yes or no.",
+            max_tokens=8,
+        )
+        return text.strip().lower().startswith("y")
 
     async def enrich(self, record: StakeholderRecord) -> StakeholderRecord:
-        """Cross-fill missing fields + Haiku LinkedIn validation (cached). CI."""
+        # Cross-fill from other sources = follow-up. Here we do the always-on
+        # Haiku LinkedIn validation for start_date (Mitigation 3: require a
+        # citation, else treat the field as missing — never fabricate).
+        if record.start_date or not record.linkedin_url:
+            return record
+        if self._anthropic_or_none() is None:
+            record.mark("linkedin_enrich:no_anthropic")
+            return record
+        text = await self._haiku_text(
+            system="You extract a person's start date at their current company from their LinkedIn page. Return STRICT JSON: {\"start_date\": string|null, \"current_position_confirmed\": bool, \"extracted_snippet\": string, \"source_url\": string}. Only fill start_date if you can quote the snippet you read it from.",
+            user=f"Find the start date for {record.name} at their current role. LinkedIn: {record.linkedin_url}",
+            tools=[WEB_SEARCH_TOOL], max_tokens=400,
+        )
+        data = _extract_json(text)
+        if data.get("start_date") and data.get("extracted_snippet"):
+            record.start_date = str(data["start_date"])
+            record.mark("linkedin_start_date_verified")
+        else:
+            record.mark("linkedin_enrich:no_citation_or_not_found")
         return record
 
     async def fallback(self, persona, canonical, canada_only) -> Optional[StakeholderRecord]:
-        """Stage-3 agentic fallback (Haiku + tools, 5-call cap). CI."""
-        return None
+        # Agentic last resort. Conservative: only return a contact if Haiku web
+        # search confirms a name AND a source; otherwise None (floor-fill sentinels).
+        if self._anthropic_or_none() is None:
+            return None
+        text = await self._haiku_text(
+            system="You find ONE senior person closest to a target role at a company, confirmed by web search. Return STRICT JSON: {\"name\": string|null, \"title\": string, \"linkedin_url\": string, \"source_url\": string}. Return name=null if you cannot confirm with a real source. Do NOT fabricate.",
+            user=f"Find the {persona} (or closest senior equivalent) at {canonical.name} ({canonical.primary_domain}).",
+            tools=[WEB_SEARCH_TOOL], max_tokens=400,
+        )
+        data = _extract_json(text)
+        if not data.get("name") or not data.get("source_url"):
+            return None
+        rec = StakeholderRecord(persona=persona, name=str(data["name"]),
+                                title=str(data.get("title", "")),
+                                linkedin_url=str(data.get("linkedin_url", "")),
+                                source="agent")
+        rec.mark("fallback_agent_found:" + str(data.get("source_url", ""))[:60])
+        return rec
