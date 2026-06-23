@@ -141,6 +141,24 @@ The content library was upgraded to the **V2 internal audit (54 assets)**, repla
 
 ---
 
+## RAD Pipeline v3.1 — Slideshow QA Batch 6 (2026-06-23)
+
+Sixth QA pass. One renderer enhancement + a renderer rename hook (both unit-tested where pure), four master-template edits, and two prompt/data fixes.
+
+**#1 — Key Signals: title cut into body + body overflow.** Two fixes: (a) the formatter now caps each Key-Signals title at ≤6 words so it doesn't wrap into the body; (b) `edit_master_template.py` extends both signal panels (3083496→3503030 EMU tall) and their body frames (2133154→2664521) toward the slide bottom (≈0.17″ margin) so the "What this means" copy fits inside the panel. *Rationale:* the title-wrap is a copy-length problem (fix at authoring) and the body bleed is a box-size problem (fix in geometry) — different causes, different levers.
+
+**#2 — Opportunity Themes: line breaks restored.** Batch 5 removed the blank spacer paragraphs to stop a bleed; at 7.5pt the bodies fit *with* the spacers, and the per-point separation reads better, so the removal was reverted (spacers kept). *Rationale:* the smaller font bought back the vertical room, so we can honor the preferred spacing.
+
+**#3 — Stakeholder: bulleted priorities + numbered conversation starters.** Strategic priorities already carried `buChar` bullets across three paragraphs, but the renderer's frame-level fill (`tf.text = …`) dropped all paragraph formatting, so they rendered as plain lines. The renderer now captures the first **bulleted/numbered** paragraph's `<a:pPr>` before the fill and re-applies it to every resulting paragraph (font + bullets/numbering preserved; non-list prose is untouched because only buChar/buAutoNum pPrs are captured). Conversation starters were a single plain paragraph — the template now splits them into **two `buAutoNum` (numbered) paragraphs** forming one spanning token, so they take the same frame-level path and render as a numbered list (one item per starter, any count). *Rationale:* fixing the formatting-loss at the renderer is general (every list-style blob benefits) and the one master edit just routes conversation starters onto that path.
+
+**#4 — Recommended Sales Program: standardize box height.** The top two panels were shorter (920651) than the bottom two (1069479) and overflowed. All four are now the bottom height (1069479); the top row nudges up 70000 EMU (clearing the subtitle) and the bottom row down 80000 EMU (still above "Supporting assets"), and each panel's number label + body frame moves with its box. Verified no overlaps within the 5143500-EMU slide. *Rationale:* uniform, taller boxes give the top row the same room the (non-overflowing) bottom row already had.
+
+**#5 — Human-readable deck filename.** Decks now save as `hprad_<company-slug>_<YYYY-MM-DD>.pptx` (e.g. `hprad_microsoft_2026-06-23.pptx`) instead of `prod-<jobid>.pptx`. `deck_basename()` slugifies the company (`[a-z0-9]`, other runs→`_`, trimmed); `render()` takes a `deck_name` arg (falls back to `job_id`); the hook passes it. The internal `job_id` still drives job tracking and the temp file. *Rationale:* the storage key is the name users see on the downloaded file — it should read like a document, not an internal id.
+
+**To apply:** `python3 scripts/edit_master_template.py` then `./scripts/upload-master-template.sh "<edited file>"` (gated, manual). Code fixes ship on push to `main`.
+
+---
+
 ## RAD Pipeline v3.1 — Slideshow QA Batch 5 (2026-06-23)
 
 Fifth QA pass on the exact-copy `.pptx` deck. One renderer fix (unit-tested locally), four deterministic master-template edits (OOXML/XML — no `pip`/python-pptx in this devcontainer), and two prompt/data fixes in the worker.

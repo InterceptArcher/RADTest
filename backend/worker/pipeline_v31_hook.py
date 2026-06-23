@@ -70,6 +70,17 @@ DEPARTMENT_BY_PERSONA = {
 }
 
 
+def deck_basename(company_name: str, date_iso: str) -> str:
+    """Storage-key basename for the deck: hprad_<company-slug>_<YYYY-MM-DD>.
+
+    The slug lowercases the company and keeps [a-z0-9], collapsing every other run
+    of characters to a single underscore (so "AT&T, Inc." -> "at_t_inc"). A blank
+    company falls back to 'company' so the key is always well-formed."""
+    import re
+    slug = re.sub(r"[^a-z0-9]+", "_", (company_name or "").lower()).strip("_")
+    return f"hprad_{slug or 'company'}_{date_iso}"
+
+
 def _parse_employee_count(raw) -> Optional[int]:
     if raw is None:
         return None
@@ -318,6 +329,11 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     # (per persona). Each becomes a hyperlinked asset name pointing at the DAM URL.
     hyperlink_slots, outreach_hyperlinks = _content_audit_links(validated_data, canonical, sel.slide_contacts)
 
+    # Deck filename: hprad_<company>_<date> (human-readable in Storage / on the
+    # downloaded file) instead of the opaque internal job id.
+    import datetime
+    deck_name = deck_basename(canonical.name, datetime.date.today().isoformat())
+
     url = await renderer.render(
         slide_contacts=sel.slide_contacts,
         company_slots=formatted["company_slots"],
@@ -325,6 +341,7 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
         job_id=job_id,
         hyperlink_slots=hyperlink_slots,
         outreach_hyperlinks=outreach_hyperlinks,
+        deck_name=deck_name,
     )
     validated_data["slideshow_url"] = url
     logger.info("v3.1 deck rendered: %s", url)

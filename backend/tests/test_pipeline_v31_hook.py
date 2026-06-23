@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "worker"))
 
 from bi_resolver import StakeholderRecord, CanonicalCompany, MIN_SLIDES  # noqa: E402
 from claude_formatter import ClaudeFormatter  # noqa: E402
-from pipeline_v31_hook import assemble_v31, _serialize, estimate_it_spend  # noqa: E402
+from pipeline_v31_hook import assemble_v31, _serialize, estimate_it_spend, deck_basename  # noqa: E402
 
 
 def run(coro):
@@ -125,3 +125,14 @@ def test_it_spend_computed_from_revenue_when_no_headcount():
 
 def test_it_spend_blank_when_nothing_to_estimate_from():
     assert estimate_it_spend({"company_name": "Acme"}) == ""
+
+
+def test_deck_basename_slugifies_company_and_date():
+    assert deck_basename("Microsoft", "2026-06-23") == "hprad_microsoft_2026-06-23"
+    # punctuation/spaces collapse to single underscores; trimmed at the ends
+    assert deck_basename("AT&T, Inc.", "2026-06-23") == "hprad_at_t_inc_2026-06-23"
+    assert deck_basename("  Coca-Cola  ", "2026-06-23") == "hprad_coca_cola_2026-06-23"
+
+
+def test_deck_basename_blank_company_falls_back():
+    assert deck_basename("", "2026-06-23") == "hprad_company_2026-06-23"

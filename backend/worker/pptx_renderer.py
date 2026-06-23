@@ -339,25 +339,40 @@ class PptxRenderer:
             for tok in mapping if tok in joined
         )
         if spans_paragraphs:
-            # Frame-level replace collapses runs, which would drop the font size —
-            # capture the first real run's size/name and re-apply so the text keeps
-            # its 8.5pt sizing instead of jumping to the placeholder default.
+            # Frame-level replace collapses runs, which would drop the font size AND
+            # the paragraph-level list formatting (bullets / numbering). Capture the
+            # first real run's size/name and the first BULLETED paragraph's <a:pPr>
+            # so we can re-apply both after the replace — otherwise a bulleted blob
+            # (Strategic priorities) or a numbered blob (Conversation starters) would
+            # render as plain, unmarked lines. Only bulleted/numbered pPrs are
+            # captured, so non-list spanning prose is left untouched.
+            import copy
+            from pptx.oxml.ns import qn
             orig_sz = orig_name = None
+            bullet_pPr = None
+            for p in tf.paragraphs:
+                pPr = p._p.find(qn("a:pPr"))
+                if bullet_pPr is None and pPr is not None and (
+                        pPr.find(qn("a:buChar")) is not None
+                        or pPr.find(qn("a:buAutoNum")) is not None):
+                    bullet_pPr = copy.deepcopy(pPr)
+                if orig_sz is None and orig_name is None:
+                    for r in p.runs:
+                        if (r.text or "").strip():
+                            orig_sz, orig_name = r.font.size, r.font.name
+                            break
+            tf.text = replace_tokens(joined, mapping)
             for p in tf.paragraphs:
                 for r in p.runs:
-                    if (r.text or "").strip():
-                        orig_sz, orig_name = r.font.size, r.font.name
-                        break
-                if orig_sz is not None or orig_name is not None:
-                    break
-            tf.text = replace_tokens(joined, mapping)
-            if orig_sz is not None or orig_name:
-                for p in tf.paragraphs:
-                    for r in p.runs:
-                        if orig_sz is not None:
-                            r.font.size = orig_sz
-                        if orig_name:
-                            r.font.name = orig_name
+                    if orig_sz is not None:
+                        r.font.size = orig_sz
+                    if orig_name:
+                        r.font.name = orig_name
+                if bullet_pPr is not None:
+                    existing = p._p.find(qn("a:pPr"))
+                    if existing is not None:
+                        p._p.remove(existing)
+                    p._p.insert(0, copy.deepcopy(bullet_pPr))
             return
         for para in tf.paragraphs:
             runs = para.runs
@@ -489,7 +504,8 @@ class PptxRenderer:
 
     async def render(self, *, slide_contacts: dict, company_slots: dict,
                      outreach_slots: dict, job_id: str,
-                     hyperlink_slots: dict = None, outreach_hyperlinks: dict = None) -> str:
+                     hyperlink_slots: dict = None, outreach_hyperlinks: dict = None,
+                     deck_name: Optional[str] = None) -> str:
         """Assemble + fill the deck and upload it. Returns the public URL.
 
         Args:
@@ -499,7 +515,9 @@ class PptxRenderer:
             outreach_slots: persona -> {token: value} for that persona's
                 Email/LinkedIn/Call slides, from the formatter (greeting already
                 slash-joined for multi-contact personas).
-            job_id: used for the storage key.
+            job_id: used for the temp filename + as the storage-key fallback.
+            deck_name: storage-key basename (no extension) when given, e.g.
+                "hprad_microsoft_2026-06-23". Falls back to job_id.
         """
         import tempfile
         import os
@@ -584,7 +602,7 @@ class PptxRenderer:
 
         if self._uploader is None:
             return out_path
-        key = f"decks/{job_id}.pptx"
+        key = f"decks/{deck_name or job_id}.pptx"
         last_exc = None
         for _ in range(3):  # retry storage upload per the design doc
             try:

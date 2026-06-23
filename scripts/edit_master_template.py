@@ -113,24 +113,9 @@ def edit_slide5(xml: str) -> str:
     if (headers, bodies) != (6, 6):
         raise SystemExit(f"[FAIL] slide5 #4: expected to split 6 headers + 6 bodies, "
                          f"got {headers} + {bodies}. Aborting.")
-
-    # #2 (this session) Opportunity Themes bleed off the bottom: remove the blank
-    # auto-numbered spacer paragraph between each point (2 per column, 2 columns).
-    # Each header carries its own startAt, so 1/2/3 numbering survives the removal;
-    # dropping the empty lines tightens the list so the long bodies fit the slide.
-    removed = [0]
-
-    def drop_empty_autonum(m: re.Match) -> str:
-        p = m.group(0)
-        if "buAutoNum" in p and "<a:t>" not in p:
-            removed[0] += 1
-            return ""
-        return p
-
-    out = re.sub(r"<a:p>.*?</a:p>", drop_empty_autonum, out, flags=re.S)
-    if removed[0] != 4:
-        raise SystemExit(f"[FAIL] slide5 #2: expected to remove 4 blank spacer paragraphs, "
-                         f"got {removed[0]}. Aborting.")
+    # NOTE: the blank auto-numbered spacer paragraph between points is KEPT — at
+    # 7.5pt the bodies fit with the line breaks in place, and the user prefers the
+    # visual separation between points (an earlier batch removed them; reverted).
     return out
 
 
@@ -141,7 +126,25 @@ def edit_slide4(xml: str) -> str:
     correctly; the 2nd signal authored the open bracket INSIDE the bold
     "What this means: [" run, so the value rendered bold. Move the '[' into the
     value run so the 2nd signal matches the 1st (bold label, unbold value)."""
-    return _move_bracket_into_value_run(xml, "What this means:", expect=1, where="slide4 #1")
+    xml = _move_bracket_into_value_run(xml, "What this means:", expect=1, where="slide4 #1")
+    # Extend both signal panels + their body text frames DOWN so the longer
+    # "What this means" copy stops overflowing the bottom of the panel. The two
+    # colored panels start at y=1476970 and the body frames at y=2285479; grow
+    # them toward the slide bottom (5143500) leaving a ~0.17" margin. (Concise
+    # titles are handled by the formatter prompt; this is purely the body bleed.)
+    xml = _replace_once(xml,  # col1 panel: cy -> bottom ~4980000
+        '<a:ext cx="2303934" cy="3083496"/>', '<a:ext cx="2303934" cy="3503030"/>',
+        expect=1, where="slide4 #1 col1 panel height")
+    xml = _replace_once(xml,  # col2 panel
+        '<a:ext cx="2304008" cy="3083496"/>', '<a:ext cx="2304008" cy="3503030"/>',
+        expect=1, where="slide4 #1 col2 panel height")
+    xml = _replace_once(xml,  # col1 body frame: cy -> bottom ~4950000
+        '<a:ext cx="2020267" cy="2133154"/>', '<a:ext cx="2020267" cy="2664521"/>',
+        expect=1, where="slide4 #1 col1 body height")
+    xml = _replace_once(xml,  # col2 body frame
+        '<a:ext cx="2020342" cy="2133154"/>', '<a:ext cx="2020342" cy="2664521"/>',
+        expect=1, where="slide4 #1 col2 body height")
+    return xml
 
 
 # --- #2 Executive Snapshot spacing (slide2) ----------------------------------
@@ -190,14 +193,49 @@ def edit_slide8(xml: str) -> str:
             f'<a:off x="4715098" y="{old_y}"/>', f'<a:off x="4715098" y="{new_y}"/>',
             expect=1, where=f"slide8 #6 {what} y")
 
-    # #3 (this session) About / Strategic priorities / Conversation starters were
-    # still overlapping (the body copy overruns its frame). Drop those three
-    # right-column body text frames 8.5pt -> 7.5pt so the prose fits between the
-    # headers. Scoped to the right column (cx="3937546") so the left-column
-    # contact-detail font stays at 8.5pt. Shorter priorities (formatter) compound.
+    # #3 (this session) Strategic priorities should render as bullet points and
+    # Conversation starters as a NUMBERED list. Strategic priorities already carry
+    # buChar bullets across 3 paragraphs (the renderer now re-applies that pPr after
+    # its frame-level fill), so no edit is needed there. Conversation starters are a
+    # SINGLE plain paragraph — split into TWO numbered (buAutoNum) paragraphs so the
+    # token spans paragraphs (triggering the renderer's frame-level path, which then
+    # emits one numbered paragraph per starter and re-applies the buAutoNum pPr).
+    xml = _split_conversation_into_numbered(xml)
+
+    # About / Strategic / Conversation body copy overruns its frame: drop those
+    # three right-column body text frames 8.5pt -> 7.5pt (scoped to the right column
+    # cx="3937546" so left-column contact details stay 8.5pt). Runs added by the
+    # conversation split above are sz="850" so they are caught here too.
     xml = _scope_shape_replace(xml, 'cx="3937546"', 'sz="850"', 'sz="750"',
                                expect=3, where="slide8 #3 right-column body font")
     return xml
+
+
+def _split_conversation_into_numbered(xml: str) -> str:
+    """Turn the single conversation-starters paragraph into two buAutoNum (numbered)
+    paragraphs forming one paragraph-spanning token. Keeps the run's rPr so the font
+    is preserved, and keeps the leading "[Engage Lisa by" so the renderer's prefix
+    classifier still maps it to conversation_starters."""
+    m = re.search(r'<a:p>(?:(?!</a:p>).)*?\[Engage Lisa by(?:(?!</a:p>).)*?</a:p>', xml, re.S)
+    if not m:
+        raise SystemExit("[FAIL] slide8 #3: conversation-starters paragraph not found")
+    para = m.group(0)
+    rpr = re.search(r'<a:rPr\b.*?</a:rPr>', para, re.S)
+    if not rpr:
+        raise SystemExit("[FAIL] slide8 #3: conversation run properties not found")
+    rpr_xml = rpr.group(0)
+    ppr = ('<a:pPr marL="342900" indent="-342900" algn="l"><a:lnSpc>'
+           '<a:spcPct val="120000"/></a:lnSpc><a:buSzPct val="100000"/>'
+           '<a:buAutoNum type="arabicPeriod"/></a:pPr>')
+    end = '<a:endParaRPr lang="en-US" sz="850" dirty="0"/>'
+    s1 = ("[Engage Lisa by demonstrating how your solution bridges technology and "
+          "underwriting outcomes.")
+    s2 = ("Lead with concrete examples of automation, data enrichment, or analytics "
+          "capabilities that translate into measurable improvements in underwriting "
+          "speed, accuracy, or loss ratio.]")
+    new = (f'<a:p>{ppr}<a:r>{rpr_xml}<a:t>{s1}</a:t></a:r>{end}</a:p>'
+           f'<a:p>{ppr}<a:r>{rpr_xml}<a:t>{s2}</a:t></a:r>{end}</a:p>')
+    return xml[:m.start()] + new + xml[m.end():]
 
 
 # --- #4 Recommended Sales Program: unbold "Why" + stop box bleed (slide9) -----
@@ -211,6 +249,34 @@ def edit_slide9(xml: str) -> str:
     # "Marketing collateral:" label so only those bodies shrink.
     xml = _scope_shape_replace(xml, "Marketing collateral:", 'sz="800"', 'sz="750"',
                                expect=4, where="slide9 #4 body font")
+
+    # Standardize the 4 panels to the (taller) bottom-row height so the top 2 stop
+    # overflowing. The top boxes (920651) grow to match the bottom (1069479); to
+    # keep both rows clear, nudge the top row UP 70000 EMU (clearing the subtitle)
+    # and the bottom row DOWN 80000 EMU (still above "Supporting assets"). Each
+    # panel's number label + body frame moves with its box (same delta).
+    xml = _replace_once(xml, '<a:ext cx="4035996" cy="920651"/>',
+                        '<a:ext cx="4035996" cy="1069479"/>', expect=1, where="slide9 #4 top-left panel cy")
+    xml = _replace_once(xml, '<a:ext cx="4036070" cy="920651"/>',
+                        '<a:ext cx="4036070" cy="1069479"/>', expect=1, where="slide9 #4 top-right panel cy")
+    for x, old_y, new_y, what in (
+        # top row up 70000: panels, "1."/"2." labels, body frames
+        ("496119", "1313557", "1243557", "top-left panel"),
+        ("4611812", "1313557", "1243557", "top-right panel"),
+        ("602382", "1419820", "1349820", "label 1"),
+        ("4718075", "1419820", "1349820", "label 2"),
+        ("602382", "1633686", "1563686", "body 1"),
+        ("4718075", "1633686", "1563686", "body 2"),
+        # bottom row down 80000: panels, "3."/"4." labels, body frames
+        ("496119", "2313905", "2393905", "bottom-left panel"),
+        ("4611812", "2313905", "2393905", "bottom-right panel"),
+        ("602382", "2420169", "2500169", "label 3"),
+        ("4718075", "2420169", "2500169", "label 4"),
+        ("602382", "2634035", "2714035", "body 3"),
+        ("4718075", "2634035", "2714035", "body 4"),
+    ):
+        xml = _replace_once(xml, f'<a:off x="{x}" y="{old_y}"/>', f'<a:off x="{x}" y="{new_y}"/>',
+                            expect=1, where=f"slide9 #4 {what} y")
     return xml
 
 

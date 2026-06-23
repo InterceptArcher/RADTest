@@ -117,6 +117,8 @@ SYSTEM_PROMPT = (
     "numbers; bucket by account type; keep each value within typical slide length; "
     "for any 'Why:'/rationale token in the Recommended Sales Program, write a SINGLE "
     "tight clause of <=15 words (these sit in small boxes and must not overflow); "
+    "for Key Signals titles/headlines (the bracketed heading above each signal), keep "
+    "them to a concise phrase of <=6 words so the title does not wrap into the body; "
     "return STRICT JSON mapping each requested token string to its copy. Do not add, "
     "rename, or omit tokens."
 )
