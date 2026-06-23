@@ -69,12 +69,17 @@ async def _grade_csuite_candidates(persona: str, raw: list[StakeholderRecord],
         prox = classify_title_proximity(r.title, persona)
         if prox is None:
             ok = await providers.judge_adjacency(r.title, persona)
-            if not ok:
-                r.mark("rejected_not_adjacent")
+            if ok:
+                prox = int(Proximity.LLM_ADJACENT)
+            else:
+                # Not an obvious proxy — but KEEP it ranked last so a real ZI
+                # contact remains available as the "closest in position" floor
+                # fallback (better than a web-search guess). Canonical/adjacent
+                # matches still outrank it; it only wins if nothing better exists.
+                r.mark("weak_title_match_kept_for_floor")
+                prox = int(Proximity.UNKNOWN)
                 _trace(trace, persona=persona, source=r.source, candidate_name=r.name,
-                       outcome="rejected_not_adjacent")
-                continue
-            prox = int(Proximity.LLM_ADJACENT)
+                       outcome="weak_match_kept")
         r.proximity = prox
         graded.append(r)
     return graded
@@ -135,7 +140,10 @@ async def select_persona_contacts_io(
             complete = enriched.is_complete()
             _trace(trace, persona=persona, source=source, candidate_name=enriched.name,
                    outcome="complete" if complete else "incomplete:" + ",".join(enriched.missing_required_fields()))
-            if complete:
+            # Only a real proximity match (exact→director) can WIN a slide in pass 1.
+            # Weak/UNKNOWN-title matches stay in `examined` for floor-fill only, so we
+            # never promote a complete-but-irrelevant person over the right role.
+            if complete and enriched.proximity <= int(Proximity.DIRECTOR):
                 tier_qualified.append(enriched)
 
         if tier_qualified:

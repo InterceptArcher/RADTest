@@ -322,9 +322,11 @@ class PptxRenderer:
             clone = self._clone_slide(prs, CONTACT_SLIDE_INDEX, CONTACT_INSERT_AFTER + 1 + i)
             tokens = self._slide_tokens(clone)
             mapping = build_contact_replacements(contact, tokens)
-            missing = missing_required_contact_values(mapping, contact)
-            if missing:
-                raise EmptyRequiredSlotError(f"contact {contact.name!r} missing {missing}")
+            # Incomplete contacts (floor-filled / agent-sourced) still render —
+            # missing fields become blanks rather than failing the whole deck.
+            # Any unmapped token gets blanked too, so no literal "[..]" leaks onto a slide.
+            for tok in tokens:
+                mapping.setdefault(tok, "")
             for shape in clone.shapes:
                 self._fill_shape(shape, mapping)
 
