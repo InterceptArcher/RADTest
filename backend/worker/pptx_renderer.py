@@ -355,8 +355,26 @@ class PptxRenderer:
             except Exception:  # noqa: BLE001
                 continue
 
+    @staticmethod
+    def _apply_hyperlinks(shape, hlmap: dict) -> None:
+        """For each (token -> (text, url)) put `text` in the run and hyperlink it."""
+        if not hlmap or not shape.has_text_frame:
+            return
+        for para in shape.text_frame.paragraphs:
+            for run in para.runs:
+                for tok, pair in hlmap.items():
+                    if tok in run.text:
+                        text, url = pair
+                        run.text = run.text.replace(tok, text or "")
+                        if url:
+                            try:
+                                run.hyperlink.address = url
+                            except Exception:  # noqa: BLE001
+                                pass
+
     async def render(self, *, slide_contacts: dict, company_slots: dict,
-                     outreach_slots: dict, job_id: str) -> str:
+                     outreach_slots: dict, job_id: str,
+                     hyperlink_slots: dict = None, outreach_hyperlinks: dict = None) -> str:
         """Assemble + fill the deck and upload it. Returns the public URL.
 
         Args:
@@ -401,19 +419,28 @@ class PptxRenderer:
 
         # 2) One outreach group (Email / LinkedIn / Call) per persona present,
         #    inserted right after the original outreach block.
+        outreach_hyperlinks = outreach_hyperlinks or {}
         insert_at = list(sldIdLst).index(outreach_sldIds[-1]) + 1
         for persona in personas_present:
             omap = outreach_slots.get(persona, {})
+            hmap = outreach_hyperlinks.get(persona, {})
             for tmpl in outreach_tmpls:
                 clone = self._clone_slide(prs, tmpl, insert_at)
                 insert_at += 1
                 for shape in clone.shapes:
+                    self._apply_hyperlinks(shape, hmap)  # supporting-asset link first
                     self._fill_shape(shape, omap)
 
         # 3) Remove the original template slides (contact + outreach) so only the
         #    cloned, filled copies ship (no "Lisa Leo"/"Aviva Canada" example).
         for sid in [contact_sldId] + outreach_sldIds:
             sldIdLst.remove(sid)
+
+        # Collateral hyperlinks (slide 9) — apply BEFORE the company fill so the
+        # collateral tokens become hyperlinked asset names, not authored text.
+        for slide in prs.slides:
+            for shape in slide.shapes:
+                self._apply_hyperlinks(shape, hyperlink_slots or {})
 
         # 2) Fill single-instance company slides from the formatter's slot map.
         for slide in prs.slides:

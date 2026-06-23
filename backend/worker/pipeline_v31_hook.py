@@ -23,6 +23,8 @@ from typing import Optional
 # Ensure the worker dir is importable whether this is loaded as `worker.pipeline_v31_hook`
 # (prod, from production_main) or bare (tests) — the v3.1 modules use bare imports.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+# backend/ too, so we can import content_audit (lives at the backend root).
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from bi_resolver_io import run_stage3
 
@@ -40,6 +42,64 @@ def _serialize(buckets: dict) -> dict:
             "is_sentinel": r.is_sentinel, "marks": r.marks,
         } for r in records]
     return out
+
+
+_COLLATERAL_TOKENS = [
+    "[Future-proof your IT for anywhere work]",
+    "[HP Workforce Experience Platform: Windows 11 Readiness]",
+    "[High-performance power from anywhere]",
+    "[Maximize productivity with AI workstation laptops]",
+]
+_COLLATERAL_STEPS = [
+    "Build awareness and credibility", "Frame business challenges",
+    "Demonstrate proven outcomes", "Enable decision-making",
+]
+_SUPPORTING_ASSET_TOKEN = "[Maximize productivity with AI workstation laptops]"
+
+
+def _content_audit_links(validated_data: dict, canonical, slide_contacts: dict):
+    """Return (collateral hyperlink_slots, per-persona outreach_hyperlinks).
+
+    Maps each Recommended-Sales-Program collateral slot + each persona's supporting
+    asset to a real content-audit document (asset name hyperlinked to its DAM URL).
+    Best-effort: returns whatever it can match; never raises into the pipeline.
+    """
+    hyperlink_slots: dict = {}
+    outreach_hyperlinks: dict = {}
+    try:
+        import content_audit
+        content_audit.load_content_audit()
+        industry = validated_data.get("industry", "") or getattr(canonical, "industry", "")
+        bs = validated_data.get("buying_signals") or {}
+        topics = bs.get("intent_topics") or [
+            t.get("topic") for t in (bs.get("intent_topics_detailed") or []) if t.get("topic")]
+        topic = topics[0] if topics else ""
+
+        def _link(item):
+            link = str((item or {}).get("sp_link", "") or "")
+            return (item.get("asset_name", ""), link) if item and link.startswith("http") else None
+
+        excl = []
+        for tok, step in zip(_COLLATERAL_TOKENS, _COLLATERAL_STEPS):
+            item = content_audit.match_content_for_collateral(
+                step_description=step, industry=industry, intent_topic=topic, exclude_ids=excl)
+            pair = _link(item)
+            if pair:
+                hyperlink_slots[tok] = pair
+                if item.get("id"):
+                    excl.append(item["id"])
+
+        for persona, contacts in slide_contacts.items():
+            if not any(not getattr(c, "is_sentinel", False) for c in contacts):
+                continue
+            item = content_audit.match_content_for_supporting_asset(
+                persona=persona, industry=industry, priority_area=topic)
+            pair = _link(item)
+            if pair:
+                outreach_hyperlinks[persona] = {_SUPPORTING_ASSET_TOKEN: pair}
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("v3.1 content-audit linking failed (continuing): %s", exc)
+    return hyperlink_slots, outreach_hyperlinks
 
 
 async def assemble_v31(providers, formatter, renderer, canonical, validated_facts: dict,
@@ -171,11 +231,18 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     # above are already on the job (so the dashboard shows them either way).
     company_tokens = renderer.introspect_company_tokens()
     formatted = await formatter.build(validated_data, company_tokens, sel.slide_contacts)
+
+    # Content-audit links: collateral (slide 9, by funnel step) + supporting asset
+    # (per persona). Each becomes a hyperlinked asset name pointing at the DAM URL.
+    hyperlink_slots, outreach_hyperlinks = _content_audit_links(validated_data, canonical, sel.slide_contacts)
+
     url = await renderer.render(
         slide_contacts=sel.slide_contacts,
         company_slots=formatted["company_slots"],
         outreach_slots=formatted["outreach_slots"],
         job_id=job_id,
+        hyperlink_slots=hyperlink_slots,
+        outreach_hyperlinks=outreach_hyperlinks,
     )
     validated_data["slideshow_url"] = url
     logger.info("v3.1 deck rendered: %s", url)
