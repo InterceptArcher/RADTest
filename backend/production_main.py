@@ -485,6 +485,40 @@ async def debug_env():
     }
 
 
+@app.get("/debug-v31", tags=["Debug"])
+async def debug_v31():
+    """Diagnose why the v3.1 flag-gated pipeline is/ isn't engaging.
+    If this endpoint 404s, the latest code has NOT deployed yet."""
+    result = {
+        "marker": "v31-diag-1",
+        "USE_V31_PIPELINE": os.getenv("USE_V31_PIPELINE", "NOT SET"),
+        "flag_active": os.getenv("USE_V31_PIPELINE", "").strip().lower() == "true",
+        "ANTHROPIC_API_KEY_set": bool(os.getenv("ANTHROPIC_API_KEY")),
+        "SUPABASE_URL_set": bool(os.getenv("SUPABASE_URL")),
+        "SUPABASE_KEY_len": len(os.getenv("SUPABASE_KEY", "")),
+    }
+    try:
+        from worker.pipeline_v31_hook import run_v31_pipeline  # noqa: F401
+        result["v31_hook_import"] = "ok"
+    except Exception as e:
+        result["v31_hook_import"] = f"FAIL: {type(e).__name__}: {e}"
+    try:
+        import pptx
+        result["python_pptx"] = getattr(pptx, "__version__", "ok")
+    except Exception as e:
+        result["python_pptx"] = f"FAIL: {type(e).__name__}: {e}"
+    try:
+        base = os.getenv("SUPABASE_URL", "").rstrip("/")
+        bucket = os.getenv("SUPABASE_STORAGE_BUCKET_DECKS", "decks")
+        url = f"{base}/storage/v1/object/public/{bucket}/master-template.pptx"
+        async with httpx.AsyncClient(timeout=15) as c:
+            r = await c.head(url)
+        result["master_template_http"] = r.status_code
+    except Exception as e:
+        result["master_template_http"] = f"FAIL: {type(e).__name__}: {e}"
+    return result
+
+
 def _build_news_intelligence_section(validated_data: dict, news_data: Optional[dict]) -> Optional[dict]:
     """Build news intelligence section from council-aggregated data and raw news_data."""
     # Check if we have news data from either source
