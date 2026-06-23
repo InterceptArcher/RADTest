@@ -13,6 +13,8 @@ import {
   NewsIntelligenceCard,
   OpportunityThemesCard,
 } from '@/components/intelligence';
+import ConfidenceBadge from '@/components/jobs/ConfidenceBadge';
+import ContactCatalogue from '@/components/jobs/ContactCatalogue';
 import type { StakeholderRoleType } from '@/types';
 
 /** Returns true only when a phone string is a real number (not empty, not ZoomInfo-masked `***`). */
@@ -389,6 +391,12 @@ export default function JobDetailPage() {
               program={salesProgram}
             />
           )}
+
+          {/* v3.1 — surgical contact catalogue (6 persona buckets); renders only on v3.1 jobs */}
+          <ContactCatalogue
+            catalogue={job.result.contact_catalogue}
+            selected={job.result.slide_contacts}
+          />
         </div>
 
         {/* Sidebar */}
@@ -421,6 +429,18 @@ export default function JobDetailPage() {
                   View Slideshow
                 </a>
               )}
+              {/* v3.1 — confidence badge + live view (guarded; v3.1 jobs only) */}
+              {job.result.data_quality_score !== undefined && (
+                <div className="flex justify-center">
+                  <ConfidenceBadge score={job.result.data_quality_score} />
+                </div>
+              )}
+              <Link
+                href={`/dashboard/jobs/${jobId}/live`}
+                className="btn-secondary w-full"
+              >
+                Watch live
+              </Link>
               <Link
                 href={`/dashboard/jobs/${jobId}/debug`}
                 className="btn-secondary w-full"

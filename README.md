@@ -128,6 +128,40 @@ The Gamma slideshow output now **automatically selects relevant HP content asset
 - `GET /api/content-audit` — Returns all content audit items (CSV + user-added)
 - `POST /api/content-audit` — Add a custom content audit item (asset_name, sp_link, asset_summary, etc.)
 
+### Content Audit V2 Update (2026-06-23)
+The content library was upgraded to the **V2 internal audit (54 assets)**, replacing the original 27-row dataset. V2 sources its asset URLs from public HP DAM / Widen / Box / YouTube links (the v1 SharePoint links are retired).
+
+- **New committed extractor**: `scripts/extract_content_audit.py` reads the source workbook (`template /HP Canada_RAD Intelligence Desk_Content Audit_V2_Internal.xlsx`) and writes `hp_assets/HP Canada_RAD Intelligence Desk_Content Audit_V2.csv`. The real asset URLs are stored as cell **hyperlinks** behind the text "Access here", so the extractor pulls `hyperlink.target` (not the cell text). It is **stdlib-only** (zipfile + ElementTree — no openpyxl/pip dependency) so it runs in any Python 3 environment.
+- **Rationale for the extractor**: the v1 extraction was a manual one-off (commit `acd092d`); making it a committed, idempotent script means future audit refreshes are a single reproducible command rather than hand-editing a CSV.
+- **Loader change**: V2 renamed three workbook columns (`Ebook → Type`, `Consideration → Customer Journey`, `SP Link → DAM Link`). `_COLUMN_MAP` in `backend/content_audit.py` was re-pointed to the new header names while keeping the **internal keys unchanged** (`ebook` / `consideration` / `sp_link`), so the dashboard tab, slideshow matchers, and existing tests required **zero changes**.
+- **49 of 54** assets carry a resolved DAM URL; the remaining 5 (marked "N/A" / "Not provided" / "Unable to find the link on the DAM" in the workbook) load as assets with a blank link and render as plain text.
+- **Tests**: `backend/tests/test_content_audit_v2.py` (row count, http-or-blank links, DAM-domain check, column-remap verification, link-less rows). The original `test_content_audit.py` continues to pass unmodified against V2.
+
+> Note: when Gamma is removed in the v3.1 pipeline cutover, the slideshow-side content-audit injection moves from `gamma_slideshow.py` into the new Stage 5 formatter / Stage 6 PPTX renderer (slide 9 + per-persona outreach slides). The dashboard tab and the matchers are unaffected by that move.
+
+---
+
+## RAD Pipeline v3.1 — Backend Build (2026-06-23)
+
+The v3.1 restructure (see `docs/superpowers/specs/2026-05-26-rad-pipeline-restructure-design.md`) is being built milestone-by-milestone. The backend core landed first, as new, self-contained, dependency-injected modules — **the legacy `production_main.py` flow and Gamma are untouched** until a gated staging-verified cutover.
+
+**New modules** (`backend/worker/`):
+- `bi_resolver.py` — pure Stage-3 selection core: 6 personas (CIO/CTO/CFO/COO/CISO/CPO), lazy proximity cascade, **uncapped-with-floor-of-4**, cross-slide dedupe, systemic-absence handling, floor-fill ladder, average-not-sum `data_quality_score`. CPO = Chief **Product** Officer.
+- `bi_resolver_io.py` — async Stage 1/2/3 I/O orchestration (surgical cascade driver with stop-on-qualify + ZI→Apollo short-circuit; Stage-1 cache-key/reconcile helpers; Stage-2 GNews timeout guard).
+- `circuit_breaker.py` — per-upstream breaker (5 fails/60s → open 30s).
+- `job_logger.py` — central, PII-redacted, buffered structured logger.
+- `pptx_renderer.py` — exact-copy renderer: paragraph-level `[bracket]` substitution (single-pass, run-split safe), master-grounded token classifier, clone-per-contact + per-persona outreach (python-pptx path is CI-verified).
+- `claude_formatter.py` — Stage-5 Sonnet 4.6 author: factual-vs-authored token split, slot-schema validation, Council input-narrowing.
+- `job_store.py` — Supabase persistence for the new central `profile_requests` job table (replaces the in-memory `jobs_store`); JobLogger flush sink + monotonic live-progress guard.
+- `pipeline_v31.py` — the new Stage 1→6 orchestrator (dependency-injected; legacy flow left intact).
+- `providers_live.py` — adapter wiring the injection seam to the real ZoomInfo/Apollo/PDL/Hunter/Anthropic clients.
+
+**Migration:** `backend/migrations/2026-06-23_v3_1_pipeline.sql` — additive only (`profile_requests` + `claude_resolution_cache` + `linkedin_enrichment_cache`); **not auto-applied**.
+
+**Tests:** 7 new test files, **72 unit tests** covering all pure logic + the full Stage 1→6 wiring on fakes, **passing locally**. The I/O paths that need live SDKs/keys (python-pptx render, real provider/Anthropic calls, Supabase writes) are structured for CI verification — flagged, not hidden. (This devcontainer has no `pip`/`pytest`; logic is validated by running modules directly with `python3`, CI runs `pytest`.)
+
+**Rationale:** building the surgical contact philosophy as a *pure, injected core* (not buried in the 3,000-line monolith) makes the highest-risk logic deterministic and unit-testable, and keeps the hard Gamma cutover reversible until the new path is proven in staging.
+
 ---
 
 ## HP Template-Based Outreach Assets (2026-03-20)

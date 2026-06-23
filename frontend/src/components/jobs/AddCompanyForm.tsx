@@ -6,6 +6,7 @@ import { useJobs } from '@/hooks/useJobs';
 import { useSellers } from '@/hooks/useSellers';
 import { apiClient } from '@/lib/api';
 import { sanitizeDomain } from '@/lib/validation';
+import RegionToggle from '@/components/jobs/RegionToggle';
 
 interface FormData {
   companyName: string;
@@ -13,6 +14,7 @@ interface FormData {
   salespersonName: string;
   email: string;
   sellerId: string;
+  canadaOnly: boolean;
 }
 
 interface FormErrors {
@@ -32,6 +34,7 @@ export default function AddCompanyForm() {
     salespersonName: '',
     email: '',
     sellerId: '',
+    canadaOnly: false,
   });
   const [errors, setErrors] = useState<FormErrors>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -78,6 +81,7 @@ export default function AddCompanyForm() {
         domain: domain,
         requested_by: formData.email,
         salesperson_name: formData.salespersonName || undefined,
+        canada_only: formData.canadaOnly || undefined,
       });
 
       addJob(response.job_id, {
@@ -100,7 +104,7 @@ export default function AddCompanyForm() {
         });
       }
 
-      setFormData({ companyName: '', website: '', salespersonName: '', email: '', sellerId: '' });
+      setFormData({ companyName: '', website: '', salespersonName: '', email: '', sellerId: '', canadaOnly: false });
       router.push('/dashboard/jobs');
     } catch (error) {
       console.error('Failed to submit:', error);
@@ -150,6 +154,13 @@ export default function AddCompanyForm() {
           {errors.website && (
             <p className="mt-1 text-[11px] text-red-600">{errors.website}</p>
           )}
+        </div>
+
+        <div className="pt-1">
+          <RegionToggle
+            checked={formData.canadaOnly}
+            onChange={(v) => setFormData({ ...formData, canadaOnly: v })}
+          />
         </div>
       </fieldset>
 

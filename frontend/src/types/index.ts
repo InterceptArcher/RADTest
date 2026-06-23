@@ -11,6 +11,8 @@ export interface CompanyProfileRequest {
   industry?: string;
   requested_by: string;
   salesperson_name?: string;
+  /** v3.1: scope the contact pipeline to Canadian employees only. */
+  canada_only?: boolean;
 }
 
 /**
@@ -87,6 +89,42 @@ export interface ProfileResult {
   supporting_assets?: SupportingAssets;
   sales_program?: SalesProgram;
   news_intelligence?: NewsIntelligence;
+  // v3.1 pipeline additions (all optional — present only on v3.1 jobs)
+  data_quality_score?: number;
+  contact_catalogue?: ContactCatalogue;
+  slide_contacts?: ContactCatalogue;
+  enrichment_trace?: EnrichmentTraceEntry[];
+  warnings?: string[];
+}
+
+/** v3.1 — one examined/selected contact in a persona bucket. */
+export interface CatalogueContact {
+  name: string;
+  title?: string;
+  email?: string;
+  phone?: string;
+  direct_phone?: string;
+  mobile_phone?: string;
+  linkedin_url?: string;
+  start_date?: string;
+  department?: string;
+  source?: string;
+  tier?: number;
+  proximity?: number;
+  is_sentinel?: boolean;
+  marks?: string[];
+}
+
+/** v3.1 — persona (CIO/CTO/CFO/COO/CISO/CPO) -> contacts. */
+export type ContactCatalogue = Record<string, CatalogueContact[]>;
+
+/** v3.1 — one chronological enrichment-trace entry. */
+export interface EnrichmentTraceEntry {
+  persona?: string;
+  source?: string;
+  tier?: number;
+  candidate_name?: string;
+  outcome?: string;
 }
 
 /**

@@ -1,12 +1,14 @@
-# RAD Pipeline Restructure — Full Design (v3)
+# RAD Pipeline Restructure — Full Design (v3.1)
 
 **Date started:** 2026-05-26
-**Date finalized:** 2026-05-27
-**Status:** Approved — ready for implementation plan
-**Scope:** Slideshow generation pipeline (Gamma → PowerPoint), business-intelligence consolidation (per-role surgical contact pipeline), region filter, centralized job logging, live-progress dashboard
+**Date finalized:** 2026-05-27 (v3) · **Revised:** 2026-06-23 (v3.1)
+**Status:** Approved — ready for implementation
+**Scope:** Slideshow generation pipeline (Gamma → PowerPoint, exact-copy of the master template), business-intelligence consolidation (per-persona surgical contact pipeline), region filter, centralized job logging, live-progress dashboard, content-audit V2
 **Author:** Brainstorm collaboration — user + Claude
 **Supersedes:** `2026-05-26-rad-pipeline-restructure-WIP.md`
 **Companion (stakeholder summary):** `2026-05-26-rad-pipeline-restructure-overview.md`
+
+> **v3.1 revision (2026-06-23).** Two inputs landed after v3 was locked: (1) the master `.pptx` template was handed over and dissected, and (2) the stakeholder section was changed from a fixed 4 contacts to an **uncapped count (minimum 4)** organized across **6 personas — CIO, CTO, CFO, COO, CISO, CPO**. v3.1 propagates those two changes through every stage, adds a **Template Construction** section (previously blocked on the missing file), and adds a **Content Audit V2** section (replacing the 27-row SharePoint CSV with the 54-row HP DAM dataset). All v3 architecture, red-team mitigations, and appendices remain in force except where a "**v3.1:**" note appears. Changed sections are marked inline.
 
 ---
 
@@ -42,7 +44,7 @@
 
 The RAD pipeline today has two structural problems that have proven impossible to fix with incremental patches. First, the Gamma slideshow service produces inconsistent visual output despite three rounds of template work, prompt revisions, and the v3 migration. Second, the business-intelligence pipeline has accumulated silent fallback layers across ZoomInfo, Apollo, PDL, and Hunter that cause the system to (a) silently return near-empty results for small or private companies, (b) silently return the wrong company entirely when a target has rebranded or has a regional subsidiary, and (c) pick "the contact with the most-complete data record" rather than "the right person for this role." The combination produces decks that look great but contain the wrong people, or decks that visually drift between runs.
 
-This restructure replaces both subsystems while keeping intact everything that already works (templates, resource recommendations, general firmographics, the LLM Council validator, the salesperson attribution flow). On the slideshow side, Gamma is removed entirely and replaced with a python-pptx renderer driven by a user-controlled master `.pptx` template, with a single Sonnet 4.6 formatting pass authoring the slide copy. On the BI side, the existing parallel-pull-then-sort pattern is replaced with a per-role surgical contact pipeline that mirrors a salesperson's manual workflow: for each of CTO/CFO/CIO/COO, walk a cascade by corporate proximity (C-suite exact → C-suite adjacent → VP → Director, across ZoomInfo → Apollo → PDL → web search), enrich each candidate via cross-source fill plus Haiku 4.5 LinkedIn validation, and advance to the next candidate only if the current one cannot be completed. The deck's stakeholder section becomes a fixed four slides, one contact per role bucket, with the full contact catalogue surfaced separately on the dashboard.
+This restructure replaces both subsystems while keeping intact everything that already works (templates, resource recommendations, general firmographics, the LLM Council validator, the salesperson attribution flow). On the slideshow side, Gamma is removed entirely and replaced with a python-pptx renderer driven by a user-controlled master `.pptx` template, with a single Sonnet 4.6 formatting pass authoring the slide copy. On the BI side, the existing parallel-pull-then-sort pattern is replaced with a per-persona surgical contact pipeline that mirrors a salesperson's manual workflow: for each of the six personas (CIO, CTO, CFO, COO, CISO, CPO), walk a cascade by corporate proximity (C-suite exact → C-suite adjacent → VP → Director, across ZoomInfo → Apollo → PDL → web search), enrich each candidate via cross-source fill plus Haiku 4.5 LinkedIn validation, and advance to the next candidate only if the current one cannot be completed. **v3.1:** the deck's stakeholder section is no longer a fixed four slides — it is an **uncapped set with a floor of four**. Every contact that clears the completeness bar is promoted to its own slide, bucketed by persona; a persona may contribute zero, one, or several slides, and personas with no qualifying contact are simply omitted as long as the deck still carries at least four contacts overall. The full contact catalogue (including rejected candidates) is surfaced separately on the dashboard.
 
 A region-filter checkbox is added for international subsidiaries. Centralized per-job logging persists every job's debug trail to Supabase. A new live-progress dashboard lets the user watch a job run in real time and lets devops diagnose failures without local reproduction. The cutover is a hard one — Gamma is deleted in the same release.
 
@@ -56,8 +58,9 @@ This spec is the result of two brainstorming sessions plus a red-team review:
 
 - **2026-05-26 (Session 1).** Initial exploration of the Gamma slideshow problems and the BI silent-fallback problems. Eight clarifying questions answered, three approaches (A "Three Boxes" / B "Two Boxes" / C "Minimal Surgical") proposed. Session paused at the approach-confirmation gate. Findings captured in the WIP doc that this design supersedes.
 - **2026-05-27 (Session 2).** Resumed brainstorm. User pivoted from the original "Three Boxes" BI Resolver toward a fundamentally reshaped Stage 3 — surgical per-role contact pipeline mirroring the manual research workflow. Architecture locked in. Detailed component, data-flow, error-handling, and testing sections walked through. Red-team analysis surfaced 12 distinct failure modes; 11 were accepted as mitigations into v3 (the feature-flag rollback path was rejected in favor of hard cutover). Agentic-vs-procedural trade-off evaluated; hybrid pattern adopted (procedural hot path + agentic Stage 3 final-fallback only). Logging and live-progress dashboard added to v3 scope.
+- **2026-06-23 (Session 3 → v3.1).** Master `.pptx` template received and dissected (14 slides, 3 masters, 8 embedded HP Forma DJR fonts, no native tables/charts; slide 8 is a single self-contained repeatable contact slide; slides 10–12 are per-persona outreach collateral; personas are defined on slide 7 as CIO/CTO/CFO/COO/CISO/CPO). Stakeholder section changed from fixed-4 to **uncapped-min-4 across 6 personas**. Three clarifying questions answered (Appendix C): contact→slide cardinality, outreach-slide scaling, content-audit data handling. New HP content-audit V2 dataset received (54 rows, public HP DAM links). No v3 mitigation was reversed.
 
-All clarifying questions from both sessions are preserved verbatim in Appendices A and B.
+All clarifying questions from all sessions are preserved verbatim in Appendices A, B, and C.
 
 ---
 
@@ -113,7 +116,7 @@ Two operational issues compound the above:
 ### Goals
 
 1. **Eliminate Gamma.** Replace with a deterministic `.pptx` rendering pipeline driven by a user-controlled master template.
-2. **Surgical contact pipeline.** Every deck has exactly 4 stakeholder slides (CTO, CFO, CIO, COO), each populated with a real, fully-enriched contact picked by corporate proximity to the role.
+2. **Surgical contact pipeline.** Every deck has **at least 4** stakeholder slides and no upper limit, organized across **6 personas** (CIO, CTO, CFO, COO, CISO, CPO). Each slide is a real, fully-enriched contact picked by corporate proximity to its persona; a contact earns a slide by clearing the completeness bar, so strong companies surface more slides and thin companies still guarantee the floor of four.
 3. **Eliminate silent fallback chains.** Every degraded path emits a trace entry; users and devops can see exactly what happened.
 4. **Region filter** for multinational subsidiaries (Canada-only checkbox in v3, generalizable later).
 5. **Central logging.** Every job (regardless of seller) persists a debug log to Supabase.
@@ -153,8 +156,8 @@ The new pipeline has **six stages**, plus cross-cutting **logging** and **live-p
                   ▼                           ▼
         ┌──────────────────────┐    ┌────────────────────────────────────┐
         │ Stage 2 —            │    │ Stage 3 — Surgical Contact Pipeline│
-        │ General Intelligence │    │                                    │
-        │ ZI + Apollo + PDL +  │    │ For each role ∈ {CTO,CFO,CIO,COO}: │
+        │ General Intelligence │    │ For each of 6 personas:            │
+        │ ZI + Apollo + PDL +  │    │  CIO/CTO/CFO/COO/CISO/CPO          │
         │ GNews (parallel)     │    │  Cascade: ZI tiers → Apollo → PDL  │
         │                      │    │  Enrich: cross-fill + Haiku web    │
         │                      │    │  Advance on incompleteness         │
@@ -166,7 +169,7 @@ The new pipeline has **six stages**, plus cross-cutting **logging** and **live-p
               ┌────────────────────────────────────────┐
               │ Stage 4 — LLM Council Validator        │
               │   Facts-only; no formatting rules      │
-              │   Receives slide_contacts[4] only      │
+              │   Receives selected slide contacts     │
               └─────────────────┬──────────────────────┘
                                 ▼
               ┌────────────────────────────────────────┐
@@ -305,11 +308,15 @@ Largely unchanged from today's `intelligence_gatherer.py`, with these specific c
 
 ## Stage 3 — Surgical Contact Pipeline
 
-This is the most substantial change in v3 and the section that most directly addresses the brittleness in today's pipeline.
+This is the most substantial change in v3 and the section that most directly addresses the brittleness in today's pipeline. **v3.1 reshapes its output cardinality** (see the inline "v3.1" notes below): the discovery + enrichment mechanics are unchanged, but the role set grows from four to six personas and the output grows from a fixed four slides to an uncapped-min-four set.
 
 ### Purpose
 
-For each of the four role buckets (CTO, CFO, CIO, COO), identify the best-fit contact for the slide by walking a corporate-proximity cascade and enriching each candidate procedurally. Move to the next candidate only when the current one cannot be completed. Worst-case fall back to an agentic search; absolute worst case, mark the slide "no contact found."
+For each of the **six persona buckets (CIO, CTO, CFO, COO, CISO, CPO)**, identify the best-fit contact(s) by walking a corporate-proximity cascade and enriching each candidate procedurally. Move to the next candidate only when the current one cannot be completed. Worst-case fall back to an agentic search; absolute worst case, mark the slide "no contact found."
+
+> **Core philosophy (UNCHANGED in v3.1 — this is the whole point of the rebuild).** We do **not** blind-bomb the data providers with broad queries and then sort a big pool by data completeness. We stay **surgical**: for each persona we walk the proximity cascade to *distill the highest-quality role match(es)*, then point the full battery of enrichment processes/agents (cross-source fill + Haiku LinkedIn validation) at **those few candidates** to complete their information box. Depth in the cascade exists only to *find the right person*; it is never used to accumulate slides. The v3.1 "uncapped" change does **not** relax this — it only means that when more than one *co-equal, high-proximity* candidate at the winning tier independently clears the completeness bar, each earns a slide instead of being discarded. Adding a slide is a consequence of finding a genuinely qualified peer, never of casting a wider net.
+
+**v3.1 — persona set & CPO disambiguation.** The six personas are taken verbatim from the master template's Stakeholder Map intro (slide 7). `CPO` resolves to **Chief Product Officer** (the template frames personas by finance/operations/technology decision-drivers, which places CPO on the product axis — *not* Chief People Officer). This is a tunable default; flipping it means swapping the `CPO_BUCKET` canonical title list only.
 
 ### Inputs
 
@@ -324,9 +331,9 @@ This pipeline mirrors a salesperson's manual research workflow, captured verbati
 > 2. Clicking on their contact in ZoomInfo I get most of the general information — position, email, phone, LinkedIn.
 > 3. I google their LinkedIn and there I get more auxiliary information like their start date and usually their profiles exist if they are high standing enough.
 
-### Per-role cascade (Step A — Discovery)
+### Per-persona cascade (Step A — Discovery)
 
-For each role in `[CTO, CFO, CIO, COO]`, walk this cascade in order:
+For each persona in `[CIO, CTO, CFO, COO, CISO, CPO]`, walk this cascade in order:
 
 | Tier | Source | Filter |
 |------|--------|--------|
@@ -341,8 +348,14 @@ For each role in `[CTO, CFO, CIO, COO]`, walk this cascade in order:
 
 **Adjacency definition (hybrid; Mitigation per Session 2 Q1):**
 
-- A canonical title list per bucket is maintained in code (e.g., `CTO_BUCKET = {"chief technology officer", "chief engineering officer", "vp of engineering", "vp of technology", "head of engineering", "head of technology", ...}`).
-- When ZoomInfo returns a C-suite candidate whose title doesn't match the canonical list, Haiku 4.5 is invoked with the title + the role bucket: "Is `<title>` a reasonable proxy for the `<role>` of this company? Respond yes/no with one-sentence justification." This handles novel/unusual titles without polluting the canonical list.
+- A canonical title list per bucket is maintained in code. **v3.1 — six buckets:**
+  - `CIO_BUCKET = {"chief information officer", "chief digital officer", "vp of it", "head of it", "vp of information systems", ...}`
+  - `CTO_BUCKET = {"chief technology officer", "chief engineering officer", "vp of engineering", "vp of technology", "head of engineering", "head of technology", ...}`
+  - `CFO_BUCKET = {"chief financial officer", "vp of finance", "head of finance", "treasurer", "controller", "vp finance & operations", ...}`
+  - `COO_BUCKET = {"chief operating officer", "chief operations officer", "vp of operations", "head of operations", "gm", ...}`
+  - `CISO_BUCKET = {"chief information security officer", "chief security officer", "vp of security", "vp of information security", "head of cybersecurity", "head of infosec", ...}`
+  - `CPO_BUCKET = {"chief product officer", "vp of product", "head of product", "svp product", "vp product management", ...}` (Chief **Product** Officer — see disambiguation note above)
+- When ZoomInfo returns a C-suite candidate whose title doesn't match the canonical list, Haiku 4.5 is invoked with the title + the persona bucket: "Is `<title>` a reasonable proxy for the `<persona>` of this company? Respond yes/no with one-sentence justification." This handles novel/unusual titles without polluting the canonical list.
 
 **Short-circuit (Mitigation 1):** If ZI returns 0 candidates in **both** tier 1 + tier 4 (C-suite filter and VP filter), skip directly to Apollo. Signal: this company's structure simply does not have this role at the senior level. Avoids burning Director-tier and adjacent-title queries on a company that doesn't structurally have a CIO function.
 
@@ -377,46 +390,82 @@ A contact is **complete enough to use on a slide** iff:
 
 `phone` is **optional** — its absence does not disqualify a contact. (Session 2 user decision: "the only value that can be missing is a phone number sometimes.")
 
-### Per-role decision logic
+### Per-persona selection logic (v3.1 — uncapped, min 4)
+
+**The v3.1 cardinality rule.** v3 selected exactly one contact per bucket and shipped four slides. v3.1 promotes **every contact that clears the completeness bar** to its own slide, bucketed by persona. A persona may yield 0, 1, or several slides. Personas with no qualifying contact are omitted (no forced filler) **unless** the deck would otherwise fall below the floor of four — in which case a floor-fill pass relaxes the bar on the highest-priority personas until four slides exist.
+
+Persona priority for the floor-fill pass (most-likely-to-exist first): **CTO, CIO, CFO, COO, then CISO, CPO.** The original four anchor the floor because CISO/CPO are the least likely to exist at smaller or non-tech companies.
 
 ```
-For each role in [CTO, CFO, CIO, COO]:
-    candidates = walk_cascade(role, canada_only)  # ordered by proximity
-    selected = None
+PERSONAS         = [CIO, CTO, CFO, COO, CISO, CPO]
+FLOOR_PRIORITY   = [CTO, CIO, CFO, COO, CISO, CPO]   # used only if < 4 qualify
+MIN_SLIDES       = 4
+
+slide_contacts   = {p: [] for p in PERSONAS}   # v3.1: list per persona, not a single record
+contact_catalogue= {p: [] for p in PERSONAS}
+already_used_linkedins = set()
+
+# --- Pass 1: per-persona surgical discovery + enrichment ----------------
+# The cascade is walked LAZILY, tier by tier (proximity order). We descend a
+# tier ONLY to find the first qualifying contact — never to pile up slides.
+# CASCADE_TIERS = ZI[C-suite exact → adjacent canonical → adjacent LLM → VP →
+#                 Director] → Apollo[same] → PDL[same]   (see Discovery table)
+ENRICH_BUDGET_PER_TIER = 5   # surgical cap: enrich the top-proximity few, not the pool
+
+for persona in PERSONAS:
     examined = []
-    for candidate in candidates:
-        enriched = enrich(candidate)   # ZI + cross-fill + Haiku LinkedIn
-        examined.append(enriched)
-        if is_complete(enriched):
-            selected = enriched
-            break
-        elif systemic_field_absence_detected(examined):
-            # Mitigation 4: same field missing for all examined candidates
-            # → treat as company-level issue, accept the most proximate
-            selected = examined[0]
-            mark_warning("systemic_field_absence: " + missing_field)
-            break
-    if selected is None:
-        # cascade exhausted; fall back to best-of-incomplete
-        if examined:
-            selected = examined[0]  # most-proximate of incomplete pool
-            mark_warning("fell_back_to_incomplete_contact")
-        else:
-            # truly nothing — invoke Stage 3 fallback agent
-            selected = stage3_fallback_agent(role, canonical, canada_only)
-            if selected is None:
-                selected = "no_contact_found"
-                mark_warning("no_contact_found_for_role")
+    for tier in CASCADE_TIERS:
+        hits = query_tier(persona, tier, canada_only)      # role-filtered, NOT a blind bulk pull
+        if not hits:
+            apply_short_circuit_rules(persona, tier)        # Mitigation 1 (C-suite+VP empty → skip)
+            continue
 
-    # Cross-slide dedupe (Mitigation 5)
-    if selected.linkedin_url in already_used_linkedins:
-        # advance to next candidate in cascade for this slide
-        ... (loop logic, fallback to "shared_role" flag if dedupe exhausts cascade)
+        tier_qualified = []
+        for candidate in rank_by_proximity(hits)[:ENRICH_BUDGET_PER_TIER]:
+            if candidate.linkedin_url in already_used_linkedins:
+                candidate.mark("duplicate_skipped"); continue
+            enriched = enrich(candidate)                     # full info-box fill: cross-fill + Haiku LinkedIn
+            examined.append(enriched)
+            if is_complete(enriched):                        # name/title/email/linkedin/start_date
+                tier_qualified.append(enriched)
 
-    slide_contacts[role] = selected
-    contact_catalogue[role] = examined  # all candidates including rejected
-    enrichment_trace.extend(per-step trace entries)
+        if tier_qualified:
+            # SURGICAL STOP: the strongest tier that yields complete contacts wins.
+            # Promote every CO-EQUAL qualifier from THIS tier (uncapped), then STOP —
+            # we do not descend to weaker tiers to manufacture extra slides.
+            for e in tier_qualified:
+                slide_contacts[persona].append(e)
+                already_used_linkedins.add(e.linkedin_url)
+            break
+        if systemic_field_absence_detected(examined):
+            # Mitigation 4 — same field missing for ALL examined → company-level issue
+            best = best_proximate(examined)
+            best.mark("systemic_field_absence: " + missing_field)
+            slide_contacts[persona].append(best); already_used_linkedins.add(best.linkedin_url)
+            break
+    contact_catalogue[persona] = examined                    # everyone enriched, incl. rejected, for the dashboard
+
+# --- Pass 2: floor-fill so the deck always has >= 4 slides --------------
+total = sum(len(v) for v in slide_contacts.values())
+for persona in FLOOR_PRIORITY:
+    if total >= MIN_SLIDES: break
+    if slide_contacts[persona]: continue              # persona already represented
+    best = best_proximate_incomplete(contact_catalogue[persona])      # ladder rung 2
+    if best is None:
+        best = stage3_fallback_agent(persona, canonical, canada_only) # ladder rung 3
+    if best is None:
+        best = NO_CONTACT_FOUND_SENTINEL              # ladder rung 4 — slide still ships
+        mark_warning("no_contact_found_for_persona: " + persona)
+    else:
+        mark_warning("floor_fill_relaxed_completeness: " + persona)
+    slide_contacts[persona].append(best); total += 1
+
+# slide order = PERSONAS order; within a persona, by cascade proximity (deterministic)
+enrichment_trace.extend(per-step trace entries)
+data_quality_score = score(slide_contacts)            # computed over ALL selected contacts
 ```
+
+**What this preserves from v3:** the surgical, proximity-first discipline (no blind bulk-pull-then-sort), the lazy tier descent, the cross-fill entity-match rule (Mitigation 2), the Haiku citation requirement (Mitigation 3), short-circuit (Mitigation 1), systemic-absence handling (Mitigation 4), and cross-slide dedupe (Mitigation 5) are all unchanged. Enrichment effort is still pointed at a *small* set of the closest matches (bounded by `ENRICH_BUDGET_PER_TIER`), not at a swarm. **What changes (and only this):** at the single winning tier — the strongest tier that yields any complete contact — we now promote *all* co-equal qualifiers instead of keeping just one, so a persona that genuinely has two equally-senior, fully-enriched matches produces two slides. We still **stop descending** the moment a tier qualifies; deeper/weaker tiers are never mined to pad the deck. Floor-fill replaces the old per-role "worst-case ladder" and runs once, globally, instead of per role.
 
 ### Stage 3 fallback agent (Tier 8)
 
@@ -444,19 +493,21 @@ In order of preference:
 
 ### Outputs
 
-- `slide_contacts: { CTO: StakeholderRecord, CFO: StakeholderRecord, CIO: StakeholderRecord, COO: StakeholderRecord }` — exactly 4 entries; some may be the `no_contact_found` sentinel
-- `contact_catalogue: { CTO: [...], CFO: [...], CIO: [...], COO: [...] }` — all examined candidates per bucket (for the dashboard's debug drawer)
-- `enrichment_trace: [{ role, cascade_step, source, candidate_name, outcome }, ...]` — chronological trace
-- `data_quality_score: float (0.0–1.0)` — computed from source reliability, fallback depth, cross-source agreement, required field coverage
+- `slide_contacts: { CIO: [StakeholderRecord, ...], CTO: [...], CFO: [...], COO: [...], CISO: [...], CPO: [...] }` — **v3.1: a list per persona** (0..N each), total **≥ 4** across all personas; an empty persona is omitted from the deck, and a floor-filled persona may carry a single best-effort or `no_contact_found` sentinel record. The renderer flattens this in persona order, then by cascade proximity, into the contact slides.
+- `contact_catalogue: { CIO: [...], CTO: [...], CFO: [...], COO: [...], CISO: [...], CPO: [...] }` — all examined candidates per persona, including rejected ones (for the dashboard's catalogue + debug drawer)
+- `enrichment_trace: [{ persona, cascade_step, source, candidate_name, outcome }, ...]` — chronological trace
+- `data_quality_score: float (0.0–1.0)` — computed across **all selected slide contacts** (variable N) from source reliability, fallback depth, cross-source agreement, required field coverage
 
 ### `data_quality_score` computation
 
-Weighted score:
+Weighted score (**v3.1: computed over the N selected slide contacts, not a fixed 4**):
 
-- 0.4 × `source_reliability_avg` (ZI=1.0, Apollo=0.85, PDL=0.7, Hunter=0.5, web_search=0.4) averaged across the 4 selected slide contacts
-- 0.3 × `cascade_efficiency` (1.0 if all 4 picked from tier 1; decreases monotonically with average tier depth)
-- 0.2 × `required_field_coverage` (fraction of `name/title/email/linkedin/start_date` populated across the 4 slide contacts)
+- 0.4 × `source_reliability_avg` (ZI=1.0, Apollo=0.85, PDL=0.7, Hunter=0.5, web_search=0.4) averaged across all N selected slide contacts
+- 0.3 × `cascade_efficiency` (1.0 if every selected contact came from tier 1; decreases monotonically with average tier depth across the N)
+- 0.2 × `required_field_coverage` (fraction of `name/title/email/linkedin/start_date` populated across the N slide contacts)
 - 0.1 × `cross_source_agreement` (fraction of slide contacts where ≥2 sources agreed on email)
+
+**v3.1 note — count is not quality.** A bigger deck must not score higher merely for having more slides; the score is an *average* over the selected set, so the floor-filled / incomplete contacts that exist only to satisfy `MIN_SLIDES` pull the average down (as they should). `persona_coverage` (how many of the 6 personas are represented) is recorded in the trace for the dashboard but is intentionally **not** a score term — a clean 4-persona deck should not be penalized against a noisy 6-persona one.
 
 **Provisional thresholds for badge:** High ≥ 0.75, Medium 0.4–0.75, Low < 0.4. Tunable in code; will be calibrated against first week of production runs.
 
@@ -471,7 +522,7 @@ Multi-specialist fact validation of the BI Resolver's output. Returns the same s
 ### Inputs
 
 - `general_intel: GeneralIntel` (Stage 2 output)
-- `slide_contacts: { CTO, CFO, CIO, COO }` — **only the 4 slide-selected contacts**, NOT the full `contact_catalogue` (Mitigation 10 — avoids prompt explosion)
+- `slide_contacts` — **v3.1: only the selected slide contacts** (the flattened N across the 6 personas), NOT the full `contact_catalogue` (Mitigation 10 — avoids prompt explosion). N is bounded by the completeness bar, realistically 4–8; if a run selects an unusually large set, Council validates in **batches** rather than one mega-prompt so cost and quality stay bounded.
 
 ### Procedure
 
@@ -480,7 +531,7 @@ Keeps today's 20-specialist consensus structure. Stripped from the Council promp
 - No-SKU constraint (now lives in Claude Formatter prompt)
 - Account-type bucketing (now lives in Claude Formatter prompt)
 - Opportunity formatting rules (now lives in Claude Formatter prompt)
-- Stakeholder slide composition rules (now lives in Claude Formatter prompt + this stage receives only 4 contacts already)
+- Stakeholder slide composition rules (now lives in Claude Formatter prompt + this stage receives only the selected slide contacts already)
 
 Kept in Council prompts:
 
@@ -510,6 +561,13 @@ Single Sonnet 4.6 call per job. Authors slide-ready copy for each placeholder in
 - `slot_manifest: dict` — extracted at runtime from the master `.pptx` via python-pptx introspection. Format: `{ slide_id: { slot_name: { type: "text"|"bullets"|"image", max_length: int|null, required: bool } } }`
 
 The slot manifest is **introspected dynamically** at render-time from the master template (not maintained as a separate JSON file) — Mitigation 6, to prevent manifest drift.
+
+**v3.1 — variable contact slides + per-persona outreach.** Because the stakeholder section is now uncapped, the formatter does not author a fixed set of contact slots. Instead the renderer (Stage 6) clones the contact-slide template once per selected contact (see Template Construction), and the formatter is asked for a **per-contact copy object** for each — `about`, `strategic_priorities[]`, `conversation_starters[]`, `communication_preference`, plus the verbatim contact fields. The formatter also authors **per-persona outreach copy** (Email / LinkedIn / Call-Script) for each persona present in the deck:
+
+- One outreach set per persona (not per contact). A CFO email and a CTO email differ, so outreach is persona-scoped.
+- When a persona has **multiple** contacts, the greeting token is a slash-joined list of first names: `Hi [Lisa]` → `Hi [Lisa]/[Marcus]/[Priya]`. The formatter receives the persona's contact list and emits the joined greeting; the body stays persona-generic.
+
+The formatter output is therefore keyed by `(contact_index)` for profile slides and by `(persona)` for outreach slides, both discovered from the introspected manifest of the cloned deck rather than hardcoded.
 
 ### Procedure
 
@@ -548,14 +606,19 @@ Mechanically open the master `.pptx`, fill its named placeholders from the forma
 
 1. Download master template from Supabase Storage (cached locally per worker instance).
 2. `pptx = Presentation(master_template_path)`
-3. For each slide in `pptx.slides`:
-   - For each named placeholder in the slide:
-     - Look up matching slot in `slide_copy_json`
-     - If slot is required and value is missing → raise `EmptyRequiredSlotError`
-     - If value is present, fill the placeholder. Text slots get plain text; bullet slots get a paragraph list; image slots get an image insertion.
-4. Save to a local temp `.pptx`.
-5. Upload to Supabase Storage with key `decks/{job_id}.pptx`. Public-read ACL.
-6. Return the public URL.
+3. **v3.1 — clone the variable slides first** (see Template Construction for the XML-clone mechanics):
+   - **Contact profile slide** (template slide 8): deep-copy its slide part + rels (including the headshot image relationship) once per selected contact, inserted as a contiguous block immediately after the Stakeholder Map intro (slide 7). Min 4, no cap. Order = persona order, then cascade proximity.
+   - **Outreach slides** (template slides 10–12, Email / LinkedIn / Call-Script): clone the 3-slide group once per persona present in the deck.
+   - Single-instance slides (cover, exec snapshot, signals, opportunities, sales program, closing, logo) are kept exactly once.
+4. For each slide in the assembled `pptx.slides`:
+   - Replace every `[bracket]` token at the **paragraph level** (tokens may span multiple runs, so re-join runs, substitute, write back into the first run, clear the rest) — never naive per-run replace.
+   - Fill the value from `slide_copy_json` (text → plain text; bullets → paragraph list; image → headshot insertion), **preserving run formatting** (email/LinkedIn stay HP-blue `024AD8`, labels stay Medium 11pt).
+   - If a required slot is empty → raise `EmptyRequiredSlotError`.
+5. Save to a local temp `.pptx`.
+6. Upload to Supabase Storage with key `decks/{job_id}.pptx`. Public-read ACL.
+7. Return the public URL.
+
+**Exact-copy guarantee.** The output is a byte-faithful clone of the master except for the substituted tokens and cloned slides: the 3 masters, 54 layouts, 8 embedded HP Forma DJR fonts, theme colors, and shared logo/footer images are carried through untouched. The renderer never builds shapes from scratch. (The template's literal typo "LinedIn" is reproduced verbatim unless an explicit fix is requested.)
 
 ### Outputs
 
@@ -568,6 +631,86 @@ Mechanically open the master `.pptx`, fill its named placeholders from the forma
 - Required slot empty after formatter pass → fail-loud `EmptyRequiredSlotError`
 - Supabase Storage upload fails → retry 3× with exponential backoff; fail-loud `StorageUploadFailedError` after exhaustion
 - python-pptx parsing exception on the master → fail-loud `MasterTemplateCorruptError`
+
+---
+
+## Template Construction (Master `.pptx`) — v3.1
+
+This section was blocked in v3 ("pending user hand-off"). The template arrived 2026-06-23 (`Account-Intelligence-Report Template for Claude to follow.pptx`) and was dissected. It is the single source of truth for the deck's structure; the renderer reproduces it exactly.
+
+### Inventory
+
+- **14 slides, 3 masters, 54 layouts, 8 embedded HP Forma DJR fonts** (Forma DJR Office / Office Medium / Display / Micro). The brand fidelity depends on these embedded fonts and the HP "2023 Core Blue" master — they are **not** system fonts, so the renderer must open the master file and carry them through, never rebuild from scratch.
+- **No native tables and no charts.** Every "tabular" region (exec snapshot rows, the stakeholder profile fields, the sales-program grid) is built from individually positioned text boxes. The slide-3 "signal score" bar chart is a **static PNG** (`media/image13.png`); its 97/91/85 values live only in the narrative token.
+- Slide dimensions: 13.333in × 7.5in (16:9).
+
+| # | Slide | Cardinality |
+|---|-------|-------------|
+| 1 | Cover — "Account Intelligence Report: [Company]" | once |
+| 2 | Executive Snapshot (firmographics) | once |
+| 3 | Buying Signals (top-3 intent + signal-score image) | once |
+| 4 | Key Signals (news & triggers) | once |
+| 5 | Opportunity Themes (pain points) | once |
+| 6 | Sales Opportunities (recommended plays) | once |
+| 7 | Stakeholder Map intro (defines the 6 personas) | once |
+| **8** | **Stakeholder Profile (per-contact)** | **cloned 1×/contact — min 4, uncapped** |
+| 9 | Recommended Sales Program (4 collateral + rationale) ← content audit | once |
+| **10** | Supporting Assets — Email Template | **cloned 1×/persona present** |
+| **11** | Supporting Assets — LinkedIn Outreach | **cloned 1×/persona present** |
+| **12** | Supporting Assets — Call Script | **cloned 1×/persona present** |
+| 13 | Feedback & Questions (closing CTA) | once |
+| 14 | Logo end slide | once |
+
+### Variable tokens
+
+The template marks every fill-in value with a literal `[bracket]` token (the example deck is populated for "Aviva Canada / Lisa Leo"). The renderer's manifest keys off the **verbatim token string**, because shapes are generically named `Text N` and carry no semantic placeholder names. Token groups: company-level (`[Company]`, account type, industry, IT-budget range, overview prose, installed-tech list, competitors), report meta (`[Seller]`, `[pull date]`), per-topic signal copy, opportunity/pain-point composites, the 4 sales-program collateral+rationale pairs, the per-contact profile fields, and the per-persona outreach tokens.
+
+**Token-fill ordering gotcha:** several long prose values *contain* the company name. The renderer fills long prose tokens **before** the bare `[Company]` token (or pre-processes the master to unique sentinels) so substitution is not corrupted. The stray decorative `[` / `]` fragments on slides 1 and 9 are design elements around link text, **not** variables — left untouched.
+
+### Stakeholder profile slide (the repeatable unit)
+
+Slide 8 is a single self-contained design (free-positioned text boxes + a rounded-rect panel + a headshot picture). Fields per contact: **persona, name, title, department, start date, direct phone, mobile phone, email, LinkedIn URL, communication preference, about/bio, strategic priorities (list), conversation starters**. This is exactly the StakeholderRecord the Stage 3 pipeline produces — clean 1:1 mapping.
+
+### Cloning mechanics
+
+python-pptx has no public "duplicate slide" API, so cloning uses the standard XML-part deep-copy approach:
+
+1. Locate the template slide part to clone (`slide 8` for contacts; the `slide 10/11/12` group for outreach).
+2. Deep-copy the `<p:sld>` part XML **and its `.rels`** (so the headshot image relationship survives), register a new `slideN.xml` part, append a `<p:sldId>` to `presentation.xml` at the target index.
+3. Fill per-contact / per-persona tokens on the clone.
+4. Deterministic ordering (persona order, then cascade proximity) so identical inputs always produce an identical deck.
+
+### Renderer recommendation (locked)
+
+Open the master as the base Presentation, clone the variable slides, fill tokens at the paragraph level preserving run formatting, and never regenerate masters/themes/fonts. The slot manifest is introspected from the *assembled* (post-clone) deck so the formatter and renderer agree on exactly which slots exist (Mitigation 6 holds).
+
+---
+
+## Content Audit V2 — v3.1
+
+A new HP content-audit dataset replaces the existing one. This follows the exact procedure used the first time a content audit was integrated (commits `3ee0939` + `acd092d`), generalized into a committed, reusable extraction script.
+
+### What's new
+
+| | Existing (v1) | New (V2) |
+|--|---------------|----------|
+| File | `hp_assets/HP Canada_RAD Intelligence Desk_Content Audit(Audit).csv` | `template /HP Canada_RAD Intelligence Desk_Content Audit_V2_Internal.xlsx` |
+| Rows | 27 | 54 |
+| Link domains | SharePoint (`interceptgroup.sharepoint.com`) | Public HP DAM (`assetmanager.hp.com`, `h20195.www2.hp.com`, `hp.widen.net`, `workforceexperience.hp.com`, Box, YouTube) |
+| Column names | `Ebook `, `Consideration `, `SP Link` | **renamed** → `Type`, `Customer Journey`, `DAM Link` (+ new `QA Flags`, index col) |
+| Decision | — | **Replace v1 entirely** (user decision, Appendix C) |
+
+### The replication procedure
+
+1. **Extraction script** — `scripts/extract_content_audit.py` (new, committed; the v1 extraction was an uncommitted one-off). Uses `openpyxl` (added to `requirements.txt`) to open the workbook's **`Audit`** sheet, read data rows, and for the link column pull **`cell.hyperlink.target`** — the visible cell text is "Access here", the real URL is the embedded hyperlink. Rows whose link text is `N/A` / `Unable to find` / `Not provided` have no hyperlink and are written blank (the loader/UI treat non-`http` values as plain text).
+2. **Column reconciliation** — update `_COLUMN_MAP` in `backend/content_audit.py` to the V2 header names while keeping the **internal snake_case keys identical** (`sp_link` ← `DAM Link`, `format`/`ebook`/`consideration` re-pointed). This means **zero changes** to the frontend, the slideshow matchers, or `test_content_audit.py` — they keep reading `sp_link`, `asset_summary`, `inventory_recommendations`, etc. New `QA Flags` + index columns are ignored.
+3. **Replace** — write the extracted V2 CSV into `hp_assets/` and point `CSV_PATH` at it (v1 file remains in git history for reference).
+4. **Verify** — `csv.DictReader` row-count check + every link value is `http(s)` or a known sentinel; then run `backend/tests/test_content_audit.py`.
+
+### Where it appears ("on the page")
+
+- **Content Audit dashboard tab** (`/dashboard/content-audit`) — the stable consumer. `GET /api/content-audit` returns `get_all_items()`; the page renders the sortable/filterable table with Leverage/Upcycle/Retire badges. This works immediately and independently of the pipeline rebuild.
+- **The deck** — content-audit assets feed slide 9 (Recommended Sales Program: 4 collateral + rationale) and the per-persona outreach slides (resource links). v3 routed this through `gamma_slideshow.py`; **v3.1 moves that injection into the Stage 5 formatter / Stage 6 renderer** when Gamma is removed at cutover. The matchers (`match_content_for_collateral`, `match_content_for_supporting_asset`) are unchanged and already map all 6 personas → audience + keywords.
 
 ---
 
@@ -612,7 +755,8 @@ class JobLogger:
 | `current_stage_seq` | int | Monotonic integer for out-of-order update protection |
 | `step_progress` | numeric(3,2) | 0.0–1.0 progress within current step |
 | `partial_results` | jsonb | Accumulates as stages complete: `{stage1: {...}, stage2: {...}, ...}` |
-| `contact_catalogue` | jsonb | Per-bucket arrays of examined candidates |
+| `contact_catalogue` | jsonb | Per-persona arrays of examined candidates (v3.1: 6 buckets — CIO/CTO/CFO/COO/CISO/CPO) |
+| `slide_contacts` | jsonb | v3.1: per-persona arrays of *selected* contacts (the deck's contact slides; variable N ≥ 4) |
 | `enrichment_trace` | jsonb | Chronological trace from BI Resolver |
 | `data_quality_score` | numeric(3,2) | 0.0–1.0 |
 | `slideshow_status` | (removed) | — |
@@ -666,7 +810,7 @@ Implementation: `backend/worker/circuit_breaker.py` (new), in-memory per-worker-
 
 - **`<RegionToggle canada_only />`** — checkbox on the new-job form. Posts `canada_only: bool` to `POST /profile-request`.
 - **`<ConfidenceBadge data_quality_score={...} />`** — colored pill on the job detail page. Maps score to High/Medium/Low with provisional thresholds.
-- **`<ContactCatalogue catalogue={...} />`** — collapsible per-bucket view of all candidates examined for each of the 4 roles. Shows the picked candidate at the top, the rejected candidates below with a reason annotation ("missing email," "lower proximity," etc.).
+- **`<ContactCatalogue catalogue={...} />`** — collapsible per-persona view of all candidates examined for each of the **6 personas** (CIO/CTO/CFO/COO/CISO/CPO). Shows the **selected** candidate(s) at the top — a persona may have several or none — with the rejected candidates below, each annotated with a reason ("missing email," "lower proximity," "duplicate of another slide," etc.). Personas that contributed a slide are visually distinguished from empty ones.
 - **`<EnrichmentTraceDrawer trace={...} />`** — debug drawer behind a small "Show details" link on the job detail page. Renders the full chronological enrichment_trace.
 
 ### New route: Live Job View (`/dashboard/jobs/[jobId]/live`)
@@ -778,7 +922,7 @@ The 7-level silent fallback chain that we're killing in `zoominfo_client.py` is 
 - Cache key normalization: "Acme" and "ACME Inc" hit same entry (Mitigation 9)
 - All 4 sources fail → `CompanyResolutionFailedError`
 
-**2. Stage 3 (`test_bi_resolver_stage3.py`):** parametrized × 4 role buckets:
+**2. Stage 3 (`test_bi_resolver_stage3.py`):** parametrized × **6 persona buckets** (CIO/CTO/CFO/COO/CISO/CPO):
 - ZI exact match returns complete contact → used as slide_contact
 - ZI exact returns incomplete (no email) → cross-fill from Apollo → used
 - ZI all tiers empty → Apollo cascade picks one → used
@@ -791,9 +935,15 @@ The 7-level silent fallback chain that we're killing in `zoominfo_client.py` is 
 - Haiku no-citation rejection (Mitigation 3): LinkedIn response without `extracted_snippet` → treated as missing
 - Canada checkbox: every cascade query includes `country=Canada`
 - Subsidiary auto-enforce (Mitigation 8): subsidiary detected → cascade forced to subsidiary country
+- **v3.1 — uncapped per persona:** a persona with 3 complete candidates → 3 slide_contacts for that persona (inner loop does not break on first complete)
+- **v3.1 — floor-4 fill:** only 2 personas yield complete contacts → floor-fill pass relaxes completeness on FLOOR_PRIORITY personas until 4 slides exist; warnings emitted
+- **v3.1 — empty persona omitted:** a persona with no qualifying contact contributes no slide when the deck already has ≥ 4 (no forced filler)
+- **v3.1 — CPO adjacency:** "Chief Product Officer" matches `CPO_BUCKET`; "Chief People Officer" does **not**
+- **v3.1 — CISO bucket:** "VP of Information Security" matches via canonical list; novel security title resolved via Haiku adjacency
+- **v3.1 — cross-persona dedupe over the whole set:** same LinkedIn surfaced for CTO and CIO → second occurrence skipped, not duplicated as a slide
 
 **3. Stage 4 (`test_llm_council_validator.py`):**
-- Council receives only `slide_contacts[4]` + general intel, not full `contact_catalogue` (Mitigation 10)
+- Council receives only the selected slide contacts + general intel, not full `contact_catalogue` (Mitigation 10); large selected sets are validated in batches
 - Validator output schema matches input shape (no formatting added)
 - 20-specialist consensus still functions (port existing tests with formatting stripped)
 
@@ -808,6 +958,16 @@ The 7-level silent fallback chain that we're killing in `zoominfo_client.py` is 
 - Formatter outputs slot not in template → `SlotManifestDriftError` with mismatched slot name
 - Required slot empty → `EmptyRequiredSlotError`
 - Successful render → uploaded to Supabase Storage, public URL returned
+- **v3.1 — clone count:** 4 contacts → 4 cloned profile slides; 7 contacts → 7; the floor still yields ≥ 4
+- **v3.1 — per-persona outreach:** 3 personas present → 3 cloned Email/LinkedIn/Call groups; multi-contact persona → slash-joined greeting `Hi A/B/C`
+- **v3.1 — exact-copy fidelity:** masters/layouts/embedded fonts/theme colors preserved; paragraph-level token replace handles run-split tokens; HP-blue `024AD8` retained on email/LinkedIn runs
+- **v3.1 — clone determinism:** identical input → byte-identical slide ordering
+
+**5b. Content Audit V2 (`test_content_audit.py`, extended):**
+- `extract_content_audit.py` pulls `cell.hyperlink.target` from the `Audit` sheet (not the "Access here" cell text)
+- Rows with `N/A`/`Unable to find` link text → blank `sp_link`, treated as non-link by the loader
+- V2 CSV loads via existing `_COLUMN_MAP` keys after the header remap → 54 items, all `sp_link` values `http(s)` or blank
+- Existing matcher tests (Leverage>Retire, persona→audience) still pass unchanged against the V2 dataset
 
 **6. JobLogger (`test_job_logger.py`):**
 - Structured entries buffered with `{ts, stage, step, level, msg, data}`
@@ -1157,10 +1317,12 @@ All migrations are additive except the `slideshow_status` drop, which is run AFT
 
 ### Pending user actions
 
-- **Master `.pptx` template hand-off.** User has not yet provided the template file. Implementation of `pptx_renderer.py` depends on having this file to introspect for the slot manifest. Will block Milestone 6.
+- ~~**Master `.pptx` template hand-off.**~~ **RESOLVED (2026-06-23, v3.1).** Template received and dissected; see Template Construction section. The file (and the V2 content-audit xlsx) currently live in the repo `template /` folder (note the trailing space in the dir name); the master must be uploaded to the Supabase Storage decks bucket before cutover (Milestone 10).
 
 ### Pending tuning decisions
 
+- **CPO sense.** Defaulted to Chief **Product** Officer. Revisit if production decks surface the wrong function for a meaningful share of companies.
+- **Floor-fill priority order.** Provisional CTO→CIO→CFO→COO→CISO→CPO. May reorder if a different persona proves more reliably present.
 - **`data_quality_score` thresholds.** Provisional cutoffs are High ≥ 0.75, Medium 0.4–0.75, Low < 0.4. Will be calibrated against the first week of production runs.
 - **Stage 3 fallback agent turn cap.** Provisional cap is 5 tool calls; may need to raise to 8 if 5 proves too restrictive on truly obscure companies.
 - **Haiku confidence threshold for Stage 1 reconciliation.** Provisional 0.7; may adjust based on observed false-negative rate.
@@ -1182,7 +1344,7 @@ Decisions that should not be revisited without explicit user override:
 ### From Session 1
 
 1. PPTX skill pattern + user-provided `.pptx` master template (not Google Slides, not Gamma v4)
-2. Fixed N slides mirroring current Gamma deck (4 stakeholder slides max)
+2. Fixed N slides mirroring current Gamma deck (4 stakeholder slides max) — **superseded by v3.1 #24 (uncapped, min 4)**
 3. Supabase Storage with public URL for hosted decks
 4. Hard cutover — Gamma deleted in same PR
 5. Full BI consolidation with rebrand + small-co as focal points
@@ -1205,8 +1367,19 @@ Decisions that should not be revisited without explicit user override:
 19. All HIGH-impact mitigations + logging + live dashboard in v3 (not v3.1)
 20. Sonnet 4.6 for formatter; Haiku 4.5 for resolver + LinkedIn enrichment
 21. Slot manifest introspected dynamically (not maintained as separate JSON)
-22. Council receives slide_contacts[4], not full catalogue
+22. Council receives the selected slide contacts, not full catalogue
 23. Polling-based live progress (not SSE)
+
+### From Session 3 (v3.1)
+
+24. **Stakeholder section is uncapped with a floor of 4** (supersedes #2). Every contact clearing the completeness bar gets a slide.
+25. **Six personas: CIO, CTO, CFO, COO, CISO, CPO** (taken from the master template's slide 7), replacing the four role buckets everywhere.
+26. **CPO = Chief Product Officer** (default; tunable via `CPO_BUCKET`).
+27. **Floor-fill priority: CTO, CIO, CFO, COO, then CISO, CPO** when fewer than 4 contacts qualify.
+28. **Outreach slides are per-persona** (not per-contact); multi-contact personas get a slash-joined greeting `Hi A/B/C`.
+29. **Exact-copy renderer** — open the master, clone slide 8 per contact + slides 10–12 per persona, fill `[bracket]` tokens at paragraph level, preserve masters/layouts/fonts/theme. No build-from-scratch.
+30. **Content Audit V2 replaces v1** — 54-row HP DAM dataset, extracted via committed `scripts/extract_content_audit.py`, `_COLUMN_MAP` remapped to V2 headers with internal keys unchanged.
+31. **`data_quality_score` is an average over the N selected contacts** — a larger deck does not score higher for size; `persona_coverage` is trace-only, not a score term.
 
 ---
 
@@ -1301,7 +1474,9 @@ Session 2 (2026-05-27) verbatim user inputs and decisions:
 - **PII redaction** — Email/phone masking applied to log entries before they persist to Supabase
 - **Procedural hot path** — Deterministic, code-driven cascade logic (vs Claude agent orchestration)
 - **Region filter** — `canada_only` checkbox state, applied at Stage 3 cascade queries only
-- **Role bucket** — One of CTO / CFO / CIO / COO
+- **Persona / role bucket** — One of the six stakeholder personas: CIO / CTO / CFO / COO / CISO / CPO (v3.1; was four in v3)
+- **Floor-fill** — The v3.1 pass that relaxes the completeness bar on priority personas to guarantee at least 4 contact slides
+- **Exact-copy renderer** — Stage 6 approach of opening the master `.pptx` and cloning/filling it rather than building slides from scratch
 - **Slot manifest** — Map of placeholder names to slot metadata, introspected from the master `.pptx` at render-time
 - **Stage 3 fallback agent** — Claude (Haiku 4.5) agent with tools, fires when procedural cascade exhausts
 - **Systemic field absence** — Same required field missing across ALL examined candidates for a role bucket; treated as a company-level issue
@@ -1309,4 +1484,24 @@ Session 2 (2026-05-27) verbatim user inputs and decisions:
 
 ---
 
-*End of design document.*
+## Appendix C — v3.1 Clarifying Q&A
+
+Session 3 (2026-06-23). Three questions answered after the template + persona change landed:
+
+**Q1 — Contact→slide cardinality.** *"How should contacts map to slides now that they're uncapped (min 4) across the 6 personas?"*
+> "im leaning to a combination between [one-per-persona] and [uncapped pool] — ideally we have a contact across all the personas, but if we dont because its uncapped its not that big of a deal as long as they clear the quality bar we include them"
+- Decision: run all 6 personas; promote every contact clearing the completeness bar to a slide; aim for one per persona but don't force missing personas; guarantee a floor of 4 via floor-fill.
+
+**Q2 — Outreach-slide scaling.** *"The Email / LinkedIn / Call-Script slides are persona-specific — how should they scale with multiple contacts?"*
+> "lets do the one set per persona, but in the case if there are multiple for example cfo contacts, the email template that says hi [person] can be a comma separated list so like hi [person 1]/[person2]/..."
+- Decision: one outreach set per persona present; multi-contact personas get a slash-joined greeting.
+
+**Q3 — Content-audit data handling.** *"How should the new V2 audit relate to the existing 27-row CSV?"*
+> "Replace with V2"
+- Decision: V2 (54 rows, HP DAM links) replaces v1 entirely.
+
+**Defaults resolved by Claude (flagged to user):** CPO = Chief Product Officer; floor-fill priority CTO→CIO→CFO→COO→CISO→CPO; `_COLUMN_MAP` remap (vs rename-on-export); ZoomInfo client to be (re)implemented against the current API reference (`https://docs.zoominfo.com/reference/overview`), not the legacy docs.
+
+---
+
+*End of design document (v3.1).*

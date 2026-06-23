@@ -1,6 +1,8 @@
 # RAD Pipeline Restructure — Stakeholder Overview
 
-We are restructuring how RAD generates a prospect briefing in two coupled ways. First, we are replacing the Gamma slideshow service (which has been inconsistent despite three rounds of template work) with a PowerPoint file built deterministically from a master template the sales team controls. Second, we are rebuilding the part of the pipeline that finds executives at the prospect company — switching from the current "pull a bunch of contacts then sort by data completeness" pattern to a surgical, per-role workflow that mirrors how a salesperson would manually research the company. The goal is that every deck always has a CTO, CFO, CIO, and COO slide, each with a real, complete contact record.
+We are restructuring how RAD generates a prospect briefing in two coupled ways. First, we are replacing the Gamma slideshow service (which has been inconsistent despite three rounds of template work) with a PowerPoint file built deterministically from a master template the sales team controls — and which the renderer reproduces exactly. Second, we are rebuilding the part of the pipeline that finds executives at the prospect company — switching from the current "pull a bunch of contacts then sort by data completeness" pattern to a surgical, per-persona workflow that mirrors how a salesperson would manually research the company. The goal is that every deck carries a real, complete contact for as many of the six stakeholder personas (CIO, CTO, CFO, COO, CISO, CPO) as we can fill — always at least four contacts, and as many more as clear our quality bar.
+
+> **v3.1 update (2026-06-23):** the stakeholder section changed from a fixed 4 slides to an **uncapped set with a floor of 4**, organized across **6 personas**, and the master template has now been received and dissected. See the design doc for details.
 
 Alongside the pipeline changes, we are upgrading the dashboard so that every job is logged centrally (devops can diagnose failures without running anything locally) and so a user can click into a running job and watch each pipeline step happen in real time, with the data filling in stage by stage.
 
@@ -19,11 +21,11 @@ Alongside the pipeline changes, we are upgrading the dashboard so that every job
 
 ### The contact research
 
-The four stakeholder slides (CTO, CFO, CIO, COO) currently get filled by pulling many contacts from ZoomInfo/Apollo/PDL/Hunter, then sorting by who has the most-complete record. This produces visually consistent decks but often shows the wrong person — someone with great contact details but the wrong title — and silently fails for small companies and rebranded companies.
+The stakeholder slides currently get filled by pulling many contacts from ZoomInfo/Apollo/PDL/Hunter, then sorting by who has the most-complete record. This produces visually consistent decks but often shows the wrong person — someone with great contact details but the wrong title — and silently fails for small companies and rebranded companies.
 
-The new flow mirrors how a salesperson manually researches a company. For each of the four roles, we cascade through tiers of seniority within ZoomInfo (C-suite exact title, then adjacent C-suite titles, then VP, then Director), then move to Apollo, then PDL, and finally fall back to a Claude-powered web search if no structured source surfaces a match. For whichever candidate we pick, we then validate and enrich their record by cross-checking the other sources for any missing fields and looking up their LinkedIn to confirm start date and other details. We move to the next candidate only if a candidate's record cannot be completed.
+The new flow mirrors how a salesperson manually researches a company. For each of the six personas (CIO, CTO, CFO, COO, CISO, CPO), we cascade through tiers of seniority within ZoomInfo (C-suite exact title, then adjacent C-suite titles, then VP, then Director), then move to Apollo, then PDL, and finally fall back to a Claude-powered web search if no structured source surfaces a match. For each candidate we pick, we validate and enrich their record by cross-checking the other sources for any missing fields and looking up their LinkedIn to confirm start date and other details. We move to the next candidate only if a candidate's record cannot be completed.
 
-The dashboard shows all candidates we examined (organized by role bucket), so the user can audit our choices. Each deck still gets exactly four slides, exactly one contact per slide.
+The dashboard shows all candidates we examined (organized by persona bucket), so the user can audit our choices. **v3.1:** every contact that clears the quality bar earns its own slide — a persona may produce several slides or none — with a guaranteed floor of four contacts per deck. Where a persona has more than one contact, the per-persona outreach templates address them together (e.g. "Hi Lisa/Marcus/Priya").
 
 ### Region filter for international companies
 
@@ -53,8 +55,8 @@ Every job's full debug trail now persists to Supabase, regardless of which sales
 
 | | Improvement |
 |--|-------------|
-| Reliability | Every deck has 4 complete stakeholder slides — no more empty C-suite slots or wildly inconsistent visuals |
-| Accuracy | Contacts are picked by role-match first, completeness second — no more "great data, wrong title" mistakes |
+| Reliability | Every deck has at least 4 complete stakeholder slides (uncapped above that) — no more empty C-suite slots or wildly inconsistent visuals |
+| Accuracy | Contacts are picked by persona-match first, completeness second — no more "great data, wrong title" mistakes |
 | Internationals | New region filter solves the multinational-subsidiary problem |
 | Transparency | Live progress view + per-job debug log + confidence badge (High / Medium / Low) on every deck |
 | Speed of triage | When a job fails, devops can pull the full log directly from Supabase |
@@ -76,7 +78,7 @@ These came out of two brainstorming sessions and are intentionally not re-litiga
 
 1. **PowerPoint via `.pptx` master template** — not Google Slides, not a fresh slide template per job, not Gamma v4
 2. **Hard cutover** — Gamma code and tests deleted in the same PR, not kept behind a feature flag
-3. **Per-role surgical contact pipeline** — not the existing "spam and sort" approach
+3. **Per-persona surgical contact pipeline** (6 personas; uncapped slides with a floor of 4) — not the existing "spam and sort" approach, and no longer capped at 4
 4. **Canada-only checkbox scopes contacts only** — general company intel stays global
 5. **Claude Sonnet 4.6 for the formatting pass; Haiku 4.5 for LinkedIn enrichment** — model choices balance quality vs cost
 6. **Stage 3 final-fallback agent** — the only place in the pipeline where Claude orchestrates tool calls; everything else stays procedural for cost and predictability
@@ -87,7 +89,7 @@ These came out of two brainstorming sessions and are intentionally not re-litiga
 
 ## What's still pending
 
-- **The master `.pptx` template** — needs to be handed over by the sales team. Implementation starts on the renderer once it's in.
+- ~~**The master `.pptx` template**~~ — **received & dissected (2026-06-23).** Now drives the exact-copy renderer; must be uploaded to Supabase Storage before cutover.
 - **Data-quality score thresholds** — provisional cutoffs are High ≥ 0.75, Medium 0.4–0.75, Low < 0.4. These will be tuned during the first week of production runs.
 
 ---

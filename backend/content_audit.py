@@ -18,10 +18,16 @@ CSV_PATH = os.path.join(
     os.path.dirname(__file__),
     "..",
     "hp_assets",
-    "HP Canada_RAD Intelligence Desk_Content Audit(Audit).csv",
+    # V2 dataset (54 assets, public HP DAM links). Generated from the source
+    # workbook by scripts/extract_content_audit.py. Replaces the original
+    # 27-row SharePoint CSV (kept in git history for reference).
+    "HP Canada_RAD Intelligence Desk_Content Audit_V2.csv",
 )
 
-# Column name mapping (CSV header -> internal key)
+# Column name mapping (CSV header -> internal key).
+# The internal keys are stable — frontend, slideshow matchers, and tests all read
+# them — so when V2 renamed three workbook columns we only re-point the header
+# side here: Ebook -> Type, Consideration -> Customer Journey, SP Link -> DAM Link.
 _COLUMN_MAP = {
     "Asset Name": "asset_name",
     "Industry": "industry",
@@ -29,13 +35,13 @@ _COLUMN_MAP = {
     "Year Published": "year_published",
     "Audience": "audience",
     "Asset Summary": "asset_summary",
-    "Ebook ": "ebook",
+    "Type": "ebook",                       # V2 rename of "Ebook "
     "Format": "format",
     "Page Count": "page_count",
     "Marketing or Sales": "marketing_or_sales",
-    "Consideration ": "consideration",
+    "Customer Journey": "consideration",   # V2 rename of "Consideration "
     "Inventory Recommendations": "inventory_recommendations",
-    "SP Link": "sp_link",
+    "DAM Link": "sp_link",                 # V2 rename of "SP Link"
     "Audit Notes": "audit_notes",
 }
 
