@@ -213,11 +213,22 @@ async def run_stage3(
         # persona gets a DISTINCT person (no one filling all six buckets).
         pool = [r for r in catalogue[persona]
                 if not r.is_sentinel and (_dedupe_key(r) not in used)]
-        choice = best_proximate(pool)
-        rung = "floor_fill_relaxed_completeness"
-        if choice is None:
-            choice = await providers.fallback(persona, canonical, canada_only)
-            rung = "floor_fill_fallback_agent"
+        best = best_proximate(pool)
+        # Relevance over data: keep a catalogue contact here ONLY if it's a real-ish
+        # title match (<= Director). If the only ZI candidates are weak/UNKNOWN — the
+        # generic company-wide pool large domains return — a web search for the ACTUAL
+        # role-holder (e.g. the real CTO) is far more relevant than a complete-but-
+        # wrong contact. The wrong-but-complete contact is the "most data" trap.
+        if best is not None and best.proximity <= int(Proximity.DIRECTOR):
+            choice, rung = best, "floor_fill_relaxed_completeness"
+        else:
+            agent = await providers.fallback(persona, canonical, canada_only)
+            if agent is not None:
+                choice, rung = agent, "floor_fill_fallback_agent"
+            else:
+                # No web match either — fall back to the weak ZI contact (better than
+                # an empty slide), else a sentinel below.
+                choice, rung = best, "floor_fill_relaxed_completeness"
         ck = _dedupe_key(choice) if choice else None
         if choice is None or (ck and ck in used):
             choice = no_contact_sentinel(persona)

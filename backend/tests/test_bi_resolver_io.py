@@ -112,6 +112,23 @@ def test_run_stage3_floor_fill_with_fallback():
     assert result.enrichment_trace
 
 
+def test_floor_fill_prefers_web_agent_over_weak_catalogue_contact():
+    # A persona whose ZI pool is ONLY a weak/UNKNOWN-title contact (the generic
+    # large-domain pool) must floor-fill via the web agent (the real role-holder),
+    # NOT keep the complete-but-wrong weak contact.
+    weak = rec("CTO", "Wrong Person", title="Senior Manager, Comms")
+    weak.proximity = int(Proximity.UNKNOWN)
+    fp = FakeProviders(
+        {("CTO", "zoominfo", "csuite"): [weak]},
+        adjacency=False,  # weak title is judged non-adjacent -> stays UNKNOWN
+        fallback_fn=lambda p: rec(p, "Real CTO", "Chief Technology Officer", linkedin="https://li/realcto"),
+    )
+    result = run(run_stage3(fp, canonical=None))
+    cto = result.slide_contacts["CTO"]
+    assert [c.name for c in cto] == ["Real CTO"]
+    assert any("floor_fill_fallback_agent" in m for m in cto[0].marks)
+
+
 def test_run_stage3_uncapped_co_equal():
     table = {("CFO", "zoominfo", "csuite"): [
         rec("CFO", "A", "Chief Financial Officer"),
