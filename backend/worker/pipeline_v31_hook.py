@@ -191,20 +191,32 @@ def _content_audit_links(validated_data: dict, canonical, slide_contacts: dict):
 
 
 def _is_reachable(c) -> bool:
-    """A contact is reachable when we have an email AND at least one phone."""
-    return bool(getattr(c, "email", "")) and bool(
-        getattr(c, "phone", "") or getattr(c, "direct_phone", "") or getattr(c, "mobile_phone", ""))
+    """Fully reachable = email AND a phone AND a LinkedIn URL (the contact suite a
+    rep needs). start_date is a bonus, not part of the reachability floor."""
+    return (bool(getattr(c, "email", ""))
+            and bool(getattr(c, "phone", "") or getattr(c, "direct_phone", "")
+                     or getattr(c, "mobile_phone", ""))
+            and bool(getattr(c, "linkedin_url", "")))
 
 
-async def _ensure_contactable(sel, providers, company_name: str, *, max_alts: int = 3) -> None:
-    """For each persona whose selected contact isn't reachable (email+phone) after
-    the initial enrich, walk the relevance-ranked role-matched alternatives, enrich
-    each, and swap to the most-relevant one that becomes reachable.
+def _identity_keys(c) -> set:
+    out = set()
+    for v in (getattr(c, "linkedin_url", ""), getattr(c, "email", ""), getattr(c, "name", "")):
+        if v and str(v).strip():
+            out.add(str(v).strip().lower())
+    return out
+
+
+async def _ensure_contactable(sel, providers, company_name: str, company_domain: str = "",
+                              *, max_alts: int = 3) -> None:
+    """For each persona whose selected contact isn't fully reachable after the
+    initial enrich, walk the relevance-ranked ROLE-MATCHED alternatives, enrich each,
+    and swap to the most-relevant one that becomes reachable.
 
     Core philosophy preserved: alternatives are role matches (proximity <= Director),
-    ranked by relevance; we trade DOWN in relevance only to gain a real email+phone,
-    and only if an alternative actually achieves it. If none do, the original (most
-    relevant) pick is kept — relevance never loses to a worse-matched contact."""
+    ranked by relevance; we trade DOWN in relevance only to gain a real email+phone+
+    LinkedIn, and only if an alternative actually achieves it. If none do, the
+    original (most relevant) pick is kept — relevance never loses to a worse match."""
     from bi_resolver import PERSONAS, rank_by_proximity, Proximity
 
     if not hasattr(providers, "enrich_one"):
@@ -218,10 +230,66 @@ async def _ensure_contactable(sel, providers, company_name: str, *, max_alts: in
                 if not getattr(c, "is_sentinel", False) and id(c) not in chosen_ids
                 and getattr(c, "proximity", 9) <= int(Proximity.DIRECTOR)]
         for cand in rank_by_proximity(alts)[:max_alts]:
-            await providers.enrich_one(cand, company_name)
+            await providers.enrich_one(cand, company_name, company_domain)
             if _is_reachable(cand):
                 cand.mark("swapped_in_for_reachability")
                 sel.slide_contacts[persona] = [cand]
+                break
+
+
+async def _enforce_reachable_floor(sel, providers, company_name: str, company_domain: str = "",
+                                   *, floor: int = 4, max_try_per_persona: int = 4) -> None:
+    """Guarantee >= `floor` FULLY reachable contacts (email+phone+LinkedIn) on the
+    deck. Relevance-first has already run; this only fires when we're short. For each
+    persona that isn't yet contributing a reachable contact, enrich its catalogue
+    candidates (ANY proximity — this is the completeness fallback the relevance pass
+    deliberately avoids) and swap in the first that becomes fully reachable. Dedupes
+    across personas so the same person can't fill two slots. Stops once the floor is
+    met. This is the explicit 'fall back to whoever has the full contact suite' rule
+    for companies (e.g. mega-caps) whose real execs aren't in ZoomInfo reachably."""
+    from bi_resolver import PERSONAS, FLOOR_PRIORITY, rank_by_proximity
+
+    if not hasattr(providers, "enrich_one"):
+        return
+
+    def reachable_count() -> int:
+        seen: set = set()
+        n = 0
+        for v in sel.slide_contacts.values():
+            for c in v:
+                if getattr(c, "is_sentinel", False) or not _is_reachable(c):
+                    continue
+                ks = _identity_keys(c)
+                if ks & seen:
+                    continue
+                seen |= ks
+                n += 1
+        return n
+
+    # Identities already on the deck (so a backfill can't duplicate a kept contact).
+    used: set = set()
+    for v in sel.slide_contacts.values():
+        for c in v:
+            if not getattr(c, "is_sentinel", False):
+                used |= _identity_keys(c)
+
+    order = FLOOR_PRIORITY + [p for p in PERSONAS if p not in FLOOR_PRIORITY]
+    for persona in order:
+        if reachable_count() >= floor:
+            break
+        chosen = [c for c in sel.slide_contacts.get(persona, []) if not getattr(c, "is_sentinel", False)]
+        if any(_is_reachable(c) for c in chosen):
+            continue  # this persona already contributes a reachable contact
+        chosen_ids = {id(c) for c in chosen}
+        cands = [c for c in sel.contact_catalogue.get(persona, [])
+                 if not getattr(c, "is_sentinel", False) and id(c) not in chosen_ids
+                 and not (_identity_keys(c) & used)]
+        for cand in rank_by_proximity(cands)[:max_try_per_persona]:
+            await providers.enrich_one(cand, company_name, company_domain)
+            if _is_reachable(cand):
+                cand.mark("reachability_floor_fallback")
+                sel.slide_contacts[persona] = [cand]
+                used |= _identity_keys(cand)
                 break
 
 
@@ -318,19 +386,28 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     # deck, so it's cheap, and it fills the slots that rendered blank.
     selected = [c for v in sel.slide_contacts.values() for c in v]
     try:
-        await providers.enrich_final(selected, canonical.name)
+        await providers.enrich_final(selected, canonical.name, canonical.primary_domain)
     except Exception as e:  # noqa: BLE001 — enrichment is best-effort
         logger.warning("v3.1 enrich_final failed (continuing): %s", e)
 
     # Completeness-aware fallback: for any persona whose pick is still not reachable
-    # (no email AND no phone) after enrichment, walk the relevance-ranked alternates
-    # and swap to the most-relevant one we CAN reach. Relevance-first stays intact —
-    # alternates are role-matched; we only trade down in relevance to gain a real
-    # email+phone. May mutate sel.slide_contacts, so rebuild `selected` afterward.
+    # after enrichment, walk the relevance-ranked alternates and swap to the most-
+    # relevant one we CAN reach. Relevance-first stays intact — alternates are
+    # role-matched; we only trade down in relevance to gain a real email+phone.
     try:
-        await _ensure_contactable(sel, providers, canonical.name)
+        await _ensure_contactable(sel, providers, canonical.name, canonical.primary_domain)
     except Exception as e:  # noqa: BLE001 — best-effort
         logger.warning("v3.1 ensure_contactable failed (continuing): %s", e)
+
+    # Hard floor: the deck must carry >= 4 FULLY reachable contacts (email+phone+
+    # LinkedIn). If relevance-first + enrichment left us short — e.g. a mega-cap whose
+    # real execs aren't in ZoomInfo with direct contact info — backfill from each
+    # persona's catalogue with contacts that DO have the full suite, even if less
+    # relevant. A reachable deck beats four names a rep can't contact.
+    try:
+        await _enforce_reachable_floor(sel, providers, canonical.name, canonical.primary_domain, floor=4)
+    except Exception as e:  # noqa: BLE001 — best-effort
+        logger.warning("v3.1 enforce_reachable_floor failed (continuing): %s", e)
     selected = [c for v in sel.slide_contacts.values() for c in v]
 
     try:

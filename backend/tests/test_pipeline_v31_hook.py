@@ -151,9 +151,9 @@ def test_ensure_contactable_swaps_to_reachable_alternate():
                           contact_catalogue={"CFO": [top, alt]}, enrichment_trace=[], warnings=[])
 
     class FakeP:
-        async def enrich_one(self, c, company):
+        async def enrich_one(self, c, company, domain=""):
             if c.name == "Alt Exec":
-                c.email, c.phone = "alt@x.com", "+1-555"
+                c.email, c.phone, c.linkedin_url = "alt@x.com", "+1-555", "https://li/alt"
 
     run(_ensure_contactable(sel, FakeP(), "Acme"))
     assert [c.name for c in sel.slide_contacts["CFO"]] == ["Alt Exec"]
@@ -170,11 +170,43 @@ def test_ensure_contactable_keeps_relevant_pick_when_no_alternate_reachable():
                           contact_catalogue={"CFO": [top, alt]}, enrichment_trace=[], warnings=[])
 
     class FakeP:
-        async def enrich_one(self, c, company):
+        async def enrich_one(self, c, company, domain=""):
             pass  # nobody becomes reachable
 
     run(_ensure_contactable(sel, FakeP(), "Acme"))
     assert [c.name for c in sel.slide_contacts["CFO"]] == ["Top Exec"]  # relevance preserved
+
+
+def test_enforce_reachable_floor_backfills_with_complete_contacts():
+    from pipeline_v31_hook import _enforce_reachable_floor
+    from bi_resolver import StakeholderRecord, SelectionResult, Proximity
+
+    def mk(persona, name, reach=False, prox=Proximity.UNKNOWN):
+        r = StakeholderRecord(persona=persona, name=name, title="X", proximity=int(prox))
+        if reach:
+            r.email, r.phone, r.linkedin_url = f"{name}@x.com", "+1", f"https://li/{name}"
+        return r
+
+    cio = mk("CIO", "Real CIO", reach=True, prox=Proximity.EXACT)   # relevant + reachable
+    sel = SelectionResult(
+        slide_contacts={"CIO": [cio], "CFO": [mk("CFO", "Web CFO")],
+                        "COO": [mk("COO", "Web COO")], "CTO": [mk("CTO", "Web CTO")]},
+        contact_catalogue={"CIO": [cio],
+                           "CFO": [mk("CFO", "Web CFO"), mk("CFO", "Complete A")],
+                           "COO": [mk("COO", "Web COO"), mk("COO", "Complete B")],
+                           "CTO": [mk("CTO", "Web CTO"), mk("CTO", "Complete C")]},
+        enrichment_trace=[], warnings=[])
+
+    class FakeP:
+        async def enrich_one(self, c, company, domain=""):
+            if c.name.startswith("Complete"):  # only the catalogue alternates enrich fully
+                c.email, c.phone, c.linkedin_url = f"{c.name}@x.com", "+1", f"https://li/{c.name}"
+
+    run(_enforce_reachable_floor(sel, FakeP(), "Acme", "acme.com", floor=4))
+    reach = [c.name for v in sel.slide_contacts.values() for c in v
+             if c.email and (c.phone or c.direct_phone or c.mobile_phone) and c.linkedin_url]
+    assert len(reach) >= 4, reach
+    assert "Real CIO" in reach  # the relevant+reachable pick is kept
 
 
 def test_deck_basename_canada_only_suffix_avoids_collision():

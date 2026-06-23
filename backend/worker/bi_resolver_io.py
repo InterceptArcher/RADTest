@@ -185,10 +185,12 @@ async def select_persona_contacts_io(
             # because their raw record isn't pre-populated (the search endpoint
             # returns no email/phone anyway — only the enrich endpoint does).
             best_prox = fresh[0].proximity
-            # Co-equal best only, capped at 2 so a tier full of same-proximity
-            # adjacent titles (e.g. several "VP of Engineering") can't flood one
-            # persona with near-duplicates.
-            for w in [c for c in fresh if c.proximity == best_prox][:2]:
+            # Co-equal best only. Allow up to 2 ONLY for tight matches (exact or
+            # canonical title — genuine co-CXOs); for looser matches (LLM-adjacent /
+            # VP / Director) take just the single closest, so a persona can't grab a
+            # second loosely-matched person (and starve another persona's coverage).
+            cap = 2 if best_prox <= int(Proximity.CANONICAL) else 1
+            for w in [c for c in fresh if c.proximity == best_prox][:cap]:
                 selected.append(w)
                 already_used_linkedins |= _identities(w)
                 _trace(trace, persona=persona, source=source, candidate_name=w.name,

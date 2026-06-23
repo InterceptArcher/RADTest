@@ -1171,6 +1171,7 @@ class ZoomInfoClient:
     async def enrich_contacts_by_name(
         self,
         people: List[Dict[str, str]],
+        company_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Enrich contacts by NAME + company when no personId is known.
 
@@ -1179,9 +1180,10 @@ class ZoomInfoClient:
         search (no ZoomInfo personId yet) so the RIGHT exec still gets their email /
         phone / personId from ZoomInfo. Returns the same shape as enrich_contacts.
 
-        ZoomInfo's ContactEnrich matchPersonInput accepts a name+company match; we
-        send firstName/lastName/companyName (falling back to fullName) and let ZI
-        resolve the best match.
+        ZoomInfo's ContactEnrich matchPersonInput accepts a name+company match. When
+        a resolved `company_id` is supplied we anchor on it (most reliable — avoids
+        ambiguous companyName matches at large multi-entity firms); otherwise we fall
+        back to companyName. Name is sent as firstName/lastName (or fullName).
         """
         match_input: List[Dict[str, str]] = []
         for p in people:
@@ -1189,9 +1191,15 @@ class ZoomInfoClient:
             last = (p.get("last_name") or "").strip()
             full = (p.get("full_name") or "").strip()
             company = (p.get("company_name") or "").strip()
-            if not company or (not (first and last) and not full):
-                continue  # ZI needs a name AND a company to match
-            entry: Dict[str, str] = {"companyName": company}
+            if not (first and last) and not full:
+                continue  # need a name to match
+            entry: Dict[str, str] = {}
+            if company_id:
+                entry["companyId"] = str(company_id)
+            elif company:
+                entry["companyName"] = company
+            else:
+                continue  # need a company anchor (id or name)
             if first and last:
                 entry["firstName"], entry["lastName"] = first, last
             else:

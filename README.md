@@ -141,6 +141,20 @@ The content library was upgraded to the **V2 internal audit (54 assets)**, repla
 
 ---
 
+## RAD Pipeline v3.1 — Reachability Floor + CIO/CTO Split (2026-06-23)
+
+Three refinements so the deck always ships usable contacts:
+
+**Hard floor of 4 fully-reachable contacts (`_enforce_reachable_floor`).** A deck must carry ≥4 contacts that each have email + phone + LinkedIn. Relevance-first runs first; if it leaves us short (e.g. a mega-cap whose real execs aren't in ZoomInfo with direct contact info), the hook backfills each still-unreachable persona from its catalogue with contacts that DO have the full suite — even if less relevant — deduped across personas, until the floor is met. Relevant+reachable picks (the common case on companies ZoomInfo covers) are always kept; we only fall back to "whoever has the full contact card" when there's no reachable relevant option. Rationale: four names a rep can't contact are worth less than four reachable contacts.
+
+**ZoomInfo enrich anchored on companyId.** `LiveProviders` now resolves the domain to a ZoomInfo `companyId` once (cached) via `enrich_company`, and `enrich_contacts_by_name` anchors the name match on that `companyId` when available (falling back to `companyName`). This makes name-based enrich of web-discovered execs far more precise at large multi-entity firms (where a bare "Microsoft" companyName match is ambiguous).
+
+**CIO ≠ CTO in the title judge.** The adjacency judge now treats CIO (internal/enterprise IT, information systems, digital workplace, data platforms) and CTO (product/build technology — engineering, software, R&D, architecture) as DISTINCT domains, so a CTO no longer matches the CIO persona (or vice-versa). Co-equal selection is also capped at 2 only for tight matches (exact/canonical titles); looser (LLM-adjacent/VP/Director) matches take just the single closest, so one persona can't grab a second loose match and starve another persona's coverage.
+
+**Reachability definition** is now email AND phone AND LinkedIn (start_date remains a best-effort bonus). **Tests:** `_enforce_reachable_floor` backfill, companyId-anchored enrich, CIO/CTO split via the cap, updated `_ensure_contactable` (reachable now includes LinkedIn). All sync suites pass.
+
+---
+
 ## RAD Pipeline v3.1 — Full Contact Completeness (2026-06-23)
 
 Follow-up to the relevance fix: the *right* execs were now selected but web-discovered ones lacked email/phone, one person could headline two personas, and a few unrelated titles still slipped through. Four changes make the supporting data layer pull as hard as the relevance layer:

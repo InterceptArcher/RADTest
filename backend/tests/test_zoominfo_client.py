@@ -349,6 +349,26 @@ class TestContactSearchPayloadFormat:
         assert mi == {"companyName": "Microsoft", "firstName": "Amy", "lastName": "Hood"}
 
     @pytest.mark.asyncio
+    async def test_enrich_by_name_anchors_on_company_id_when_given(self):
+        """When a resolved companyId is supplied, the name match anchors on it
+        (most reliable at large multi-entity firms) instead of companyName."""
+        from zoominfo_client import ZoomInfoClient
+        client = ZoomInfoClient(access_token="test-token")
+        captured = []
+
+        async def capture(endpoint, payload, _is_retry=False, params=None):
+            captured.append(payload["data"]["attributes"]["matchPersonInput"])
+            return {"data": []}
+
+        with patch.object(client, "_make_request", side_effect=capture):
+            await client.enrich_contacts_by_name(
+                [{"first_name": "Amy", "last_name": "Hood", "company_name": "Microsoft"}],
+                company_id="12345")
+
+        mi = captured[0][0]
+        assert mi == {"companyId": "12345", "firstName": "Amy", "lastName": "Hood"}
+
+    @pytest.mark.asyncio
     async def test_enrich_by_name_skips_entries_without_name_and_company(self):
         from zoominfo_client import ZoomInfoClient
         client = ZoomInfoClient(access_token="test-token")

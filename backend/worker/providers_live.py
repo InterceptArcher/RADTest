@@ -89,6 +89,24 @@ class LiveProviders:
         self.zi = zi_client
         self._anthropic = anthropic_client
         self.breakers = breakers or CircuitBreakerRegistry()
+        self._company_id_cache: dict = {}  # domain -> ZoomInfo companyId (resolved once)
+
+    async def _resolve_company_id(self, domain: str) -> str:
+        """Resolve (and cache) a domain to its ZoomInfo companyId — used to anchor
+        name-based contact enrich precisely at large multi-entity firms."""
+        if not domain or self.zi is None:
+            return ""
+        if domain in self._company_id_cache:
+            return self._company_id_cache[domain]
+        cid = ""
+        try:
+            res = await self.zi.enrich_company(domain=domain)
+            norm = (res or {}).get("normalized") or {}
+            cid = str(norm.get("company_id") or "")
+        except Exception:  # noqa: BLE001
+            cid = ""
+        self._company_id_cache[domain] = cid
+        return cid
 
     # --- Anthropic helpers -------------------------------------------------
     def _anthropic_or_none(self):
@@ -197,16 +215,19 @@ class LiveProviders:
         if c.email:
             c.email_sources.add("zoominfo")
 
-    async def enrich_final(self, contacts: list, company_name: str = "") -> None:
+    async def enrich_final(self, contacts: list, company_name: str = "",
+                           company_domain: str = "") -> None:
         """Fill the SELECTED contacts to completeness (email/phone/LinkedIn/start),
         mutating in place. Order: (1) ZoomInfo Contact-Enrich by person_id, then
-        (2) ZoomInfo Contact-Enrich by NAME+company for anyone still missing
-        email/phone — this covers web-discovered execs that have no ZI person_id
-        yet but ARE in ZoomInfo — then (3) a bounded web search for LinkedIn +
-        start_date. The goal is that the RIGHT person ends up fully reachable."""
+        (2) ZoomInfo Contact-Enrich by NAME (anchored on the resolved companyId when
+        available, else company name) for anyone still missing email/phone — this
+        covers web-discovered execs that have no ZI person_id yet but ARE in
+        ZoomInfo — then (3) a bounded web search for LinkedIn + start_date. The goal
+        is that the RIGHT person ends up fully reachable."""
         real = [c for c in contacts if not c.is_sentinel]
         if not real:
             return
+        company_id = await self._resolve_company_id(company_domain) if company_domain else ""
 
         # 1) ZoomInfo Contact-Enrich (email/phone) by person_id.
         ids = [c.person_id for c in real if getattr(c, "person_id", "")]
@@ -230,7 +251,7 @@ class LiveProviders:
             try:
                 payload = [{**self._split_name(c.name), "company_name": company_name}
                            for c in need_name]
-                res = await self.zi.enrich_contacts_by_name(payload)
+                res = await self.zi.enrich_contacts_by_name(payload, company_id=company_id or None)
                 people = (res or {}).get("people", []) if isinstance(res, dict) else []
                 by_name = {self._norm_name(p.get("name", "")): p for p in people if p.get("name")}
                 for c in need_name:
@@ -261,11 +282,11 @@ class LiveProviders:
                 c.start_date = c.start_date or str(data.get("start_date") or "")
                 c.mark("web_enriched_linkedin_start")
 
-    async def enrich_one(self, contact, company_name: str = "") -> None:
+    async def enrich_one(self, contact, company_name: str = "", company_domain: str = "") -> None:
         """Enrich a SINGLE contact to completeness (delegates to enrich_final). Used
         by the hook's relevance-ranked fallback walk when the top pick can't be made
         reachable and we try the next-most-relevant candidate."""
-        await self.enrich_final([contact], company_name)
+        await self.enrich_final([contact], company_name, company_domain)
 
     @staticmethod
     def _split_name(full: str) -> dict:
@@ -287,14 +308,21 @@ class LiveProviders:
         text = await self._haiku_text(
             system=(
                 "You decide if a job title belongs to the SAME functional domain as a target "
-                "C-suite persona. Domains: CIO/CTO = technology / IT / engineering / digital / data; "
-                "CISO = security / information security / cybersecurity; CFO = finance / accounting / "
-                "treasury; COO = operations / supply chain / general management; CPO = product. "
-                "Answer 'yes' ONLY if the title clearly sits in the persona's domain at a senior level "
-                "(C-level, SVP, VP, Head, or Director). Titles in unrelated functions — communications, "
-                "HR/people, legal, marketing, sales, brand, investigations, facilities, administration, "
-                "or an executive/CEO office role — are NOT proxies. Answer strictly 'yes' or 'no'."),
-            user=f"Persona: {persona}. Title: '{title}'. Same functional domain at a senior level? yes or no.",
+                "C-suite persona. Domains are DISTINCT — do not conflate CIO and CTO:\n"
+                "- CIO = internal/enterprise INFORMATION technology: IT, information systems, "
+                "digital workplace, enterprise applications, data/analytics platforms.\n"
+                "- CTO = PRODUCT/build technology: engineering, software development, R&D, "
+                "architecture, the technology the company sells.\n"
+                "- CISO = security / information security / cybersecurity.\n"
+                "- CFO = finance / accounting / treasury / controller.\n"
+                "- COO = operations / supply chain / general management.\n"
+                "- CPO = product management / product strategy.\n"
+                "Answer 'yes' ONLY if the title clearly sits in THIS persona's domain at a senior "
+                "level (C-level, SVP, VP, Head, or Director). A CTO is NOT a proxy for CIO and vice "
+                "versa. Titles in unrelated functions — communications, HR/people, legal, marketing, "
+                "sales, brand, investigations, facilities, administration, or an executive/CEO office "
+                "role — are NOT proxies. Answer strictly 'yes' or 'no'."),
+            user=f"Persona: {persona}. Title: '{title}'. In {persona}'s functional domain at a senior level? yes or no.",
             max_tokens=8,
         )
         return text.strip().lower().startswith("y")
