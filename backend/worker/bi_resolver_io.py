@@ -57,6 +57,15 @@ def _trace(trace, **e):
         trace.append(e)
 
 
+def _dedupe_key(rec) -> Optional[str]:
+    """Cross-slide identity key: LinkedIn first, then email, then name — so a
+    contact with no LinkedIn URL still can't headline multiple persona slides."""
+    for v in (rec.linkedin_url, rec.email, rec.name):
+        if v and str(v).strip():
+            return str(v).strip().lower()
+    return None
+
+
 def _tier_depth(source: str, kind: str) -> int:
     return _SOURCE_BASE.get(source, 15) + _KIND_OFFSET.get(kind, 4)
 
@@ -130,7 +139,8 @@ async def select_persona_contacts_io(
 
         tier_qualified: list[StakeholderRecord] = []
         for cand in rank_by_proximity(cands)[:enrich_budget_per_tier]:
-            if cand.linkedin_url and cand.linkedin_url in already_used_linkedins:
+            ck = _dedupe_key(cand)
+            if ck and ck in already_used_linkedins:
                 cand.mark("duplicate_skipped")
                 _trace(trace, persona=persona, source=source, candidate_name=cand.name,
                        outcome="duplicate_skipped")
@@ -154,8 +164,9 @@ async def select_persona_contacts_io(
         if tier_qualified:
             for e in tier_qualified:
                 selected.append(e)
-                if e.linkedin_url:
-                    already_used_linkedins.add(e.linkedin_url)
+                k = _dedupe_key(e)
+                if k:
+                    already_used_linkedins.add(k)
             return selected, examined  # surgical stop
 
         missing = systemic_field_absence(examined)
@@ -164,8 +175,9 @@ async def select_persona_contacts_io(
             if best is not None:
                 best.mark(f"systemic_field_absence:{missing}")
                 selected.append(best)
-                if best.linkedin_url:
-                    already_used_linkedins.add(best.linkedin_url)
+                bk = _dedupe_key(best)
+                if bk:
+                    already_used_linkedins.add(bk)
             return selected, examined
 
     return selected, examined
@@ -197,18 +209,24 @@ async def run_stage3(
             break
         if slide_contacts[persona]:
             continue
-        choice = best_proximate([r for r in catalogue[persona] if not r.is_sentinel])
+        # Only consider candidates not already headlining another slide, so each
+        # persona gets a DISTINCT person (no one filling all six buckets).
+        pool = [r for r in catalogue[persona]
+                if not r.is_sentinel and (_dedupe_key(r) not in used)]
+        choice = best_proximate(pool)
         rung = "floor_fill_relaxed_completeness"
         if choice is None:
             choice = await providers.fallback(persona, canonical, canada_only)
             rung = "floor_fill_fallback_agent"
-        if choice is None or (choice.linkedin_url and choice.linkedin_url in used):
+        ck = _dedupe_key(choice) if choice else None
+        if choice is None or (ck and ck in used):
             choice = no_contact_sentinel(persona)
             rung = "no_contact_found_for_persona"
         if not choice.is_sentinel:
             choice.mark(rung)
-            if choice.linkedin_url:
-                used.add(choice.linkedin_url)
+            ck = _dedupe_key(choice)
+            if ck:
+                used.add(ck)
         slide_contacts[persona].append(choice)
         warnings.append(f"{rung}:{persona}")
         _trace(trace, persona=persona, source=choice.source or "floor_fill", outcome=rung)

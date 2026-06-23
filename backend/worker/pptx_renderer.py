@@ -293,8 +293,8 @@ class PptxRenderer:
         sldIdLst.insert(dest_index, ids[-1])
         return blank
 
-    def render(self, *, slide_contacts: dict, company_slots: dict,
-               outreach_slots: dict, job_id: str) -> str:
+    async def render(self, *, slide_contacts: dict, company_slots: dict,
+                     outreach_slots: dict, job_id: str) -> str:
         """Assemble + fill the deck and upload it. Returns the public URL.
 
         Args:
