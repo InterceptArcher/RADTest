@@ -141,11 +141,11 @@ The content library was upgraded to the **V2 internal audit (54 assets)**, repla
 
 ---
 
-## RAD Pipeline v3.1 — Reachability Floor + CIO/CTO Split (2026-06-23)
+## RAD Pipeline v3.1 — Contact-Quality Gate + CIO/CTO Split (2026-06-23)
 
 Three refinements so the deck always ships usable contacts:
 
-**Hard floor of 4 fully-reachable contacts (`_enforce_reachable_floor`).** A deck must carry ≥4 contacts that each have email + phone + LinkedIn. Relevance-first runs first; if it leaves us short (e.g. a mega-cap whose real execs aren't in ZoomInfo with direct contact info), the hook backfills each still-unreachable persona from its catalogue with contacts that DO have the full suite — even if less relevant — deduped across personas, until the floor is met. Relevant+reachable picks (the common case on companies ZoomInfo covers) are always kept; we only fall back to "whoever has the full contact card" when there's no reachable relevant option. Rationale: four names a rep can't contact are worth less than four reachable contacts.
+**Baseline gate + reachability floor (`_enforce_contact_quality`).** A contact must meet a **display baseline — email + LinkedIn — to ship at all** (phone is preferred but not required); a name a rep can't reach is worse than an empty slot. Two passes: (A) keep picks that meet baseline; a below-baseline pick — *including* a relevant exec ZoomInfo can't reach (e.g. a web-found CFO with only a LinkedIn URL) — is **replaced** by the most-relevant catalogue contact that can be enriched to baseline (preferring fully reachable email+phone+LinkedIn), or **dropped** if none can. (B) backfill to **≥4 baseline-meeting contacts**, deduped, most-relevant first. Relevant picks that meet baseline (the common case on companies ZoomInfo covers — e.g. BC Liquor) are always kept; the replace/backfill only fires where the relevant exec isn't reachable. Rationale (per product owner): we'd rather show a slightly-less-relevant contact a rep can actually email than the "right" name with no way to reach them.
 
 **ZoomInfo enrich anchored on companyId.** `LiveProviders` now resolves the domain to a ZoomInfo `companyId` once (cached) via `enrich_company`, and `enrich_contacts_by_name` anchors the name match on that `companyId` when available (falling back to `companyName`). This makes name-based enrich of web-discovered execs far more precise at large multi-entity firms (where a bare "Microsoft" companyName match is ambiguous).
 
