@@ -141,6 +141,22 @@ The content library was upgraded to the **V2 internal audit (54 assets)**, repla
 
 ---
 
+## RAD Pipeline v3.1 — Slideshow QA Batch 4 (2026-06-23)
+
+Fourth QA pass on the exact-copy `.pptx` deck. Two code fixes (unit-tested locally) plus a deterministic master-template edit (the `.pptx` is edited as OOXML/XML because this devcontainer has no `pip`/python-pptx).
+
+**#7/#8 — Hyperlink target (SharePoint → V2 DAM).** Collateral/supporting-asset links rendered but pointed at the master's pre-existing **SharePoint** example URLs, not the V2 DAM. Root cause: the master splits the token across runs — `"Marketing collateral: ["` / `"asset name"`(carries the stale `<a:hlinkClick>`) / `"]"` — so the old per-run `_apply_hyperlinks` never matched the bracketed token and the stale rel survived. Fix: new pure `place_hyperlink_in_runs` helper places the display text in the run that already holds the link (across the bracket runs) and reports the carrier; `_apply_hyperlinks` is now paragraph-level, strips the stale `hlinkClick` element + its relationship (`_strip_run_hyperlink`), and attaches the DAM URL. The element-level strip also reconciles the dangling rel left when outreach slides are cloned. *Rationale:* matching at the run level can't see a token the authoring tool spread across runs; operating at paragraph level with an explicit carrier is the only run-split-safe way to retarget a pre-existing link.
+
+**#2 — Estimated annual IT budget was blank.** The Council emits IT spend under inconsistent keys (`estimated_it_spend`, `estimated_it_spend_display`, nested under `executive_snapshot`) or not at all, so the factual token rendered empty. Fix: `estimate_it_spend()` in the v3.1 hook checks every known key variant (top-level + nested) then computes from employee count ($10K–$20K/employee — mirrors the dashboard's `_build_executive_snapshot` so deck and portal agree) or revenue (≈3–5%), with B/M/K formatting. *Rationale:* a multi-source pipeline shouldn't depend on one Council key being present; always-fill with a transparent computation beats a blank slot.
+
+**#4 — Opportunity Themes lost numbering + bold headers.** Each theme was a single bracket token spanning the bold-header paragraph **and** the unbold-body paragraph; the renderer's paragraph-spanning branch collapses such tokens via `tf.text = …`, destroying the per-paragraph numbering and bold. Fix (template, text-only): `scripts/edit_master_template.py` splits each theme into two self-contained tokens (`[header]` / `[body]`), so the renderer's existing per-paragraph fill preserves formatting with **no renderer change**. *Rationale:* the master already had the right visual structure — the bug was one token straddling two paragraphs, so the minimal correct fix is to make each paragraph own its token.
+
+**#2/#5/#6 — Layout (geometry).** Same script applies deterministic, fail-loud EMU edits, all re-verified within the 5143500-EMU slide height: exec-snapshot overview box grown + "Installed technologies" pushed down (overview→header gap 0.11″→0.23″); the three Sales-Opportunities boxes + their text frames enlarged so copy stops bleeding out (font sizes untouched — consistent across slides, no autofit); stakeholder "Strategic priorities" + "Conversation starters" blocks shifted down so the bleeding "About" text no longer overlaps (About→Strategic gap 0.10″→0.32″). Visual sizing is reviewed in the output deck after re-upload (the script can't render).
+
+**To apply the template edits:** `python3 scripts/edit_master_template.py` writes `template /master-template.v31-edited.pptx`; re-upload with `./scripts/upload-master-template.sh "<that file>"` (gated, run manually — not auto-deployed). The two code fixes ship on the next push to `main` (Render auto-deploy). `start_date` backfill (#6) is already best-effort via the citation-gated LinkedIn web search; left unchanged (loosening the citation requirement would risk fabricated dates).
+
+---
+
 ## RAD Pipeline v3.1 — Backend Build (2026-06-23)
 
 The v3.1 restructure (see `docs/superpowers/specs/2026-05-26-rad-pipeline-restructure-design.md`) is being built milestone-by-milestone. The backend core landed first, as new, self-contained, dependency-injected modules — **the legacy `production_main.py` flow and Gamma are untouched** until a gated staging-verified cutover.

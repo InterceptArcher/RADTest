@@ -57,6 +57,69 @@ _COLLATERAL_STEPS = [
 _SUPPORTING_ASSET_TOKEN = "[Maximize productivity with AI workstation laptops]"
 
 
+def _parse_employee_count(raw) -> Optional[int]:
+    if raw is None:
+        return None
+    try:
+        return int(str(raw).replace(",", "").replace("+", "").split("-")[0].strip())
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_revenue(raw) -> Optional[float]:
+    """Best-effort numeric revenue from strings like '$198.3 billion' / '$50M-$100M'
+    (takes the first/low number) → absolute dollars, or None."""
+    if raw is None:
+        return None
+    import re
+    s = str(raw).lower().replace(",", "").replace("$", "").strip()
+    m = re.search(r"(\d+(?:\.\d+)?)", s)
+    if not m:
+        return None
+    num = float(m.group(1))
+    if "billion" in s or "bn" in s or re.search(r"\bb\b", s):
+        num *= 1_000_000_000
+    elif "million" in s or "mn" in s or re.search(r"\bm\b", s):
+        num *= 1_000_000
+    elif "k" in s:
+        num *= 1_000
+    return num if num > 0 else None
+
+
+def _fmt_spend_range(low: float, high: float) -> str:
+    def one(v: float) -> str:
+        if v >= 1_000_000_000:
+            return f"${v / 1_000_000_000:.1f}B"
+        if v >= 1_000_000:
+            return f"${v / 1_000_000:.1f}M"
+        return f"${v / 1_000:.0f}K"
+    return f"{one(low)} – {one(high)} annually"
+
+
+def estimate_it_spend(facts: dict) -> str:
+    """Resolve the Executive-Snapshot IT-spend for the factual token.
+
+    The council emits this under several keys (and sometimes not at all), so we
+    check every known variant top-level AND nested under `executive_snapshot`,
+    then fall back to computing from employee count ($10K–$20K/employee — mirrors
+    the dashboard's `_build_executive_snapshot`) or revenue (IT spend ≈ 3–5% of
+    revenue). Returns '' only when there's genuinely nothing to estimate from."""
+    es = facts.get("executive_snapshot") or {}
+    for src in (facts, es):
+        for key in ("estimated_it_spend", "estimated_it_spend_display", "estimated_it_spend_range", "it_spend"):
+            v = src.get(key)
+            if v and str(v).strip():
+                return str(v).strip()
+    emp = _parse_employee_count(facts.get("employee_count") or es.get("employee_count"))
+    if emp:
+        return _fmt_spend_range(emp * 10_000, emp * 20_000)
+    rev = _parse_revenue(facts.get("annual_revenue") or es.get("annual_revenue")
+                         or facts.get("revenue") or es.get("revenue"))
+    if rev:
+        return _fmt_spend_range(rev * 0.03, rev * 0.05)
+    return ""
+
+
 def _content_audit_links(validated_data: dict, canonical, slide_contacts: dict):
     """Return (collateral hyperlink_slots, per-persona outreach_hyperlinks).
 
@@ -165,12 +228,11 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     if not validated_data.get("pull_date"):
         import datetime
         validated_data["pull_date"] = datetime.date.today().strftime("%B %d, %Y")
-    # Surface IT-budget estimate top-level for the factual token (council nests it).
+    # Surface IT-budget estimate top-level for the factual token. The council emits
+    # it under inconsistent keys (or omits it), so estimate_it_spend() checks every
+    # variant then computes from employee count / revenue as a last resort.
     if not validated_data.get("estimated_it_spend"):
-        es = validated_data.get("executive_snapshot") or {}
-        validated_data["estimated_it_spend"] = (
-            es.get("estimated_it_spend") or es.get("it_spend")
-            or validated_data.get("it_spend") or "")
+        validated_data["estimated_it_spend"] = estimate_it_spend(validated_data)
 
     base = os.environ["SUPABASE_URL"].rstrip("/")
     bucket = os.getenv("SUPABASE_STORAGE_BUCKET_DECKS", "decks")

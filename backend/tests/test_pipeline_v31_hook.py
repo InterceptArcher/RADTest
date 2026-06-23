@@ -7,7 +7,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "worker"))
 
 from bi_resolver import StakeholderRecord, CanonicalCompany, MIN_SLIDES  # noqa: E402
 from claude_formatter import ClaudeFormatter  # noqa: E402
-from pipeline_v31_hook import assemble_v31, _serialize  # noqa: E402
+from pipeline_v31_hook import assemble_v31, _serialize, estimate_it_spend  # noqa: E402
 
 
 def run(coro):
@@ -88,3 +88,40 @@ def test_formatter_build_splits_factual_and_authored():
     # outreach map is keyed by the master's example token strings now
     assert out["outreach_slots"]["CFO"]["[Lisa]"] == "Fay/Max"
     assert out["outreach_slots"]["CFO"]["[Aviva Canada]"] == "Globex"
+
+
+# --- #2 IT-budget estimate ---------------------------------------------------
+
+def test_it_spend_explicit_top_level_wins():
+    assert estimate_it_spend({"estimated_it_spend": "$43.1M – $86.2M annually"}) == "$43.1M – $86.2M annually"
+
+
+def test_it_spend_from_nested_executive_snapshot():
+    facts = {"executive_snapshot": {"estimated_it_spend": "$5-$10 million annually"}}
+    assert estimate_it_spend(facts) == "$5-$10 million annually"
+
+
+def test_it_spend_from_council_display_variant():
+    # it_spend_estimator council member emits *_display, not estimated_it_spend.
+    facts = {"executive_snapshot": {"estimated_it_spend_display": "$12-$18 million"}}
+    assert estimate_it_spend(facts) == "$12-$18 million"
+
+
+def test_it_spend_computed_from_employee_count():
+    out = estimate_it_spend({"employee_count": 5000})
+    assert out == "$50.0M – $100.0M annually"  # 5000 * $10k–$20k
+
+
+def test_it_spend_employee_count_string_and_small_company():
+    assert estimate_it_spend({"employee_count": "2,500"}).endswith("annually")
+    small = estimate_it_spend({"employee_count": 30})
+    assert "K" in small and "M" not in small  # 30 * $10k–$20k -> $300K–$600K
+
+
+def test_it_spend_computed_from_revenue_when_no_headcount():
+    out = estimate_it_spend({"annual_revenue": "$198.3 billion"})
+    assert out == "$5.9B – $9.9B annually"  # 3%–5% of revenue, billions formatting
+
+
+def test_it_spend_blank_when_nothing_to_estimate_from():
+    assert estimate_it_spend({"company_name": "Acme"}) == ""

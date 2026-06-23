@@ -12,6 +12,7 @@ from pptx_renderer import (  # noqa: E402
     extract_tokens, replace_tokens, replace_tokens_in_runs, first_name,
     join_first_names, classify_contact_token, value_for_field,
     build_contact_replacements, missing_required_contact_values,
+    place_hyperlink_in_runs,
 )
 from bi_resolver import StakeholderRecord  # noqa: E402
 
@@ -53,6 +54,51 @@ def test_replace_tokens_in_runs_preserves_separate_runs():
     runs = ["Title: ", "[Technical Chief & Underwriter]"]
     out = replace_tokens_in_runs(runs, {"[Technical Chief & Underwriter]": "CFO"})
     assert out == ["Title: ", "CFO"]  # two runs preserved, not collapsed into one
+
+
+def test_place_hyperlink_spans_runs_master_layout():
+    # The master's collateral layout: "<prefix> [" / "asset name"(hyperlinked) / "]".
+    # The per-run match used to miss the bracketed token entirely.
+    runs = ["Marketing collateral: [", "Future-proof your IT for anywhere work", "]"]
+    new, carrier = place_hyperlink_in_runs(
+        runs, "[Future-proof your IT for anywhere work]", "Anywhere Work Brief",
+        hyperlinked=[False, True, False])
+    assert carrier == 1  # the run that already holds the (stale) link
+    assert new == ["Marketing collateral: ", "Anywhere Work Brief", ""]
+    # No leftover brackets for the cleanup pass to wipe.
+    assert "[" not in "".join(new) and "]" not in "".join(new)
+
+
+def test_place_hyperlink_supporting_asset_layout():
+    # Outreach slide: "[" / "asset name"(hyperlinked) / "]".
+    runs = ["[", "Maximize productivity with AI workstation laptops", "]"]
+    new, carrier = place_hyperlink_in_runs(
+        runs, "[Maximize productivity with AI workstation laptops]", "AI Workstations One-Pager",
+        hyperlinked=[False, True, False])
+    assert carrier == 1
+    assert new == ["", "AI Workstations One-Pager", ""]
+
+
+def test_place_hyperlink_token_absent_is_noop():
+    runs = ["Marketing collateral: [", "Some other asset", "]"]
+    new, carrier = place_hyperlink_in_runs(
+        runs, "[Future-proof your IT for anywhere work]", "X", hyperlinked=[False, True, False])
+    assert carrier is None
+    assert new == runs
+
+
+def test_place_hyperlink_single_run_token():
+    runs = ["see [Asset] now"]
+    new, carrier = place_hyperlink_in_runs(runs, "[Asset]", "The Asset")
+    assert carrier == 0
+    assert new == ["see The Asset now"]
+
+
+def test_place_hyperlink_no_hyperlinked_run_falls_back_to_first():
+    runs = ["lead [", "Asset Name", "]"]
+    new, carrier = place_hyperlink_in_runs(runs, "[Asset Name]", "Display", hyperlinked=[False, False, False])
+    assert carrier == 0
+    assert new == ["lead Display", "", ""]
 
 
 def test_first_name_and_join():

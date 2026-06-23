@@ -104,6 +104,57 @@ def replace_tokens_in_runs(run_texts: list[str], mapping: dict[str, str]) -> lis
     return [replace_tokens(joined, mapping)] + [""] * (len(run_texts) - 1)
 
 
+def place_hyperlink_in_runs(run_texts: list[str], token: str, display_text: str,
+                            hyperlinked: Optional[list[bool]] = None) -> tuple[list[str], Optional[int]]:
+    """Place `display_text` where `token` sits across `run_texts`.
+
+    Returns `(new_run_texts, carrier_index)` — `carrier_index` is the run that
+    should carry the hyperlink — or `(run_texts, None)` if `token` is not present
+    in the joined text. The token's characters (brackets included) are removed
+    from every run it spans; `display_text` is inserted into the carrier run.
+
+    The carrier prefers a run that already holds a hyperlink (`hyperlinked[i]`),
+    so the master's link run (where the `<a:hlinkClick>` lives) is reused — that
+    is the master's actual layout: the collateral/supporting-asset token is split
+    as `"… ["` / `"asset name"` (hyperlinked) / `"]"`, so a per-run match on the
+    bracketed token never fires and the stale link survives. Failing a hyperlinked
+    run, the carrier is the first run the token touches.
+    """
+    if not run_texts:
+        return run_texts, None
+    joined = "".join(run_texts)
+    start = joined.find(token)
+    if start == -1:
+        return run_texts, None
+    end = start + len(token)
+
+    spans, pos = [], 0
+    for t in run_texts:
+        spans.append((pos, pos + len(t)))
+        pos += len(t)
+    overlapping = [i for i, (s, e) in enumerate(spans) if s < end and e > start]
+    if not overlapping:
+        return run_texts, None
+
+    carrier = None
+    if hyperlinked:
+        for i in overlapping:
+            if i < len(hyperlinked) and hyperlinked[i]:
+                carrier = i
+                break
+    if carrier is None:
+        carrier = overlapping[0]
+
+    new_texts = list(run_texts)
+    for i in overlapping:
+        s, _e = spans[i]
+        before = run_texts[i][: start - s] if start > s else ""
+        after = run_texts[i][end - s:] if end - s < len(run_texts[i]) else ""
+        insert = display_text if i == carrier else ""
+        new_texts[i] = before + insert + after
+    return new_texts, carrier
+
+
 def first_name(full_name: str) -> str:
     return (full_name or "").strip().split(" ")[0] if full_name else ""
 
@@ -356,21 +407,75 @@ class PptxRenderer:
                 continue
 
     @staticmethod
-    def _apply_hyperlinks(shape, hlmap: dict) -> None:
-        """For each (token -> (text, url)) put `text` in the run and hyperlink it."""
+    def _strip_run_hyperlink(run) -> None:
+        """Remove any <a:hlinkClick>/<a:hlinkMouseOver> from a run (and drop its
+        relationship) so a fresh, correct hyperlink can be attached cleanly.
+
+        Needed because (a) the master's link runs carry stale SharePoint rels and
+        (b) cloned outreach slides deep-copy the hlinkClick element but NOT the
+        relationship, leaving a dangling r:id that python-pptx's address setter
+        can't reconcile. Stripping at the element level sidesteps both."""
+        try:
+            from pptx.oxml.ns import qn
+            rPr = run._r.find(qn("a:rPr"))
+            if rPr is None:
+                return
+            for tag in ("a:hlinkClick", "a:hlinkMouseOver"):
+                el = rPr.find(qn(tag))
+                if el is None:
+                    continue
+                rId = el.get(qn("r:id"))
+                rPr.remove(el)
+                if rId:
+                    try:
+                        run.part.drop_rel(rId)  # remove the now-orphaned rel
+                    except Exception:  # noqa: BLE001
+                        pass
+        except Exception:  # noqa: BLE001
+            pass
+
+    @classmethod
+    def _apply_hyperlinks(cls, shape, hlmap: dict) -> None:
+        """Replace each (token -> (display_text, url)) and hyperlink the result.
+
+        Paragraph-level (not per-run): the master splits these tokens across runs
+        (`"… ["` / `"asset name"`(hyperlinked) / `"]"`), so the display text lands
+        in the run that already carries the link and the URL overwrites the stale
+        SharePoint target. The bracket runs are emptied so no `[asset]` remnant is
+        left for the later token-cleanup pass to wipe."""
         if not hlmap or not shape.has_text_frame:
             return
         for para in shape.text_frame.paragraphs:
-            for run in para.runs:
-                for tok, pair in hlmap.items():
-                    if tok in run.text:
-                        text, url = pair
-                        run.text = run.text.replace(tok, text or "")
+            for tok, pair in hlmap.items():
+                runs = para.runs
+                if not runs:
+                    break
+                run_texts = [r.text for r in runs]
+                if tok not in "".join(run_texts):
+                    continue
+                text, url = pair
+                hyperlinked = []
+                for r in runs:
+                    try:
+                        hyperlinked.append(bool(r.hyperlink.address))
+                    except Exception:  # noqa: BLE001 — dangling cloned rel
+                        hyperlinked.append(False)
+                new_texts, carrier = place_hyperlink_in_runs(run_texts, tok, text or "", hyperlinked)
+                if carrier is None:
+                    continue
+                for r, nt in zip(runs, new_texts):
+                    if r.text != nt:
+                        r.text = nt
+                for i, r in enumerate(runs):
+                    if i == carrier:
+                        cls._strip_run_hyperlink(r)  # clear stale, then attach the real one
                         if url:
                             try:
-                                run.hyperlink.address = url
+                                r.hyperlink.address = url
                             except Exception:  # noqa: BLE001
                                 pass
+                    elif hyperlinked[i] and not (r.text or "").strip():
+                        cls._strip_run_hyperlink(r)  # emptied link run — drop dead link
 
     async def render(self, *, slide_contacts: dict, company_slots: dict,
                      outreach_slots: dict, job_id: str,
