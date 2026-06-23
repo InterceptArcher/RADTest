@@ -56,6 +56,19 @@ _COLLATERAL_STEPS = [
 ]
 _SUPPORTING_ASSET_TOKEN = "[Maximize productivity with AI workstation laptops]"
 
+# Deterministic department per persona role (the master leaves it blank and ZI
+# often omits it). The persona IS the role, so the function is unambiguous:
+# the three technology roles sit in IT, finance in Finance, ops in Operations,
+# product in Product.
+DEPARTMENT_BY_PERSONA = {
+    "CIO": "Information Technology",
+    "CTO": "Information Technology",
+    "CISO": "Information Technology",
+    "CFO": "Finance",
+    "COO": "Operations",
+    "CPO": "Product",
+}
+
 
 def _parse_employee_count(raw) -> Optional[int]:
     if raw is None:
@@ -265,6 +278,13 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
         await formatter.author_contacts(selected, validated_data)
     except Exception as e:  # noqa: BLE001
         logger.warning("v3.1 author_contacts failed (continuing): %s", e)
+
+    # Department: deterministic from the persona role when not provided by ZI.
+    for c in selected:
+        if getattr(c, "is_sentinel", False):
+            continue
+        if not (getattr(c, "department", "") or "").strip():
+            c.department = DEPARTMENT_BY_PERSONA.get(c.persona, "")
 
     # Communication preference: derive from the contact methods we actually have.
     for c in selected:

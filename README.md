@@ -141,6 +141,22 @@ The content library was upgraded to the **V2 internal audit (54 assets)**, repla
 
 ---
 
+## RAD Pipeline v3.1 — Slideshow QA Batch 5 (2026-06-23)
+
+Fifth QA pass on the exact-copy `.pptx` deck. One renderer fix (unit-tested locally), four deterministic master-template edits (OOXML/XML — no `pip`/python-pptx in this devcontainer), and two prompt/data fixes in the worker.
+
+**#1/#3/#4 — Label values rendered bold (Key Signals "What this means:", Stakeholder "Email:"/"LinkedIn:", Sales Program "Why:").** Root cause was one bug with two faces. The master authors these as a bold label run + an unbold value run, but the token's text **spans** those runs. The renderer's span-aware fill (`replace_tokens_in_runs`) collapsed every spanning token into `run_texts[0]` — the **bold label run** — so the value inherited the label's bold. Renderer fix: the spanning branch now places the value in the run where the token *starts* (reusing `place_hyperlink_in_runs`), clearing the token's chars from the other spanned runs; the bold label run is left untouched and the value lands in its own unbold run. That alone fixes Email/LinkedIn (token starts in the unbold `" ["` run). For Key Signals/Why the master had authored the `[` *inside* the bold run (`"What this means: ["` / `"Why: ["`), so `scripts/edit_master_template.py` also moves that `[` into the value run (`_move_bracket_into_value_run`), making the token wholly unbold. *Rationale:* "label bold, value unbold" is the intended look; the minimal correct fix is to stop the run-collapse from dragging the value into the bold run, then ensure the token actually begins in the unbold run.
+
+**#2 — Opportunity Themes bled off the bottom.** Each point had a blank auto-numbered spacer paragraph between it and the next; with longer real copy the left column overran the 5143500-EMU slide. Fix (template): remove the 4 empty `buAutoNum` spacer paragraphs (2 per column). Each header carries its own `startAt`, so 1/2/3 numbering survives. *Rationale:* the user asked to drop the inter-point line break; removing the empty paragraphs is exactly that and recovers ~0.3″ per column.
+
+**#3 — Stakeholder About/Strategic/Conversation overlapped.** The Batch-4 down-shift wasn't enough because the body copy overruns its frame. Fix: drop the three right-column body text frames 8.5pt→7.5pt (scoped to `cx="3937546"` so the left-column contact details stay 8.5pt) **and** shorten `strategic_priorities` (formatter now asks for exactly 3 tight `Title – clause` points, ~12-20 words each, with a worked example). Department is now filled deterministically from the persona role (`DEPARTMENT_BY_PERSONA`: CIO/CTO/CISO→Information Technology, CFO→Finance, COO→Operations, CPO→Product) whenever ZoomInfo omits it. *Rationale:* the persona *is* the role, so department is a pure function of it — no need to leave it blank or guess from free text. `start_date` stays best-effort via the citation-gated web search (fabricating dates is worse than a blank).
+
+**#4 — Sales Program copy bled out of the boxes.** Fix: drop the four collateral/Why body frames 8.0pt→7.5pt (scoped by the "Marketing collateral:" label) and the formatter now writes each "Why:" rationale as a single ≤15-word clause so it fits the small box. *Rationale:* the boxes are fixed by the brand template; the lever is copy length + a modest, consistent font drop, not per-box autofit.
+
+**To apply:** `python3 scripts/edit_master_template.py` rewrites `template /master-template.v31-edited.pptx`; re-upload with `./scripts/upload-master-template.sh "<that file>"` (gated, manual). The renderer + formatter + hook fixes ship on the next push to `main` (Render auto-deploy).
+
+---
+
 ## RAD Pipeline v3.1 — Slideshow QA Batch 4 (2026-06-23)
 
 Fourth QA pass on the exact-copy `.pptx` deck. Two code fixes (unit-tested locally) plus a deterministic master-template edit (the `.pptx` is edited as OOXML/XML because this devcontainer has no `pip`/python-pptx).

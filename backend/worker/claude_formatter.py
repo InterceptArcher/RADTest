@@ -115,6 +115,8 @@ SYSTEM_PROMPT = (
     "You are RAD's slide copywriter. Author concise, executive-ready copy for each "
     "requested slide token from the validated facts. Rules: no SKUs or product model "
     "numbers; bucket by account type; keep each value within typical slide length; "
+    "for any 'Why:'/rationale token in the Recommended Sales Program, write a SINGLE "
+    "tight clause of <=15 words (these sit in small boxes and must not overflow); "
     "return STRICT JSON mapping each requested token string to its copy. Do not add, "
     "rename, or omit tokens."
 )
@@ -198,12 +200,15 @@ class ClaudeFormatter:
         system = (
             "You write executive-ready stakeholder briefing copy for a sales deck. For each "
             "contact return JSON with: 'about' (2-3 sentence bio); 'strategic_priorities' — a "
-            "list of 3-4 SUBSTANTIVE points, each a full descriptive sentence (~15-30 words) "
-            "explaining a priority tied to their role and the company's situation (not short "
-            "phrases); and 'conversation_starters' — a list of 2-3 open-ended QUESTIONS that ask "
-            "about their role, mandate, and strategic priorities (NOT sales pitches, NOT product "
-            "claims; genuine discovery questions a rep would ask). No fabricated facts beyond "
-            "role-typical inference. Return STRICT JSON: a list of "
+            "list of EXACTLY 3 points, each formatted as 'Short Title – one concise clause' and "
+            "kept tight (~12-20 words total per point; descriptive but not strung out), tied to "
+            "their role and the company's situation; and 'conversation_starters' — a list of 2 "
+            "open-ended QUESTIONS that ask about their role, mandate, and strategic priorities "
+            "(NOT sales pitches, NOT product claims; genuine discovery questions a rep would ask). "
+            "No fabricated facts beyond role-typical inference. "
+            "Example priority: 'IT Strategy & Continuity – Maintaining momentum on key technology "
+            "initiatives and ensuring stability across IT operations during the interim period.' "
+            "Return STRICT JSON: a list of "
             '{"index": int, "about": str, "strategic_priorities": [str], "conversation_starters": [str]}.')
         user = ("COMPANY:\n" + json.dumps({k: facts.get(k) for k in ("company_name", "industry", "company_overview")}, ensure_ascii=False)
                 + "\n\nCONTACTS:\n" + json.dumps(roster, ensure_ascii=False))

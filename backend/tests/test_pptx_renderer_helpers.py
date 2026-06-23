@@ -43,9 +43,23 @@ def test_replace_value_with_brackets_not_rescanned():
 
 
 def test_replace_tokens_in_runs_handles_split_token():
+    # A token that spans runs is placed in the run where it STARTS; the trailing
+    # non-token text (" HQ") keeps its own run (and thus its own formatting).
     runs = ["[Aviva ", "Canada]", " HQ"]
     out = replace_tokens_in_runs(runs, {"[Aviva Canada]": "Aviva Canada Inc"})
-    assert out == ["Aviva Canada Inc HQ", "", ""]
+    assert out == ["Aviva Canada Inc", "", " HQ"]
+    assert "".join(out) == "Aviva Canada Inc HQ"
+
+
+def test_replace_tokens_in_runs_label_stays_separate_from_spanning_value():
+    # Master Email layout: bold "Email:" / " [" / "value" / "]". The value must
+    # NOT collapse into the bold label run[0] — it lands in the run where "[" begins
+    # (an unbold run), so the rendered email is unbold while the label stays bold.
+    runs = ["Email:", " [", "lisa@x.com", "]"]
+    out = replace_tokens_in_runs(runs, {"[lisa@x.com]": "jane@acme.com"})
+    assert out[0] == "Email:"                # bold label run untouched
+    assert "jane@acme.com" in out[1]         # value in its own (unbold) run
+    assert "".join(out) == "Email: jane@acme.com"
 
 
 def test_replace_tokens_in_runs_preserves_separate_runs():

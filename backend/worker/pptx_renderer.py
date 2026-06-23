@@ -101,7 +101,17 @@ def replace_tokens_in_runs(run_texts: list[str], mapping: dict[str, str]) -> lis
                     new = new.replace(k, "" if mapping[k] is None else str(mapping[k]))
             out.append(new)
         return out
-    return [replace_tokens(joined, mapping)] + [""] * (len(run_texts) - 1)
+    # ≥1 token spans runs. Place each token's value into the run where the token
+    # STARTS (clearing the token's characters from every run it spans) instead of
+    # collapsing label+value into run[0]. This keeps a bold label run (e.g.
+    # "Email:" / "LinkedIn:") bold while the value lands in its own — typically
+    # unbold — run. Reuses the hyperlink placement helper, which already
+    # implements exactly this span-aware insertion.
+    out = list(run_texts)
+    for k in sorted(present, key=len, reverse=True):
+        val = "" if mapping[k] is None else str(mapping[k])
+        out, _carrier = place_hyperlink_in_runs(out, k, val)
+    return out
 
 
 def place_hyperlink_in_runs(run_texts: list[str], token: str, display_text: str,
