@@ -45,6 +45,9 @@ logger = logging.getLogger(__name__)
 # In-memory job storage (in production, use Redis or database)
 jobs_store: Dict[str, dict] = {}
 
+# v3.1 runtime diagnostics — last flag-gated pipeline error (surfaced via /debug-v31)
+_v31_diag: Dict[str, Any] = {"last_error": None, "last_traceback": None, "last_job": None}
+
 # ============================================================================
 # Stakeholder Role Configuration
 # CTO, CIO, CFO, CMO are primary targets; all others are secondary fallbacks.
@@ -508,14 +511,19 @@ async def debug_v31():
     except Exception as e:
         result["python_pptx"] = f"FAIL: {type(e).__name__}: {e}"
     try:
+        import httpx as _httpx
         base = os.getenv("SUPABASE_URL", "").rstrip("/")
         bucket = os.getenv("SUPABASE_STORAGE_BUCKET_DECKS", "decks")
         url = f"{base}/storage/v1/object/public/{bucket}/master-template.pptx"
-        async with httpx.AsyncClient(timeout=15) as c:
-            r = await c.head(url)
+        async with _httpx.AsyncClient(timeout=15) as c:
+            r = await c.get(url, headers={"Range": "bytes=0-0"})
         result["master_template_http"] = r.status_code
     except Exception as e:
         result["master_template_http"] = f"FAIL: {type(e).__name__}: {e}"
+    # Last runtime v3.1 failure (if any job fell back to Gamma)
+    result["last_v31_error"] = _v31_diag.get("last_error")
+    result["last_v31_traceback"] = _v31_diag.get("last_traceback")
+    result["last_v31_job"] = _v31_diag.get("last_job")
     return result
 
 
@@ -2558,7 +2566,11 @@ async def process_company_profile(job_id: str, company_data: dict):
                 _v31_done = bool(slideshow_result.get("slideshow_url"))
                 logger.info(f"✅ v3.1 pipeline deck: {slideshow_result.get('slideshow_url')}")
             except Exception as e:
+                import traceback as _tb
                 logger.error(f"⚠️ v3.1 pipeline failed ({type(e).__name__}: {e}); falling back to Gamma")
+                _v31_diag["last_error"] = f"{type(e).__name__}: {e}"
+                _v31_diag["last_traceback"] = _tb.format_exc()[-2000:]
+                _v31_diag["last_job"] = job_id
                 _v31_done = False
 
         # CRITICAL: Wrap in try-except so job continues even if slideshow fails
