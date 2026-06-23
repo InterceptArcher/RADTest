@@ -47,6 +47,14 @@ def test_replace_tokens_in_runs_handles_split_token():
     assert out == ["Aviva Canada Inc HQ", "", ""]
 
 
+def test_replace_tokens_in_runs_preserves_separate_runs():
+    # Label run + value-token run (the contact-detail case): the value must be
+    # replaced IN ITS OWN RUN so the bold label doesn't bleed onto the value.
+    runs = ["Title: ", "[Technical Chief & Underwriter]"]
+    out = replace_tokens_in_runs(runs, {"[Technical Chief & Underwriter]": "CFO"})
+    assert out == ["Title: ", "CFO"]  # two runs preserved, not collapsed into one
+
+
 def test_first_name_and_join():
     assert first_name("Lisa Leo") == "Lisa"
     assert join_first_names(["Lisa Leo", "Marcus Vale", "Lisa Other"]) == "Lisa/Marcus"

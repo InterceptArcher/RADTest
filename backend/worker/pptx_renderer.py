@@ -83,8 +83,25 @@ def replace_tokens_in_runs(run_texts: list[str], mapping: dict[str, str]) -> lis
     if not run_texts:
         return run_texts
     joined = "".join(run_texts)
-    replaced = replace_tokens(joined, mapping)
-    return [replaced] + [""] * (len(run_texts) - 1)
+    if "[" not in joined or not mapping:
+        return run_texts
+    present = [k for k in mapping if k in joined]
+    if not present:
+        return run_texts
+    # Tokens fully inside a SINGLE run → replace in place, preserving every run's
+    # own formatting (so a bold "Title:" label keeps its value run un-bold). Only
+    # collapse into the first run when a token genuinely SPANS runs (rare; prose).
+    spanning = [k for k in present if not any(k in rt for rt in run_texts)]
+    if not spanning:
+        out = []
+        for rt in run_texts:
+            new = rt
+            for k in sorted(present, key=len, reverse=True):
+                if k in new:
+                    new = new.replace(k, "" if mapping[k] is None else str(mapping[k]))
+            out.append(new)
+        return out
+    return [replace_tokens(joined, mapping)] + [""] * (len(run_texts) - 1)
 
 
 def first_name(full_name: str) -> str:

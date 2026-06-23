@@ -105,6 +105,12 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     if not validated_data.get("pull_date"):
         import datetime
         validated_data["pull_date"] = datetime.date.today().strftime("%B %d, %Y")
+    # Surface IT-budget estimate top-level for the factual token (council nests it).
+    if not validated_data.get("estimated_it_spend"):
+        es = validated_data.get("executive_snapshot") or {}
+        validated_data["estimated_it_spend"] = (
+            es.get("estimated_it_spend") or es.get("it_spend")
+            or validated_data.get("it_spend") or "")
 
     base = os.environ["SUPABASE_URL"].rstrip("/")
     bucket = os.getenv("SUPABASE_STORAGE_BUCKET_DECKS", "decks")

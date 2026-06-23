@@ -195,11 +195,16 @@ class ClaudeFormatter:
         client = AsyncAnthropic(api_key=self._api_key or os.getenv("ANTHROPIC_API_KEY"))
         roster = [{"index": i, "name": c.name, "title": c.title, "persona": c.persona}
                   for i, c in enumerate(targets)]
-        system = ("You write concise, executive-ready stakeholder briefing copy for a sales deck. "
-                  "For each contact return: a 2-3 sentence 'about' bio, 2-4 'strategic_priorities' "
-                  "(short phrases), and a 1-2 sentence 'conversation_starters'. No fabricated facts "
-                  "beyond role-typical inference. Return STRICT JSON: a list of "
-                  '{"index": int, "about": str, "strategic_priorities": [str], "conversation_starters": str}.')
+        system = (
+            "You write executive-ready stakeholder briefing copy for a sales deck. For each "
+            "contact return JSON with: 'about' (2-3 sentence bio); 'strategic_priorities' — a "
+            "list of 3-4 SUBSTANTIVE points, each a full descriptive sentence (~15-30 words) "
+            "explaining a priority tied to their role and the company's situation (not short "
+            "phrases); and 'conversation_starters' — a list of 2-3 open-ended QUESTIONS that ask "
+            "about their role, mandate, and strategic priorities (NOT sales pitches, NOT product "
+            "claims; genuine discovery questions a rep would ask). No fabricated facts beyond "
+            "role-typical inference. Return STRICT JSON: a list of "
+            '{"index": int, "about": str, "strategic_priorities": [str], "conversation_starters": [str]}.')
         user = ("COMPANY:\n" + json.dumps({k: facts.get(k) for k in ("company_name", "industry", "company_overview")}, ensure_ascii=False)
                 + "\n\nCONTACTS:\n" + json.dumps(roster, ensure_ascii=False))
         try:
@@ -219,7 +224,13 @@ class ClaudeFormatter:
             sp = a.get("strategic_priorities") or []
             if sp and not c.strategic_priorities:
                 c.strategic_priorities = [str(x) for x in sp]
-            c.conversation_starters = c.conversation_starters or str(a.get("conversation_starters", ""))
+            if not c.conversation_starters:
+                cs = a.get("conversation_starters")
+                if isinstance(cs, list):
+                    # point form — one question per line
+                    c.conversation_starters = "\n".join(str(x) for x in cs)
+                else:
+                    c.conversation_starters = str(cs or "")
 
     async def author(self, facts: dict, tokens_to_author: list[str], *, max_retries: int = 3) -> dict:
         import os
