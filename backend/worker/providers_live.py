@@ -177,34 +177,54 @@ class LiveProviders:
                 r.mark("canada_only_requested:zi_na_preference_only")
         return records
 
-    async def enrich_final(self, contacts: list) -> None:
-        """Final pass: batch ZoomInfo Contact-Enrich the SELECTED contacts to fill
-        email/phone/LinkedIn (search returns identity only). Bounded to the ≤N
-        contacts actually on the deck, so it's cheap. Mutates records in place."""
-        if self.zi is None:
+    async def enrich_final(self, contacts: list, company_name: str = "") -> None:
+        """Final pass on the SELECTED contacts (≤N, cheap): ZoomInfo Contact-Enrich
+        for email/phone, then a bounded web search to fill LinkedIn + start_date
+        (which ZI enrich doesn't provide). Mutates records in place."""
+        real = [c for c in contacts if not c.is_sentinel]
+
+        # 1) ZoomInfo Contact-Enrich (email/phone) by person_id.
+        ids = [c.person_id for c in real if getattr(c, "person_id", "")]
+        if self.zi is not None and ids:
+            try:
+                res = await self.zi.enrich_contacts(ids)
+                people = (res or {}).get("people", []) if isinstance(res, dict) else []
+                by_id = {str(p.get("person_id") or p.get("id") or ""): p for p in people}
+                for c in real:
+                    p = by_id.get(c.person_id)
+                    if not p:
+                        continue
+                    c.email = c.email or p.get("email", "")
+                    c.phone = c.phone or p.get("phone", "")
+                    c.direct_phone = c.direct_phone or p.get("direct_phone", "")
+                    c.mobile_phone = c.mobile_phone or p.get("mobile_phone", "")
+                    c.linkedin_url = c.linkedin_url or p.get("linkedin", "") or p.get("linkedin_url", "")
+                    c.start_date = c.start_date or p.get("hire_date", "") or p.get("start_date", "")
+                    if c.email:
+                        c.email_sources.add("zoominfo")
+                    c.mark("zi_contact_enriched")
+            except Exception:  # noqa: BLE001
+                pass
+
+        # 2) Web search for LinkedIn URL + start_date where still missing (citation required).
+        if self._anthropic_or_none() is None:
             return
-        ids = [c.person_id for c in contacts if getattr(c, "person_id", "") and not c.is_sentinel]
-        if not ids:
-            return
-        try:
-            res = await self.zi.enrich_contacts(ids)
-        except Exception:  # noqa: BLE001
-            return
-        people = (res or {}).get("people", []) if isinstance(res, dict) else []
-        by_id = {str(p.get("person_id") or p.get("id") or ""): p for p in people}
-        for c in contacts:
-            p = by_id.get(c.person_id)
-            if not p:
+        for c in real:
+            if c.linkedin_url and c.start_date:
                 continue
-            c.email = c.email or p.get("email", "")
-            c.phone = c.phone or p.get("phone", "")
-            c.direct_phone = c.direct_phone or p.get("direct_phone", "")
-            c.mobile_phone = c.mobile_phone or p.get("mobile_phone", "")
-            c.linkedin_url = c.linkedin_url or p.get("linkedin", "") or p.get("linkedin_url", "")
-            c.start_date = c.start_date or p.get("hire_date", "") or p.get("start_date", "")
-            if c.email:
-                c.email_sources.add("zoominfo")
-            c.mark("zi_contact_enriched")
+            text = await self._haiku_text(
+                system=("Find a person's LinkedIn profile URL and the date they started their "
+                        "current role. Return STRICT JSON {\"linkedin_url\": str, \"start_date\": str, "
+                        "\"extracted_snippet\": str, \"source_url\": str}. Only fill a field from a "
+                        "source you actually read; otherwise use an empty string. Do not fabricate."),
+                user=f"{c.name}, {c.title} at {company_name}. Find their LinkedIn URL and role start date.",
+                tools=[WEB_SEARCH_TOOL], max_tokens=400,
+            )
+            data = _extract_json(text)
+            if data.get("extracted_snippet"):
+                c.linkedin_url = c.linkedin_url or str(data.get("linkedin_url") or "")
+                c.start_date = c.start_date or str(data.get("start_date") or "")
+                c.mark("web_enriched_linkedin_start")
 
     async def judge_adjacency(self, title: str, persona: str) -> bool:
         text = await self._haiku_text(

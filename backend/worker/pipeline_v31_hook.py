@@ -123,7 +123,7 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
     # on the deck, so it's cheap, and it fills the slots that rendered blank.
     selected = [c for v in sel.slide_contacts.values() for c in v]
     try:
-        await providers.enrich_final(selected)
+        await providers.enrich_final(selected, canonical.name)
     except Exception as e:  # noqa: BLE001 — enrichment is best-effort
         logger.warning("v3.1 enrich_final failed (continuing): %s", e)
     try:
