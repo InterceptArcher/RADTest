@@ -2559,9 +2559,13 @@ async def process_company_profile(job_id: str, company_data: dict):
         _v31_done = False
         if os.getenv("USE_V31_PIPELINE", "").strip().lower() == "true":
             try:
+                import asyncio as _asyncio
                 from worker.pipeline_v31_hook import run_v31_pipeline
-                slideshow_result = await run_v31_pipeline(
-                    company_data, validated_data, job_id, jobs_store
+                # Hard cap so the v3.1 path can never hang the job; on timeout we
+                # fall back to Gamma (contacts already persisted inside the hook).
+                slideshow_result = await _asyncio.wait_for(
+                    run_v31_pipeline(company_data, validated_data, job_id, jobs_store),
+                    timeout=420,
                 )
                 _v31_done = bool(slideshow_result.get("slideshow_url"))
                 logger.info(f"✅ v3.1 pipeline deck: {slideshow_result.get('slideshow_url')}")

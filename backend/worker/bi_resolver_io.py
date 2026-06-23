@@ -135,15 +135,20 @@ async def select_persona_contacts_io(
                 _trace(trace, persona=persona, source=source, candidate_name=cand.name,
                        outcome="duplicate_skipped")
                 continue
-            enriched = await providers.enrich(cand)
+            # Weak/UNKNOWN-title matches can only ever be floor-fill material, never
+            # win a slide — so DON'T spend an expensive Haiku LinkedIn web search on
+            # them. Keep their raw ZI record (email/phone/linkedin) for the floor.
+            if cand.proximity > int(Proximity.DIRECTOR):
+                examined.append(cand)
+                _trace(trace, persona=persona, source=source, candidate_name=cand.name,
+                       outcome="weak_kept_unenriched")
+                continue
+            enriched = await providers.enrich(cand)  # real role match → worth enriching
             examined.append(enriched)
             complete = enriched.is_complete()
             _trace(trace, persona=persona, source=source, candidate_name=enriched.name,
                    outcome="complete" if complete else "incomplete:" + ",".join(enriched.missing_required_fields()))
-            # Only a real proximity match (exact→director) can WIN a slide in pass 1.
-            # Weak/UNKNOWN-title matches stay in `examined` for floor-fill only, so we
-            # never promote a complete-but-irrelevant person over the right role.
-            if complete and enriched.proximity <= int(Proximity.DIRECTOR):
+            if complete:
                 tier_qualified.append(enriched)
 
         if tier_qualified:
