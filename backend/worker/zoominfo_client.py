@@ -459,8 +459,22 @@ class ZoomInfoClient:
             }).execute()
             logger.info("ZoomInfo refresh_token persisted to Supabase zi_auth_tokens table")
         except Exception as e:
-            # Non-fatal — token is still in memory, just won't survive restart
-            logger.debug("Could not persist refresh_token to Supabase: %s", e)
+            # Non-fatal for THIS process (token is still in memory), but it means
+            # the rotated token will NOT survive a restart — after the next cold
+            # start the stale env seed is reloaded, 401s, and auth silently falls
+            # back to the 24h static token. This is the daily-expiry root cause,
+            # so log LOUDLY (warning) instead of swallowing it at debug level.
+            msg = str(e)
+            if "zi_auth_tokens" in msg or "does not exist" in msg or "PGRST" in msg:
+                logger.warning(
+                    "ZoomInfo refresh_token persistence FAILED — the Supabase "
+                    "'zi_auth_tokens' table is likely missing. Apply migration "
+                    "backend/migrations/2026-06-24_zi_auth_tokens.sql. Without it "
+                    "the rotated token will not survive restarts and ZoomInfo auth "
+                    "will lapse to the 24h static token. Error: %s", e
+                )
+            else:
+                logger.warning("Could not persist ZoomInfo refresh_token to Supabase: %s", e)
 
     async def _load_persisted_refresh_token(self) -> Optional[str]:
         """

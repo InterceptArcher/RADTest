@@ -21,6 +21,66 @@
 
 ---
 
+## Portal QA Batch 5 — Live Meters, Job-View Data Mapping & ZoomInfo Token Durability (2026-06-24)
+
+Three issues surfaced while running a live job from the redesigned portal.
+
+### 1. Live elapsed time + API cost (were frozen until completion)
+**Problem**: The Job View header timer and the API-cost meter stayed static until the
+job finished. **Root cause (cost)**: `/job-status` only returned the *stored* cost
+snapshot, which is written once at completion — so every poll mid-job read `$0.00`.
+**Root cause (elapsed)**: `elapsedLabel` was a `useMemo` with no time dependency, so it
+never recomputed during processing.
+**Fix**:
+- Backend `GET /job-status/{job_id}` now falls back to a **live** `cost_meter.snapshot(job_id)`
+  while the job is in flight (process-global registry keyed by `job_id`), and uses the
+  final stored snapshot once completion writes it. Cost now ticks up on every 1.5 s poll.
+- Job View adds a 1 s `now` clock (`setInterval`, cleared on done/failed) that drives
+  `elapsedLabel`, so the timer counts live.
+**Rationale**: The cost meter already accumulated correctly server-side; the only gap was
+that the read path ignored the in-flight accumulator. Preferring stored-over-live keeps the
+post-completion number authoritative and restart-stable.
+
+### 2. Job-View panels empty despite data existing in the deck
+**Problem**: IT spend, buying signals, news intelligence and the recommended sales program
+rendered "awaiting" even on completed jobs — the data was in the slideshow but not the portal.
+**Root cause**: The accessors guessed `snake_case` field names; the real result object uses
+`camelCase`. **Fix** — mapped to the real shapes:
+- IT spend → `executive_snapshot.estimatedITSpend` ⇒ `validated_data.estimated_it_spend` fallback
+- Buying signals → `buying_signals.intentTopics` (string[])
+- News → `news_intelligence.keyInsights` (string[]) + category strings
+  (`executiveChanges` / `funding` / `partnerships` / `expansions`), normalised into cards
+- Opportunity themes → `opportunity_themes.pain_points` (long prose split into lead + detail)
+- Sales program → `sales_program.{intentLevel,intentScore,strategyText}` + the themes'
+  `recommended_solution_areas` as the actionable steps (since `strategyText` is often empty)
+**Rationale**: The deck renderer already consumed these fields correctly; the portal was the
+only consumer using the wrong keys. Mapping to ground-truth field names (verified against a
+real completed-job result) fixes it without touching the pipeline.
+
+### 3. ZoomInfo token expires daily (manual access-token replacement)
+**Diagnosis**: ZoomInfo's Okta refresh_token **rotates on every use** — each refresh returns a
+new token and invalidates the old one. The backend handles rotation and calls
+`_persist_refresh_token()` to save the new token to the Supabase `zi_auth_tokens` table…
+**but no migration ever created that table**, so every persist silently failed (logged at
+`debug`). After each Render cold start the backend reloaded the original env seed
+`ZOOMINFO_REFRESH_TOKEN` — already rotated-away and dead — got a 401, and silently fell back
+to the static 24 h `ZOOMINFO_ACCESS_TOKEN`, which then had to be replaced by hand each day.
+The frontend's OAuth PKCE flow (`/api/auth/zoominfo/*`) mints fresh tokens but only into a
+browser cookie, never back to the backend — a dead end for the worker.
+**Fix**:
+- Added `backend/migrations/2026-06-24_zi_auth_tokens.sql` to create the missing table
+  (RLS on, service-role only). This is the durable fix — rotated tokens now survive restarts.
+- `_persist_refresh_token()` now logs persist failures at **warning** (with a pointer to the
+  migration) instead of swallowing them at debug.
+- Added `GET /debug-zoominfo-auth` (optional `?live=true`) to report active strategy,
+  persistence health, and live token TTL — so the fix is verifiable and future lapses are
+  diagnosable in seconds.
+**Rationale**: The auth code was correct; the failure was an absent table + a swallowed log.
+The runbook (operator steps to seed a fresh refresh_token and apply the migration) accompanies
+this change.
+
+---
+
 ## Gamma Template v3 Migration (2026-05-05)
 
 ### Why

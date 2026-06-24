@@ -490,12 +490,82 @@ async def debug_env():
     }
 
 
+@app.get("/debug-zoominfo-auth", tags=["Debug"])
+async def debug_zoominfo_auth(live: bool = False):
+    """
+    ZoomInfo auth health check — diagnoses the "token expires daily" problem.
+
+    Reports which auth strategy is active, whether the rotating refresh_token is
+    being durably persisted to the Supabase `zi_auth_tokens` table (the linchpin
+    for surviving Render restarts), and the static-token fallback state.
+
+    Pass ?live=true to actually perform a token refresh and report the result +
+    expiry — this consumes/rotates the refresh_token, so use sparingly.
+    """
+    from worker.zoominfo_client import ZoomInfoClient
+
+    out: Dict[str, Any] = {}
+    try:
+        client = ZoomInfoClient()
+        out["auto_auth"] = client._auto_auth
+        out["strategy"] = (
+            "1. OAuth2 refresh_token grant (auto-refresh, durable)"
+            if client._auto_auth
+            else "2. static ZOOMINFO_ACCESS_TOKEN (24h, manual replace)"
+            if client._static_token
+            else "none configured"
+        )
+        out["has_client_id"] = bool(client._client_id)
+        out["has_client_secret"] = bool(client._client_secret)
+        out["has_refresh_token_seed"] = bool(client._refresh_token)
+        out["has_static_access_token"] = bool(client._static_token)
+
+        # Is the rotated token being persisted? (the daily-expiry root cause)
+        persisted = await client._load_persisted_refresh_token()
+        if persisted is None:
+            out["persisted_refresh_token"] = (
+                "NOT FOUND — Supabase 'zi_auth_tokens' table is missing or empty. "
+                "Apply migration backend/migrations/2026-06-24_zi_auth_tokens.sql, "
+                "then the rotated token will survive restarts."
+            )
+            out["persistence_healthy"] = False
+        else:
+            seed = client._refresh_token or ""
+            out["persisted_refresh_token"] = (
+                f"FOUND ({persisted[:6]}…, {len(persisted)} chars)"
+            )
+            out["persisted_differs_from_seed"] = persisted != seed
+            out["persistence_healthy"] = True
+
+        if live:
+            try:
+                await client._ensure_valid_token()
+                import time as _t
+                ttl = int(max(0, client._token_expires_at - _t.time()))
+                out["live_refresh"] = "OK"
+                out["access_token_present"] = bool(client.access_token)
+                out["expires_in_seconds"] = ttl
+                out["expires_in_hours"] = round(ttl / 3600, 1)
+            except Exception as e:  # noqa: BLE001
+                out["live_refresh"] = f"FAILED: {e}"
+    except Exception as e:  # noqa: BLE001
+        out["error"] = str(e)
+
+    out["verdict"] = (
+        "HEALTHY — refresh_token auto-rotates and persists across restarts."
+        if out.get("auto_auth") and out.get("persistence_healthy")
+        else "AT RISK — rotated token will not survive restarts; auth will lapse "
+             "to the 24h static token. See migration + runbook."
+    )
+    return out
+
+
 @app.get("/debug-v31", tags=["Debug"])
 async def debug_v31():
     """Diagnose why the v3.1 flag-gated pipeline is/ isn't engaging.
     If this endpoint 404s, the latest code has NOT deployed yet."""
     result = {
-        "marker": "v31-diag-2-qa14",
+        "marker": "v31-diag-2-qa15",
         "USE_V31_PIPELINE": os.getenv("USE_V31_PIPELINE", "NOT SET"),
         "flag_active": os.getenv("USE_V31_PIPELINE", "").strip().lower() == "true",
         "ANTHROPIC_API_KEY_set": bool(os.getenv("ANTHROPIC_API_KEY")),
@@ -3847,6 +3917,24 @@ async def get_job_status(job_id: str):
 
     await _lazy_reconcile_slideshow_if_pending(job_id, job)
 
+    # API cost: prefer the final stored snapshot (written at completion), but
+    # while the job is still in flight return a LIVE snapshot from the cost meter
+    # so the portal's cost meter + header tick up in real time instead of staying
+    # at $0.00 until the job finishes.
+    stored_cost = job.get("api_cost") or (job.get("result") or {}).get("api_cost")
+    api_cost = stored_cost
+    if not (stored_cost and stored_cost.get("total_usd")):
+        try:
+            try:
+                from worker import cost_meter as _cm
+            except Exception:  # noqa: BLE001
+                import cost_meter as _cm  # bare path (v3.1 inserts worker/ on sys.path)
+            live_cost = _cm.snapshot(job_id)
+            if live_cost and live_cost.get("total_usd"):
+                api_cost = live_cost
+        except Exception:  # noqa: BLE001 — cost metering must never break status
+            pass
+
     return JobStatus(
         job_id=job_id,
         status=job["status"],
@@ -3860,7 +3948,7 @@ async def get_job_status(job_id: str):
         council_metadata=job.get("council_metadata"),
         slideshow_data=job.get("slideshow_data"),
         news_data=job.get("news_data"),
-        api_cost=job.get("api_cost") or (job.get("result") or {}).get("api_cost"),
+        api_cost=api_cost,
         created_at=job.get("created_at")
     )
 

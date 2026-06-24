@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useJobs } from '@/hooks/useJobs';
@@ -32,12 +32,22 @@ export default function JobView() {
   const states = nodeStates(progress, st);
   const apiCost = status?.api_cost || result.api_cost;
 
+  // Live elapsed clock — ticks every second while the job is in flight so the
+  // header timer (and anything else keyed off `now`) updates live, instead of
+  // freezing until the job completes. Stops ticking once done/failed.
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (done || failed) return;
+    const t = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(t);
+  }, [done, failed]);
+
   const elapsedLabel = useMemo(() => {
-    const start = meta?.createdAt ? new Date(meta.createdAt).getTime() : Date.now();
-    const end = done || failed ? (meta?.completedAt ? new Date(meta.completedAt).getTime() : Date.now()) : Date.now();
+    const start = meta?.createdAt ? new Date(meta.createdAt).getTime() : now;
+    const end = done || failed ? (meta?.completedAt ? new Date(meta.completedAt).getTime() : now) : now;
     const s = Math.max(0, Math.floor((end - start) / 1000));
     return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
-  }, [meta, done, failed]);
+  }, [meta, done, failed, now]);
 
   // ---- contacts (flatten slide_contacts in persona order) ----
   const contacts: Contact[] = useMemo(() => {
@@ -64,12 +74,58 @@ export default function JobView() {
   const technologies = arr(result.technologies);
   const competitors = arr(result.competitors);
   const geo = arr(result.geographic_reach);
-  const intent = arr(result.buying_signals?.intent_topics || result.buying_signals?.intent_topics_detailed?.map((t: any) => t.topic));
-  const news = arr(result.news_intelligence?.articles || result.news_intelligence?.news || result.news_data);
-  const themes = arr(result.opportunity_themes?.pain_points || result.opportunity_themes?.themes);
-  const program = arr(result.sales_program?.steps || result.sales_program?.recommended_next_steps);
+  // ---- Buying signals: real shape is buying_signals.intentTopics (string[]) ----
+  const intent = arr(
+    result.buying_signals?.intentTopics
+    || result.buying_signals?.intent_topics
+    || result.buying_signals?.intentTopicsDetailed?.map((t: any) => t?.topic || t)
+    || result.buying_signals?.intent_topics_detailed?.map((t: any) => t?.topic || t)
+  );
+
+  // ---- News intelligence: real shape is keyInsights (string[]) + category
+  // strings (executiveChanges / funding / partnerships / expansions). Normalise
+  // everything into {dt?, hl} cards; fall back to legacy article arrays. ----
+  const news = useMemo(() => {
+    const ni = result.news_intelligence || {};
+    const out: { dt?: string; hl: string }[] = [];
+    const blank = (v: any) => !v || typeof v !== 'string' || !v.trim()
+      || /^(none|n\/?a|no\s|not\s|unknown|—)/i.test(v.trim());
+    arr(ni.keyInsights).forEach((s: any) => {
+      const hl = typeof s === 'string' ? s : (s?.title || s?.headline || s?.summary || '');
+      if (hl) out.push({ hl });
+    });
+    ([['Exec change', 'executiveChanges'], ['Funding', 'funding'],
+      ['Partnership', 'partnerships'], ['Expansion', 'expansions']] as [string, string][])
+      .forEach(([label, key]) => { if (!blank(ni[key])) out.push({ dt: label, hl: ni[key] }); });
+    if (!out.length) {
+      arr(ni.articles || ni.news || result.news_data).forEach((n: any) =>
+        out.push({ dt: (n?.date || n?.published || '').toString().slice(0, 10) || undefined, hl: n?.title || n?.headline || n?.summary || String(n) }));
+    }
+    return out;
+  }, [result]);
+
+  // ---- Opportunity themes: real shape is opportunity_themes.pain_points
+  // (long description strings). Fall back to sales_opportunities / solution areas. ----
+  const opp = result.opportunity_themes || {};
+  const themes = arr(opp.pain_points).length ? arr(opp.pain_points)
+    : arr(opp.themes || opp.sales_opportunities || opp.recommended_solution_areas);
+
+  // ---- Recommended sales program: sales_program carries intentLevel/Score and
+  // a (frequently empty) strategyText. The actionable "steps" live in the
+  // opportunity themes' recommended solution areas / sales opportunities. ----
+  const sp = result.sales_program || {};
+  const intentLevel = sp.intentLevel || sp.intent_level;
+  const intentScore = sp.intentScore || sp.intent_score;
+  const strategyText = (sp.strategyText || sp.strategy || '').toString().trim();
+  const programSteps = arr(sp.steps || sp.recommended_next_steps);
+  const solutionAreas = arr(opp.recommended_solution_areas || opp.sales_opportunities);
+  const hasProgram = !!(strategyText || programSteps.length || solutionAreas.length || intentLevel);
+
   const revenue = result.annual_revenue || result.revenue || result.revenue_range;
-  const itSpend = result.executive_snapshot?.estimated_it_spend || result.estimated_it_spend;
+  const itSpend = result.executive_snapshot?.estimatedITSpend
+    || result.validated_data?.estimated_it_spend
+    || result.executive_snapshot?.estimated_it_spend
+    || result.estimated_it_spend;
 
   const awaiting = (label: string) => (
     <>
@@ -180,9 +236,9 @@ export default function JobView() {
             {intent.length ? <div className="chiprow"><span className="rl">Active intent</span><span className="rv">{intent.map((t, i) => <span key={i} className="pill">{typeof t === 'string' ? t : t?.topic}</span>)}</span></div> : awaiting('detecting intent…')}
           </div></div>
           <div className="panel"><div className="ph"><span className="eye" /><span className="k">05</span><h3>News intelligence</h3></div><div className="pb">
-            {news.length ? news.slice(0, 4).map((n: any, i: number) => (
-              <div className="news" key={i}><div className="dt">{(n.date || n.published || '').toString().slice(0, 10) || '—'}</div>
-                <div className="hl">{n.title || n.headline || n.summary || String(n)}{n.summary && (n.title || n.headline) ? <small>{n.summary}</small> : null}</div></div>
+            {news.length ? news.slice(0, 5).map((n, i) => (
+              <div className="news" key={i}><div className="dt">{n.dt || 'Insight'}</div>
+                <div className="hl">{n.hl}</div></div>
             )) : awaiting('gathering news…')}
           </div></div>
         </div>
@@ -193,12 +249,29 @@ export default function JobView() {
         <div className="grouphead"><div className="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M12 2l3 7 7 .5-5.5 4.5 2 7L12 17l-6.5 4 2-7L2 9.5 9 9z" /></svg></div><h4>Strategy</h4><span className="gn">council output</span></div>
         <div className="grid2">
           <div className="panel"><div className="ph"><span className="eye" /><span className="k">04</span><h3>Opportunity themes</h3></div><div className="pb">
-            {themes.length ? <ul className="clean">{themes.slice(0, 4).map((t: any, i: number) => <li key={i}><b>{t.title || t.name || t.theme || String(t)}</b>{t.description && <span className="why">{t.description}</span>}</li>)}</ul>
+            {themes.length ? <ul className="clean">{themes.slice(0, 4).map((t: any, i: number) => {
+              if (typeof t === 'string') {
+                // pain_points are long prose strings — split a lead clause off as the
+                // bold title and keep the remainder as the supporting detail.
+                const m = t.match(/^(.{12,80}?[.:—-])\s+(.*)$/s);
+                const title = m ? m[1].replace(/[.:—-]\s*$/, '') : t;
+                const desc = m ? m[2] : '';
+                return <li key={i}><b>{title}</b>{desc && <span className="why">{desc}</span>}</li>;
+              }
+              return <li key={i}><b>{t.title || t.name || t.theme || t.opportunity || String(t)}</b>{(t.description || t.detail) && <span className="why">{t.description || t.detail}</span>}</li>;
+            })}</ul>
               : awaiting(act < 5 ? 'pending council…' : '28 specialists deliberating…')}
           </div></div>
-          <div className="panel"><div className="ph"><span className="eye" /><span className="k">06</span><h3>Recommended sales program</h3></div><div className="pb">
-            {program.length ? <ul className="clean">{program.slice(0, 4).map((s: any, i: number) => <li key={i}><b>{`${i + 1} · ${s.step || s.title || s.name || ''}`}</b>{(s.why || s.rationale || s.collateral) && <span className="why">{s.why || s.rationale || s.collateral}</span>}</li>)}</ul>
-              : awaiting('awaiting council + content match…')}
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">06</span><h3>Recommended sales program</h3>
+            {intentLevel ? <span className="n">intent: {intentLevel}{intentScore ? ` · ${intentScore}` : ''}</span> : null}</div><div className="pb">
+            {hasProgram ? <>
+              {strategyText && <p className="why" style={{ display: 'block', margin: '0 0 12px', lineHeight: 1.55 }}>{strategyText}</p>}
+              {programSteps.length
+                ? <ul className="clean">{programSteps.slice(0, 4).map((s: any, i: number) => <li key={i}><b>{`${i + 1} · ${s.step || s.title || s.name || String(s)}`}</b>{(s.why || s.rationale || s.collateral) && <span className="why">{s.why || s.rationale || s.collateral}</span>}</li>)}</ul>
+                : solutionAreas.length
+                  ? <ul className="clean">{solutionAreas.slice(0, 5).map((s: any, i: number) => <li key={i}><b>{typeof s === 'string' ? s : (s.title || s.name || s.area || String(s))}</b>{typeof s !== 'string' && (s.why || s.rationale) ? <span className="why">{s.why || s.rationale}</span> : null}</li>)}</ul>
+                  : (!strategyText ? awaiting('awaiting council + content match…') : null)}
+            </> : awaiting('awaiting council + content match…')}
           </div></div>
         </div>
       </div>
