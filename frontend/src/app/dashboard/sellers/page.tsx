@@ -50,6 +50,7 @@ export default function SellersPage() {
       successPct: decided.length ? Math.round((completed / decided.length) * 100) : 0,
       spend: stats.reduce((s, x) => s + x.spend, 0),
       bars: buildBars(stats.map((x) => x.monthly)),
+      spendBars: buildBars(stats.map((x) => x.spend)),
     };
   }, [stats, jobs]);
 
@@ -58,13 +59,20 @@ export default function SellersPage() {
 
   return (
     <>
-      <div className="row2" style={{ marginBottom: 18 }}>
+      <div className="row2" style={{ marginBottom: 18, gridTemplateColumns: '1fr 1fr 1fr' }}>
         <div className="panel">
           <div className="ph"><span className="eye" /><span className="k">Team</span><h3>This month</h3></div>
           <div className="pb"><div className="kv">
             <div className="c"><div className="l">Sellers</div><div className="v mono">{team.sellers}</div></div>
             <div className="c"><div className="l">Success</div><div className="v mono">{team.successPct}%</div></div>
             <div className="c"><div className="l">Spend</div><div className="v mono">${team.spend.toFixed(2)}</div></div>
+          </div></div>
+        </div>
+        {/* Spend trend (restored) */}
+        <div className="panel">
+          <div className="ph"><span className="eye" /><span className="k">Trend</span><h3>Spend by seller</h3></div>
+          <div className="pb"><div className="spark" style={{ height: 64 }}>
+            {team.spendBars.map((h, i) => <i key={i} style={{ height: `${h}%` }} />)}
           </div></div>
         </div>
         {/* GLOBAL monthly draw meter — across all sellers, overflow allowed, resets monthly */}

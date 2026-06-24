@@ -277,3 +277,6 @@
 .drawbar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--hp),var(--hp-light));transition:width .4s}
 .drawmeter.over .drawbar i{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
 .drawmeter .over-note{font-family:var(--mono);font-size:9.5px;color:var(--warn);margin-top:5px}
+
+/* defensive: never clip the last nav item (Documentation) on short viewports */
+.rail{overflow-y:auto;overflow-x:hidden}
