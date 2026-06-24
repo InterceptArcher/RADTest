@@ -55,7 +55,7 @@
   .chip b{color:var(--ink);font-weight:700}.chip.bell b{color:var(--warn)}
   .live-dot{width:7px;height:7px;border-radius:50%;background:var(--hp);box-shadow:0 0 8px var(--glow);animation:pulse 1.6s infinite}
 
-  .view{display:none}.view.on{display:block;animation:rise .4s ease}
+  .view{display:block;animation:rise .4s ease}
 
   .panel{position:relative;border-radius:20px;border:1px solid var(--glass-brd);
     background:linear-gradient(140deg,var(--glass),var(--glass-2));

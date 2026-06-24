@@ -108,7 +108,7 @@ export default function DocsPage() {
   });
 
   return (
-    <section className="view" id="view-docs">
+    <section id="view-docs">
       <div className="docwrap">
         <div className="panel webmap">
           <div className="ph">
