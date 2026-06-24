@@ -476,7 +476,7 @@ Employee Count: {company_data.get('employee_count', 'Unknown')}
 Recent News: {news_data.get('summaries', {}).get('all', 'No recent news')}
 
 For each pain point, provide:
-1. A concise header: a broad category title with a parenthetical contextual hook, e.g. "Endpoint fleet standardization and lifecycle (desktop refresh challenges)"
+1. A concise header (MAXIMUM 7 words, including any parenthetical) — it sits in a fixed-width slide box and MUST NOT wrap or overflow. A broad category title with a short parenthetical hook, e.g. "Endpoint standardization (desktop refresh)" or "Cloud cost governance (spend visibility)". Keep it tight; do not exceed 7 words.
 2. A rationale body (3-5 sentences): explain WHY this is a pain point for this specific company using the signals and data available. Connect the dots between what you know about the company and why this challenge matters. Write in natural prose, not bullet points.
 
 Pain points should be specific to this company's situation, industry, and scale — not generic.
@@ -533,7 +533,7 @@ Pain Points:
 {pain_summary}
 
 For each opportunity, provide:
-1. A specific title (the sales opportunity area)
+1. A specific title — the sales opportunity area, MAXIMUM 7 words. It sits in a fixed-width slide header and MUST NOT wrap or overflow, e.g. "Endpoint lifecycle modernization" or "Managed print services expansion". Keep it tight; do not exceed 7 words.
 2. An in-depth description (4-6 sentences) that explains what to explore and validate with the prospect. Focus on understanding their current state, priorities, and where there may be gaps or unmet needs. Write as a natural prose blurb — do NOT use headers like "Validate:" or "Qualify:", and do NOT include qualification questions about budget, timeline, or decision-making process.
 
 Format as JSON array:

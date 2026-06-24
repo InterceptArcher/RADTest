@@ -153,6 +153,55 @@ def test_run_stage3_uncapped_co_equal():
     assert len(result.slide_contacts["CFO"]) == 2
 
 
+# --- Geo top-up (canada_only, non-Canada-HQ) ---------------------------------
+
+class GeoFake(FakeProviders):
+    """Returns nothing for Canada-scoped queries, real C-suite for global ones."""
+
+    async def query(self, persona, source, kind, canonical, canada_only):
+        self.queries.append((persona, source, kind, canada_only))
+        if canada_only:
+            return []  # no Canadian contacts for this company
+        if source == "zoominfo" and kind == "csuite":
+            return [rec(persona, f"Global {persona}", "Chief X Officer",
+                        linkedin=f"https://li/g{persona}")]
+        return []
+
+
+def test_geo_topup_widens_catalogue_for_non_canada_hq_company():
+    from bi_resolver import CanonicalCompany
+    canonical = CanonicalCompany(name="Coca-Cola", hq_country="Atlanta, Georgia, United States")
+    fp = GeoFake()
+    result = run(run_stage3(fp, canonical, canada_only=True))
+    cat = [c for v in result.contact_catalogue.values() for c in v]
+    # global contacts pulled in and marked
+    assert any(c.name.startswith("Global") for c in cat)
+    assert any("geo_topup_non_canada" in c.marks for c in cat)
+    # a global (canada_only=False) query was actually issued
+    assert any(q[3] is False for q in fp.queries)
+    assert any("geo_topup" in w for w in result.warnings)
+
+
+def test_geo_topup_skipped_for_canada_hq_company():
+    # Genuinely Canadian company -> stay strict, never query global / leak US contacts.
+    from bi_resolver import CanonicalCompany
+    canonical = CanonicalCompany(name="Shopify", hq_country="Ottawa, Ontario, Canada")
+    fp = GeoFake()
+    result = run(run_stage3(fp, canonical, canada_only=True))
+    cat = [c for v in result.contact_catalogue.values() for c in v]
+    assert not any(c.name.startswith("Global") for c in cat)
+    assert all(q[3] is True for q in fp.queries)  # only Canada-scoped queries
+
+
+def test_geo_topup_not_triggered_when_not_canada_only():
+    # A normal (global) run already searches globally; no special top-up needed.
+    from bi_resolver import CanonicalCompany
+    canonical = CanonicalCompany(name="Coca-Cola", hq_country="United States")
+    fp = GeoFake()
+    result = run(run_stage3(fp, canonical, canada_only=False))
+    assert not any("geo_topup" in w for w in result.warnings)
+
+
 # --- Stage 1 helpers ---------------------------------------------------------
 
 def test_normalize_company_key_strips_suffixes():

@@ -1,5 +1,9 @@
 # Worker-specific requirements
-httpx==0.26.0
+# httpx must be >=0.26 (supabase 2.3.4's transitive deps pass proxy= into
+# httpx.Client) and <0.28 (anthropic relies on the deprecated proxies kwarg).
+# Pinned to 0.27.2 to match backend/requirements.txt — a split pin previously left
+# the running build on a broken httpx and silently failed ALL Supabase writes.
+httpx==0.27.2
 openai==1.10.0
 supabase==2.3.4
 python-dotenv==1.0.1

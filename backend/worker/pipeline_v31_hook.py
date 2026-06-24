@@ -190,19 +190,38 @@ def _content_audit_links(validated_data: dict, canonical, slide_contacts: dict):
     return hyperlink_slots, outreach_hyperlinks
 
 
+def _has_phone(c) -> bool:
+    return bool(getattr(c, "phone", "") or getattr(c, "direct_phone", "")
+                or getattr(c, "mobile_phone", ""))
+
+
+def _field_count(c) -> int:
+    """How many of the three reachability fields {email, phone, linkedin} are present."""
+    return int(bool(getattr(c, "email", ""))) + int(_has_phone(c)) + int(bool(getattr(c, "linkedin_url", "")))
+
+
 def _meets_baseline(c) -> bool:
-    """Display baseline — the minimum to put a contact on the deck: a real email AND
-    a LinkedIn URL. A name a rep can't reach is worse than an empty slot, so anyone
-    below this is replaced or dropped. Phone is preferred (see _is_reachable) but not
-    required for the baseline."""
-    return bool(getattr(c, "email", "")) and bool(getattr(c, "linkedin_url", ""))
+    """Display baseline — the minimum to put a contact on the deck: at least TWO of
+    {email, phone, LinkedIn}. A rep needs a real way to reach the person; one field
+    alone is too thin to ship (replaced/dropped if a better option exists), but the
+    old email-AND-LinkedIn rule was too strict — it dropped execs with phone+email
+    just because ZoomInfo had no LinkedIn URL. The hard floor (Pass B) can still pad
+    below-baseline contacts back in as a last resort to guarantee the slide count."""
+    return _field_count(c) >= 2
+
+
+def _reachability_score(c) -> int:
+    """Preference weight for ranking contactability: email(4) > phone(2) > LinkedIn(1).
+    Encodes the desired order among 2-field contacts — phone+email(6) > email+LinkedIn(5)
+    > phone+LinkedIn(3) — with all three = 7. Higher is more reachable."""
+    return (4 if getattr(c, "email", "") else 0) + (2 if _has_phone(c) else 0) \
+        + (1 if getattr(c, "linkedin_url", "") else 0)
 
 
 def _is_reachable(c) -> bool:
-    """Fully reachable = baseline + a phone (the complete contact suite). Preferred
-    when choosing replacements/backfills; not required to ship."""
-    return _meets_baseline(c) and bool(
-        getattr(c, "phone", "") or getattr(c, "direct_phone", "") or getattr(c, "mobile_phone", ""))
+    """Fully reachable = the complete contact suite (all three fields). Preferred when
+    choosing replacements/backfills; not required to ship (baseline is >=2 fields)."""
+    return _field_count(c) == 3
 
 
 def _identity_keys(c) -> set:
@@ -266,13 +285,13 @@ async def _enforce_contact_quality(sel, providers, company_name: str, company_do
         else:
             sel.slide_contacts[persona] = []  # drop: no contactable person for this persona
 
-    # Pass B — floor.
-    def baseline_count() -> int:
+    # Pass B — floor (an ABSOLUTE guarantee of `floor` contacts on the deck).
+    def _deduped_count(predicate) -> int:
         seen: set = set()
         n = 0
         for v in sel.slide_contacts.values():
             for c in v:
-                if getattr(c, "is_sentinel", False) or not _meets_baseline(c):
+                if getattr(c, "is_sentinel", False) or not predicate(c):
                     continue
                 ks = _identity_keys(c)
                 if ks & seen:
@@ -281,21 +300,51 @@ async def _enforce_contact_quality(sel, providers, company_name: str, company_do
                 n += 1
         return n
 
-    if baseline_count() >= floor:
-        return
-    pool = []
-    for persona in PERSONAS:
-        chosen_ids = {id(c) for c in sel.slide_contacts.get(persona, [])}
-        for c in sel.contact_catalogue.get(persona, []):
-            if getattr(c, "is_sentinel", False) or id(c) in chosen_ids or (_identity_keys(c) & used):
+    def baseline_count() -> int:
+        return _deduped_count(_meets_baseline)
+
+    def contact_count() -> int:
+        return _deduped_count(lambda c: True)
+
+    def free_pool() -> list:
+        pool = []
+        for persona in PERSONAS:
+            chosen_ids = {id(c) for c in sel.slide_contacts.get(persona, [])}
+            for c in sel.contact_catalogue.get(persona, []):
+                if getattr(c, "is_sentinel", False) or id(c) in chosen_ids or (_identity_keys(c) & used):
+                    continue
+                pool.append(c)
+        return pool
+
+    # B1 — prefer to reach the floor with baseline-meeting (>=2 field) contacts,
+    # most-relevant first; enrich each candidate before judging reachability.
+    if baseline_count() < floor:
+        for cand in rank_by_proximity(free_pool()):
+            if baseline_count() >= floor:
+                break
+            await providers.enrich_one(cand, company_name, company_domain)
+            if _meets_baseline(cand) and not (_identity_keys(cand) & used):
+                cand.mark("reachability_floor_addition")
+                sel.slide_contacts.setdefault(cand.persona, []).append(cand)
+                used |= _identity_keys(cand)
+
+    # B2 — HARD floor. If still short of `floor` real contacts, pad with the
+    # best-available below-baseline contacts (most fields first, then reachability,
+    # then relevance): a thin contact beats an empty slot. This NEVER fabricates —
+    # it only uses catalogue contacts we actually gathered, so a company that truly
+    # yielded fewer than `floor` candidates still ships fewer (we don't invent
+    # people). Geo top-up (Stage 3) widens that pool for non-Canada-HQ companies.
+    if contact_count() < floor:
+        leftovers = sorted(
+            free_pool(),
+            key=lambda c: (-_field_count(c), -_reachability_score(c), c.proximity, c.tier, c.name),
+        )
+        for cand in leftovers:
+            if contact_count() >= floor:
+                break
+            if _identity_keys(cand) & used:
                 continue
-            pool.append(c)
-    for cand in rank_by_proximity(pool):
-        if baseline_count() >= floor:
-            break
-        await providers.enrich_one(cand, company_name, company_domain)
-        if _meets_baseline(cand) and not (_identity_keys(cand) & used):
-            cand.mark("reachability_floor_addition")
+            cand.mark("hard_floor_below_baseline_pad")
             sel.slide_contacts.setdefault(cand.persona, []).append(cand)
             used |= _identity_keys(cand)
 
@@ -363,6 +412,12 @@ async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str
         name=validated_data.get("company_name") or company_data.get("company_name", ""),
         primary_domain=validated_data.get("domain") or company_data.get("domain", ""),
         industry=validated_data.get("industry", ""),
+        # Free-text HQ location ("City, Province/State, Country"); the only country
+        # signal we have. Drives the geo top-up decision for canada_only runs:
+        # non-Canada-HQ companies may top up to the floor with NA/global contacts,
+        # genuinely Canadian ones stay strict. See bi_resolver_io._is_canada_hq.
+        hq_country=(validated_data.get("hq_country") or validated_data.get("headquarters")
+                    or company_data.get("headquarters", "")),
     )
     # Ensure the seller name + pull date are available to the factual-token fill
     # (the legacy flow sets seller after this block; pull date isn't set at all).

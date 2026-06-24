@@ -88,6 +88,24 @@ def _tier_depth(source: str, kind: str) -> int:
     return _SOURCE_BASE.get(source, 15) + _KIND_OFFSET.get(kind, 4)
 
 
+# Tokens that positively identify a Canadian HQ from a free-text location string
+# (we only get "City, Province/State, Country" — there's no structured country field).
+_CANADA_HQ_HINTS = (
+    "canada", "ontario", "quebec", "québec", "british columbia", "alberta",
+    "manitoba", "saskatchewan", "nova scotia", "new brunswick", "newfoundland",
+    "labrador", "prince edward", "yukon", "nunavut", "northwest territories",
+)
+
+
+def _is_canada_hq(canonical) -> bool:
+    """True only when we can POSITIVELY tell the company is HQ'd in Canada (from the
+    canonical HQ string). Unknown/blank -> False, so a Canada-only run for a company
+    we can't confirm is Canadian is still allowed to top up to the floor (favoring the
+    >=4 guarantee). Genuinely Canadian companies stay strict (never leak US/global)."""
+    hq = (getattr(canonical, "hq_country", "") or "").lower()
+    return any(hint in hq for hint in _CANADA_HQ_HINTS)
+
+
 async def _grade_csuite_candidates(persona: str, raw: list[StakeholderRecord],
                                    providers: Providers, trace) -> list[StakeholderRecord]:
     """Assign proximity to C-suite candidates; Haiku-judge novel titles."""
@@ -256,6 +274,37 @@ async def run_stage3(
         warnings.append(f"{rung}:{persona}")
         _trace(trace, persona=persona, source=choice.source or "floor_fill", outcome=rung)
         total += 1
+
+    # Geo top-up: a canada_only run for a company that is NOT HQ'd in Canada (e.g.
+    # "Coca-Cola Canada" — the leadership sits in Atlanta) can legitimately find too
+    # few Canadian contacts to fill the deck. Rather than ship a near-empty deck, we
+    # widen the search to NA/global to reach the floor, marking those contacts as
+    # non-Canada. For genuinely Canadian companies we stay strict (no US/global leak).
+    # We only WIDEN THE CATALOGUE here; the quality/floor pass (pipeline_v31_hook)
+    # then enriches and selects/pads from it, so the same >=2-field + hard-floor rules
+    # apply uniformly to Canadian and topped-up contacts.
+    real_total = sum(1 for v in slide_contacts.values() for c in v if not c.is_sentinel)
+    if canada_only and not _is_canada_hq(canonical) and real_total < MIN_SLIDES:
+        warnings.append("geo_topup_non_canada_hq")
+        for persona in PERSONAS:
+            raw = await providers.query(persona, "zoominfo", "csuite", canonical, False)
+            for r in raw:
+                r.source = "zoominfo"
+                r.tier = _tier_depth("zoominfo", "csuite")
+            graded = await _grade_csuite_candidates(persona, raw, providers, trace)
+            ranked = rank_by_proximity(graded)[:ENRICH_BUDGET_PER_TIER]
+            existing = {k for c in catalogue[persona] for k in _identities(c)}
+            added = False
+            for r in ranked:
+                if _identities(r) & existing or _is_used(r, used):
+                    continue
+                r.mark("geo_topup_non_canada")
+                catalogue[persona].append(r)
+                existing |= _identities(r)
+                added = True
+            if added:
+                _trace(trace, persona=persona, source="zoominfo",
+                       outcome="geo_topup_non_canada")
 
     return SelectionResult(
         slide_contacts=slide_contacts,

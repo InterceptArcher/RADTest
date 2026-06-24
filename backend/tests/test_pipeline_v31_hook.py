@@ -181,12 +181,13 @@ def test_quality_replaces_below_baseline_pick():
     assert [c.name for c in sel.slide_contacts["CFO"]] == ["Reachable Alt"]
 
 
-def test_quality_drops_below_baseline_pick_with_no_replacement():
-    # Below-baseline pick and no catalogue contact can reach baseline -> persona dropped
-    # (a name a rep can't reach is not shown).
+def test_quality_hard_floor_pads_when_no_baseline_replacement():
+    # New v3.1 rule: the floor is an ABSOLUTE guarantee. A below-baseline pick with
+    # no better replacement is still padded back in (best-available) rather than the
+    # deck shipping under the floor — a thin contact beats an empty slot.
     from pipeline_v31_hook import _enforce_contact_quality
     from bi_resolver import SelectionResult, Proximity
-    top = _mkrec("CFO", "No Email Exec", linkedin="https://li/top", prox=Proximity.EXACT)
+    top = _mkrec("CFO", "One Field Exec", linkedin="https://li/top", prox=Proximity.EXACT)
     sel = SelectionResult(slide_contacts={"CFO": [top]}, contact_catalogue={"CFO": [top]},
                           enrichment_trace=[], warnings=[])
 
@@ -195,7 +196,82 @@ def test_quality_drops_below_baseline_pick_with_no_replacement():
             pass  # nothing reaches baseline
 
     run(_enforce_contact_quality(sel, FakeP(), "Acme", "acme.com", floor=1))
-    assert sel.slide_contacts["CFO"] == []  # dropped
+    assert [c.name for c in sel.slide_contacts["CFO"]] == ["One Field Exec"]  # padded, not dropped
+
+
+# --- new v3.1 contact rule: >=2 of {email,phone,linkedin}, scored preference ----
+
+def test_meets_baseline_requires_two_of_three_fields():
+    from pipeline_v31_hook import _meets_baseline
+    assert _meets_baseline(_mkrec("CFO", "EmPh", email="e@x.com", phone="+1"))       # email+phone
+    assert _meets_baseline(_mkrec("CFO", "EmLi", email="e@x.com", linkedin="li"))     # email+linkedin
+    assert _meets_baseline(_mkrec("CFO", "PhLi", phone="+1", linkedin="li"))          # phone+linkedin
+    assert _meets_baseline(_mkrec("CFO", "All", email="e@x.com", phone="+1", linkedin="li"))
+    assert not _meets_baseline(_mkrec("CFO", "EmOnly", email="e@x.com"))
+    assert not _meets_baseline(_mkrec("CFO", "PhOnly", phone="+1"))
+    assert not _meets_baseline(_mkrec("CFO", "LiOnly", linkedin="li"))
+    assert not _meets_baseline(_mkrec("CFO", "None"))
+
+
+def test_meets_baseline_counts_any_phone_field():
+    # direct_phone / mobile_phone count as "phone" too (matches the data model).
+    from pipeline_v31_hook import _meets_baseline
+    r = _mkrec("CFO", "Mobile", email="e@x.com")
+    r.mobile_phone = "+1 555"
+    assert _meets_baseline(r)
+
+
+def test_reachability_score_orders_preference():
+    # phone+email(6) > email+linkedin(5) > phone+linkedin(3); all three = 7.
+    from pipeline_v31_hook import _reachability_score
+    pe = _reachability_score(_mkrec("CFO", "a", email="e@x.com", phone="+1"))
+    el = _reachability_score(_mkrec("CFO", "b", email="e@x.com", linkedin="li"))
+    pl = _reachability_score(_mkrec("CFO", "c", phone="+1", linkedin="li"))
+    allf = _reachability_score(_mkrec("CFO", "d", email="e@x.com", phone="+1", linkedin="li"))
+    assert allf == 7 and pe == 6 and el == 5 and pl == 3
+    assert allf > pe > el > pl
+
+
+def test_quality_keeps_phone_plus_email_without_linkedin():
+    # The Coca-Cola-class fix: an exec with phone+email but NO LinkedIn used to be
+    # DROPPED (old gate required email AND linkedin). It must now SHIP.
+    from pipeline_v31_hook import _enforce_contact_quality
+    from bi_resolver import SelectionResult, Proximity
+    cfo = _mkrec("CFO", "Reachable Exec", email="cfo@x.com", phone="+1 555", prox=Proximity.EXACT)
+    sel = SelectionResult(slide_contacts={"CFO": [cfo]}, contact_catalogue={"CFO": [cfo]},
+                          enrichment_trace=[], warnings=[])
+
+    class FakeP:
+        async def enrich_one(self, c, company, domain=""):
+            pass
+
+    run(_enforce_contact_quality(sel, FakeP(), "Acme", "acme.com", floor=1))
+    assert [c.name for c in sel.slide_contacts["CFO"]] == ["Reachable Exec"]
+
+
+def test_quality_hard_floor_pads_to_four_from_below_baseline():
+    # 1 strong contact + a catalogue of thin (1-field) contacts that can't be
+    # enriched. The hard floor must still pad the deck to >=4 with best-available.
+    from pipeline_v31_hook import _enforce_contact_quality
+    from bi_resolver import SelectionResult, Proximity
+    cio = _mkrec("CIO", "Real CIO", email="cio@x.com", phone="+1", linkedin="https://li/cio",
+                 prox=Proximity.EXACT)
+    a = _mkrec("CTO", "Thin A", linkedin="https://li/a")
+    b = _mkrec("CFO", "Thin B", email="b@x.com")
+    c = _mkrec("COO", "Thin C", phone="+1")
+    sel = SelectionResult(
+        slide_contacts={"CIO": [cio]},
+        contact_catalogue={"CIO": [cio], "CTO": [a], "CFO": [b], "COO": [c]},
+        enrichment_trace=[], warnings=[])
+
+    class FakeP:
+        async def enrich_one(self, c, company, domain=""):
+            pass  # thin contacts stay below baseline
+
+    run(_enforce_contact_quality(sel, FakeP(), "Acme", "acme.com", floor=4))
+    names = [c.name for v in sel.slide_contacts.values() for c in v]
+    assert len([1 for v in sel.slide_contacts.values() for _ in v]) >= 4, names
+    assert "Real CIO" in names and "Thin A" in names
 
 
 def test_quality_floor_backfills_to_four_baseline_contacts():

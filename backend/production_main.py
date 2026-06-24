@@ -588,7 +588,7 @@ async def debug_v31():
     """Diagnose why the v3.1 flag-gated pipeline is/ isn't engaging.
     If this endpoint 404s, the latest code has NOT deployed yet."""
     result = {
-        "marker": "v31-diag-2-qa17",
+        "marker": "v31-diag-3-contactfloor-jobrecovery",
         "USE_V31_PIPELINE": os.getenv("USE_V31_PIPELINE", "NOT SET"),
         "flag_active": os.getenv("USE_V31_PIPELINE", "").strip().lower() == "true",
         "ANTHROPIC_API_KEY_set": bool(os.getenv("ANTHROPIC_API_KEY")),
@@ -1956,6 +1956,15 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["progress"] = 10
         jobs_store[job_id]["current_step"] = "Initializing..."
         jobs_store[job_id]["api_calls"] = []  # Real API call log for debug mode
+
+        # Durable "processing" marker: writes a job_results row at START, so if this
+        # worker dies mid-run (Render restart / crash), a later status poll finds the
+        # row, sees it isn't in memory, and surfaces it as failed/interrupted instead
+        # of a perpetual "in progress". The completed/failed upsert below replaces it.
+        persist_job_result(
+            job_id, "processing", None,
+            company_name=company_data.get("company_name"),
+        )
 
         # Step 0.5: Run Orchestrator to determine optimal API routing
         jobs_store[job_id]["progress"] = 15
@@ -3682,6 +3691,38 @@ def persist_job_result(job_id: str, status: str, result: Optional[dict],
             logger.warning("Failed to persist job_results for %s: %s", job_id, e)
 
 
+def _fetch_job_results_row(job_id: str) -> Optional[dict]:
+    """Read the durable job_results row for job_id (None if missing/unavailable).
+
+    This is the recovery source the portal needs after a Render restart wipes the
+    in-memory jobs_store. Best-effort: never raises.
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return None
+    try:
+        from supabase import create_client, Client
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        res = supabase.table("job_results").select("*").eq(
+            "job_id", job_id).maybe_single().execute()
+        return res.data if (res and res.data) else None
+    except Exception as e:  # noqa: BLE001
+        logger.warning("job_results lookup failed for %s: %s", job_id, e)
+        return None
+
+
+def _recovery_helpers():
+    """Lazy dual-path import of the stdlib-only recovery helpers (worker package on
+    Render; bare path when worker/ is on sys.path). Returns None if unavailable."""
+    try:
+        from worker import job_status_recovery as jsr
+    except Exception:  # noqa: BLE001
+        try:
+            import job_status_recovery as jsr  # bare path
+        except Exception:  # noqa: BLE001
+            return None
+    return jsr
+
+
 async def store_validated_data(company_name: str, validated_data: dict):
     """Store validated data in Supabase"""
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -3978,10 +4019,40 @@ async def get_job_status(job_id: str):
     job = jobs_store.get(job_id)
 
     if not job:
+        # Post-restart recovery: the in-memory store is wiped on every Render
+        # redeploy, so fall back to the durable job_results row before 404-ing. A
+        # row still marked 'processing' but absent from memory was orphaned by the
+        # restart -> report failed/interrupted so the portal stops spinning on it.
+        row = _fetch_job_results_row(job_id)
+        jsr = _recovery_helpers()
+        if row and jsr is not None:
+            resolved = jsr.resolve_persisted_status(row)
+            return JobStatus(
+                job_id=job_id,
+                status=resolved["status"],
+                progress=resolved.get("progress", 0),
+                current_step=resolved.get("current_step", ""),
+                result=resolved.get("result"),
+                created_at=row.get("updated_at"),
+            )
         raise HTTPException(
             status_code=404,
             detail=f"Job {job_id} not found"
         )
+
+    # Stale-job reaper: an in-memory job stuck 'processing' well past a full run's
+    # duration means its worker hung/died without flipping the status. Reap it to
+    # 'failed' (and persist) so it doesn't show as perpetually in progress.
+    jsr = _recovery_helpers()
+    if jsr is not None and job.get("status") == "processing":
+        from datetime import timezone as _tz
+        if jsr.is_stale_processing(job.get("status", ""), job.get("created_at", ""),
+                                   datetime.now(_tz.utc)):
+            job["status"] = "failed"
+            job["current_step"] = "Timed out — no progress for too long; the run was reaped."
+            job["result"] = job.get("result") or {"success": False, "error": "stale_processing_reaped"}
+            persist_job_result(job_id, "failed", job.get("result"),
+                               company_name=(job.get("company_data") or {}).get("company_name"))
 
     await _lazy_reconcile_slideshow_if_pending(job_id, job)
 

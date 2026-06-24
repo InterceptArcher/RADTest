@@ -21,6 +21,84 @@
 
 ---
 
+## Contact Floor Overhaul, Geo Top-up, Job Recovery & Header Caps (2026-06-24)
+
+A batch addressing three issues: decks shipping too few contacts, jobs stuck
+"in progress" after a Render redeploy, and slide headers overflowing.
+
+### 1. Contact reachability rule relaxed — `>=2 of {email, phone, LinkedIn}`
+**Symptom:** a Coca-Cola (Canada) run shipped only **1** contact despite many
+reachable executives existing.
+
+**Root cause (two compounding bugs, confirmed from the stored job result):**
+- The contact-quality gate required **email AND LinkedIn**. Any exec with
+  phone+email but no LinkedIn URL was *dropped*, and the "floor of 4" could not
+  rescue them because the backfill applied the *same* gate. We were too conservative.
+- That run was `canada_only=true`. Coca-Cola's leadership is in Atlanta, so the
+  Canada-scoped ZoomInfo search (which by design has **no** US/global fallback)
+  returned an **empty catalogue** — there was nothing to pad the floor from. The one
+  contact shown came only from the web fallback agent.
+
+**Fix (`worker/pipeline_v31_hook.py`):** a contact now ships if it has **at least two
+of {email, phone, LinkedIn}** (`_meets_baseline`). Preference among contacts is scored
+**email(4) > phone(2) > LinkedIn(1)** (`_reachability_score`), encoding the desired
+order phone+email > email+LinkedIn > phone+LinkedIn. *Rationale:* a rep needs a real
+way to reach someone; one field is too thin, but demanding LinkedIn specifically threw
+away perfectly reachable phone+email execs.
+
+### 2. Hard floor — the deck ALWAYS ships at least 4 contacts
+**Fix (`_enforce_contact_quality`, Pass B):** after filling the floor with
+baseline-meeting contacts, a new **hard-floor pad** backfills the best-available
+*below-baseline* contacts (most fields first) until 4 are present. *Rationale:* a thin
+contact beats an empty slot. It never fabricates people — if a company genuinely
+yielded fewer than 4 candidates it still ships fewer; the geo top-up (below) is what
+widens that pool.
+
+### 3. Geo top-up for non-Canada-HQ `canada_only` runs
+**Fix (`worker/bi_resolver_io.py`):** when a `canada_only` run is for a company that is
+**not HQ'd in Canada** and fewer than 4 Canadian contacts are found, the catalogue is
+widened with NA/global ZoomInfo contacts (marked `geo_topup_non_canada`) so the floor
+can be met. **Genuinely Canadian companies stay strict** (never leak US/global) —
+detected from the canonical HQ string (`_is_canada_hq`). *Rationale:* the "always >=4"
+guarantee and the "Canada-only" guarantee conflict for US-HQ'd subsidiaries; we break
+the geo rule **only** where there's no Canadian leadership to find. `run_v31_pipeline`
+now populates `canonical.hq_country` so this fires in production.
+
+### 4. Jobs no longer stick "in progress" after a redeploy / crash
+**Symptom:** after a Render redeploy, jobs lost all data and showed "in progress"
+forever. **Root cause:** `jobs_store` is in-memory (wiped on restart); only
+`/job-result` had a Supabase fallback — `/job-status` (what the app polls) still 404'd.
+There was also no reaper for a worker that died mid-run.
+
+**Fix (`worker/job_status_recovery.py` + `production_main.py`):**
+- `/job-status` now falls back to the durable `job_results` row when a job isn't in
+  memory. A row still marked `processing` but absent from memory was **orphaned by a
+  restart** → reported as failed/interrupted instead of a perpetual spinner.
+- A `processing` row is now persisted at job **start** (not just completion), so an
+  interrupted job leaves a durable trace.
+- A **stale-job reaper** flips an in-memory job stuck `processing` past 30 min to
+  failed. *Rationale:* a dead worker should surface as failed, not hang the UI.
+
+### 5. `httpx` pinned to 0.27.2 everywhere (repair ALL Supabase writes)
+The previous fix bumped only `backend/requirements.txt`. `backend/worker/requirements.txt`
+(0.26.0) and root `requirements.txt` (0.24.1) were left behind, and the live backend
+still threw `Client.__init__() got an unexpected keyword argument 'proxy'` on every
+Supabase call — silently failing token/job/cost persistence. All three are now pinned
+to **0.27.2**. **Requires a clean Render redeploy** to take effect.
+
+### 6. Dynamic slide headers capped at <=7 words
+**Fix:** pain-point and opportunity titles (`worker/llm_council.py`) and Key Signals
+titles (`worker/claude_formatter.py`) are now instructed to stay **<=7 words** to
+prevent wrap/overflow in fixed-width slide boxes. *Only dynamically generated headers
+are affected; deterministic/template headers are unchanged.*
+
+### Tests
+New/updated stdlib tests (no network): `tests/test_pipeline_v31_hook.py` (baseline,
+score, hard floor), `tests/test_bi_resolver_io.py` (geo top-up), and
+`tests/test_job_status_recovery.py` (recovery + reaper).
+
+---
+
 ## Portal QA Batch 6 — Stale "processing" + Reload Data Loss (2026-06-24)
 
 Two related symptoms: (1) a job kept showing "processing" in the queue/home/cards
