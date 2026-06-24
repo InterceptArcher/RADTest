@@ -305,6 +305,7 @@ class JobStatus(BaseModel):
     news_data: Optional[dict] = None
     zoominfo_data: Optional[dict] = None
     orchestrator_data: Optional[dict] = None
+    api_cost: Optional[dict] = None
     created_at: Optional[str] = None
 
 
@@ -494,7 +495,7 @@ async def debug_v31():
     """Diagnose why the v3.1 flag-gated pipeline is/ isn't engaging.
     If this endpoint 404s, the latest code has NOT deployed yet."""
     result = {
-        "marker": "v31-diag-2-qa11",
+        "marker": "v31-diag-2-qa12",
         "USE_V31_PIPELINE": os.getenv("USE_V31_PIPELINE", "NOT SET"),
         "flag_active": os.getenv("USE_V31_PIPELINE", "").strip().lower() == "true",
         "ANTHROPIC_API_KEY_set": bool(os.getenv("ANTHROPIC_API_KEY")),
@@ -1133,6 +1134,13 @@ async def claude_company_intel(company_name: str, domain: str) -> Dict[str, Any]
             }],
         )
 
+        # Cost metering — best-effort; never break Claude company intel.
+        try:
+            from worker import cost_meter
+            cost_meter.record_anthropic("claude-sonnet-4-6", getattr(response, "usage", None))
+        except Exception:  # noqa: BLE001
+            pass
+
         # Extract JSON from response
         result_text = ""
         for block in response.content:
@@ -1279,6 +1287,13 @@ async def _find_linkedin_via_claude_search(
                     ),
                 }],
             )
+
+            # Cost metering — best-effort; never break LinkedIn lookup.
+            try:
+                from worker import cost_meter
+                cost_meter.record_anthropic("claude-sonnet-4-6", getattr(response, "usage", None))
+            except Exception:  # noqa: BLE001
+                pass
 
             linkedin_url = None
             for block in response.content:
@@ -1830,6 +1845,15 @@ async def process_company_profile(job_id: str, company_data: dict):
     zoominfo_contacts = []
     stakeholders_data = []
     orchestrator_plan = None
+
+    # Bind this job to the cost meter so all downstream Anthropic/ZoomInfo/web-search
+    # calls are attributed to it. Best-effort: a missing import must never break the
+    # pipeline (metering is purely observational).
+    try:
+        from worker import cost_meter
+        cost_meter.set_job(job_id)
+    except Exception:  # noqa: BLE001
+        pass
 
     try:
         logger.info(f"Starting processing for job {job_id}: {company_data['company_name']}")
@@ -2798,6 +2822,22 @@ async def process_company_profile(job_id: str, company_data: dict):
             "technology_installs": zoominfo_data.get("technology_installs", []),
             "zoominfo_news": zoominfo_data.get("news_articles", []),
         }
+        # Per-job API cost snapshot. Nested INSIDE result so it survives in the
+        # persisted result_data (in-memory jobs_store is wiped on Render restart).
+        # Best-effort: a metering failure must never fail the job.
+        try:
+            from worker import cost_meter
+            _api_cost = cost_meter.snapshot(job_id)
+            jobs_store[job_id]["api_cost"] = _api_cost
+            jobs_store[job_id]["result"]["api_cost"] = _api_cost
+            # Also nest inside validated_data so it rides along in the persisted
+            # result_data (validated_data is what gets written to Supabase and is
+            # embedded in result["validated_data"]) — survives a Render restart.
+            if isinstance(validated_data, dict):
+                validated_data["api_cost"] = _api_cost
+        except Exception:  # noqa: BLE001
+            pass
+
         # Store raw API data for debug mode
         jobs_store[job_id]["apollo_data"] = apollo_data
         jobs_store[job_id]["pdl_data"] = pdl_data
@@ -3820,6 +3860,7 @@ async def get_job_status(job_id: str):
         council_metadata=job.get("council_metadata"),
         slideshow_data=job.get("slideshow_data"),
         news_data=job.get("news_data"),
+        api_cost=job.get("api_cost") or (job.get("result") or {}).get("api_cost"),
         created_at=job.get("created_at")
     )
 

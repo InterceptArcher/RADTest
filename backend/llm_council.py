@@ -608,6 +608,15 @@ async def call_openai(prompt: str, system_prompt: str, model: str = "gpt-4o-mini
             response_format={"type": "json_object"}
         )
 
+        # Cost metering (best-effort; never breaks the council).
+        try:
+            import sys, os as _os
+            sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "worker"))
+            import cost_meter
+            cost_meter.record_openai(model, getattr(response, "usage", None))
+        except Exception:
+            pass
+
         content = response.choices[0].message.content
         return json.loads(content)
     except json.JSONDecodeError as e:

@@ -1,214 +1,152 @@
 'use client';
 
-import { useState } from 'react';
-import Link from 'next/link';
+import { useMemo } from 'react';
 import { useSellers } from '@/hooks/useSellers';
+import { useJobs } from '@/hooks/useJobs';
+import type { JobWithMetadata } from '@/types';
 
-const MONTHLY_LIMIT = 40;
+/** Read a job's total API cost in USD; missing/malformed → 0. */
+function jobCost(job: JobWithMetadata): number {
+  const total = (job.result as { api_cost?: { total_usd?: number } } | undefined)?.api_cost?.total_usd;
+  return typeof total === 'number' && isFinite(total) ? total : 0;
+}
+
+interface SellerStats {
+  id: string;
+  name: string;
+  role: string;
+  jobCount: number;
+  successPct: number;
+  spend: number;
+  /** ~6 bar heights (percentages) for the sparkline. */
+  bars: number[];
+}
+
+/**
+ * Build ~6 sparkline bar heights from a numeric series. Falls back to a
+ * varied static shape when there is no signal so cards never render empty.
+ */
+function buildBars(values: number[]): number[] {
+  const filtered = values.filter((v) => v > 0);
+  if (filtered.length === 0) {
+    return [40, 70, 55, 90, 75, 100];
+  }
+  const series = values.slice(0, 6);
+  while (series.length < 6) series.unshift(0);
+  const max = Math.max(...series);
+  return series.map((v) => {
+    const pct = max > 0 ? Math.round((v / max) * 100) : 0;
+    return Math.max(8, Math.min(100, pct));
+  });
+}
 
 export default function SellersPage() {
-  const { sellers, sellerJobs, loading, createSeller, deleteSeller, getMonthlyJobCount } = useSellers();
-  const [showCreateForm, setShowCreateForm] = useState(false);
-  const [newSellerName, setNewSellerName] = useState('');
-  const [isCreating, setIsCreating] = useState(false);
-  const [deleteConfirmId, setDeleteConfirmId] = useState<string | null>(null);
+  const { sellers } = useSellers();
+  const { jobs } = useJobs();
 
-  const handleCreate = async () => {
-    if (!newSellerName.trim()) return;
-    setIsCreating(true);
-    await createSeller(newSellerName.trim());
-    setNewSellerName('');
-    setShowCreateForm(false);
-    setIsCreating(false);
-  };
+  const sellerStats = useMemo<SellerStats[]>(() => {
+    return sellers.map((seller) => {
+      const sellerJobs = jobs.filter((j) => j.sellerId === seller.id);
+      const completed = sellerJobs.filter((j) => j.status === 'completed').length;
+      const failed = sellerJobs.filter((j) => j.status === 'failed').length;
+      const decided = completed + failed;
+      const successPct = decided > 0 ? Math.round((completed / decided) * 100) : 0;
+      const spend = sellerJobs.reduce((sum, j) => sum + jobCost(j), 0);
+      // Prefer per-job costs for the spark; fall back to a count-based shape.
+      const costSeries = sellerJobs.map(jobCost);
+      const bars = buildBars(costSeries.some((c) => c > 0) ? costSeries : sellerJobs.map(() => 1));
+      return {
+        id: seller.id,
+        name: seller.name,
+        role: 'Seller',
+        jobCount: sellerJobs.length,
+        successPct,
+        spend,
+        bars,
+      };
+    });
+  }, [sellers, jobs]);
 
-  const handleDelete = async (id: string) => {
-    await deleteSeller(id);
-    setDeleteConfirmId(null);
-  };
-
-  // Summary stats
-  const totalJobsThisMonth = sellers.reduce((sum, s) => sum + getMonthlyJobCount(s.id), 0);
-  const totalJobs = sellerJobs.length;
+  const team = useMemo(() => {
+    const totalJobs = sellerStats.reduce((s, x) => s + x.jobCount, 0);
+    const allSellerJobs = jobs.filter((j) => j.sellerId);
+    const completed = allSellerJobs.filter((j) => j.status === 'completed').length;
+    const failed = allSellerJobs.filter((j) => j.status === 'failed').length;
+    const decided = completed + failed;
+    const successPct = decided > 0 ? Math.round((completed / decided) * 100) : 0;
+    const spend = sellerStats.reduce((s, x) => s + x.spend, 0);
+    const spendSeries = sellerStats.map((x) => x.spend);
+    const bars = buildBars(
+      spendSeries.some((c) => c > 0) ? spendSeries : sellerStats.map((x) => x.jobCount)
+    );
+    return { totalJobs, successPct, spend, bars };
+  }, [sellerStats, jobs]);
 
   return (
-    <div className="p-6 lg:p-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-[#282727]">Seller Management</h1>
-          <p className="text-base text-[#939393]">Manage sellers and track their job requests.</p>
+    <section className="view" id="view-sellers">
+      <div className="row2" style={{ marginBottom: 18 }}>
+        <div className="panel">
+          <div className="ph">
+            <span className="eye"></span>
+            <span className="k">Team</span>
+            <h3>This month</h3>
+          </div>
+          <div className="pb">
+            <div className="kv">
+              <div className="c">
+                <div className="l">Jobs run</div>
+                <div className="v mono">{team.totalJobs}</div>
+              </div>
+              <div className="c">
+                <div className="l">Success</div>
+                <div className="v mono">{team.successPct}%</div>
+              </div>
+              <div className="c">
+                <div className="l">Spend</div>
+                <div className="v mono">${team.spend.toFixed(2)}</div>
+              </div>
+            </div>
+          </div>
         </div>
-        <button onClick={() => setShowCreateForm(!showCreateForm)} className="btn-primary text-sm">
-          <svg className="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-          </svg>
-          New Seller
-        </button>
+        <div className="panel">
+          <div className="ph">
+            <span className="eye"></span>
+            <span className="k">Trend</span>
+            <h3>Spend / day</h3>
+          </div>
+          <div className="pb">
+            <div className="spark" style={{ height: 64 }}>
+              {team.bars.map((h, i) => (
+                <i key={i} style={{ height: `${h}%` }}></i>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
 
-      {/* Summary Strip */}
-      {sellers.length > 0 && (
-        <div className="grid grid-cols-3 gap-3 mb-5">
-          <div className="card px-4 py-3">
-            <p className="text-xs text-[#939393] mb-0.5">Sellers</p>
-            <p className="text-2xl font-bold text-[#282727]">{sellers.length}</p>
-          </div>
-          <div className="card px-4 py-3">
-            <p className="text-xs text-[#939393] mb-0.5">Total Jobs</p>
-            <p className="text-2xl font-bold text-[#282727]">{totalJobs}</p>
-          </div>
-          <div className="card px-4 py-3">
-            <p className="text-xs text-[#939393] mb-0.5">This Month</p>
-            <p className="text-2xl font-bold text-[#282727]">{totalJobsThisMonth}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Create Seller Form */}
-      {showCreateForm && (
-        <div className="card p-4 mb-5">
-          <h3 className="text-sm font-semibold text-[#282727] mb-2">Create New Seller</h3>
-          <div className="flex gap-2">
-            <input
-              type="text"
-              value={newSellerName}
-              onChange={(e) => setNewSellerName(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleCreate()}
-              placeholder="Seller company name..."
-              className="input-field flex-1"
-              autoFocus
-            />
-            <button
-              onClick={handleCreate}
-              disabled={isCreating || !newSellerName.trim()}
-              className={`btn-primary text-sm ${isCreating || !newSellerName.trim() ? 'opacity-50 cursor-not-allowed' : ''}`}
-            >
-              {isCreating ? 'Creating...' : 'Create'}
-            </button>
-            <button
-              onClick={() => { setShowCreateForm(false); setNewSellerName(''); }}
-              className="btn-secondary text-sm"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Loading */}
-      {loading && (
-        <div className="card p-12 text-center">
-          <svg className="w-6 h-6 text-[#939393] animate-spin mx-auto mb-2" fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-          </svg>
-          <p className="text-xs text-[#939393]">Loading sellers...</p>
-        </div>
-      )}
-
-      {/* Empty */}
-      {!loading && sellers.length === 0 && (
-        <div className="card p-12 text-center">
-          <div className="w-12 h-12 mx-auto mb-3 rounded-lg bg-slate-100 flex items-center justify-center">
-            <svg className="w-6 h-6 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-            </svg>
-          </div>
-          <h3 className="text-sm font-semibold text-[#282727] mb-1">No sellers yet</h3>
-          <p className="text-xs text-[#939393] max-w-xs mx-auto mb-4">
-            Create a seller to start tracking their job requests and analytics.
-          </p>
-          <button onClick={() => setShowCreateForm(true)} className="btn-primary text-sm">Create First Seller</button>
-        </div>
-      )}
-
-      {/* Sellers Grid */}
-      {!loading && sellers.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {sellers.map((seller) => {
-            const monthlyCount = getMonthlyJobCount(seller.id);
-            const sellerJobsList = sellerJobs.filter((j) => j.seller_id === seller.id);
-            const completedCount = sellerJobsList.filter((j) => j.status === 'completed').length;
-            const processingCount = sellerJobsList.filter((j) => j.status === 'processing' || j.status === 'pending').length;
-            const usagePercent = Math.min((monthlyCount / MONTHLY_LIMIT) * 100, 100);
-            const isOverLimit = monthlyCount >= MONTHLY_LIMIT;
-
-            return (
-              <div key={seller.id} className="relative group">
-                {deleteConfirmId === seller.id && (
-                  <div className="absolute inset-0 bg-white/95 rounded-xl z-10 flex flex-col items-center justify-center p-4">
-                    <p className="text-xs font-medium text-[#282727] mb-2">Delete {seller.name}?</p>
-                    <div className="flex gap-2">
-                      <button onClick={() => setDeleteConfirmId(null)} className="px-2.5 py-1 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-md">Cancel</button>
-                      <button onClick={() => handleDelete(seller.id)} className="px-2.5 py-1 text-xs font-medium text-white bg-red-500 hover:bg-red-600 rounded-md">Delete</button>
-                    </div>
-                  </div>
-                )}
-
-                <Link href={`/dashboard/sellers/${seller.id}`}>
-                  <div className="card p-4 hover:border-slate-300 cursor-pointer transition-all">
-                    <button
-                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setDeleteConfirmId(seller.id); }}
-                      className="absolute top-2.5 right-2.5 p-1 rounded text-slate-300 hover:text-red-500 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-all z-[5]"
-                    >
-                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                      </svg>
-                    </button>
-
-                    <div className="flex items-center space-x-2.5 mb-3">
-                      <div className="w-8 h-8 rounded bg-[#282727] flex items-center justify-center">
-                        <span className="text-white font-bold text-sm">{seller.name.charAt(0)}</span>
-                      </div>
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-semibold text-[#282727] truncate">{seller.name}</h3>
-                        <p className="text-[11px] text-[#939393]">{sellerJobsList.length} job{sellerJobsList.length !== 1 ? 's' : ''}</p>
-                      </div>
-                    </div>
-
-                    <div className="mb-3">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[10px] text-[#939393]">Monthly</span>
-                        <span className={`text-[10px] font-semibold ${isOverLimit ? 'text-red-600' : monthlyCount >= 30 ? 'text-amber-600' : 'text-[#282727]'}`}>
-                          {monthlyCount}/{MONTHLY_LIMIT}
-                        </span>
-                      </div>
-                      <div className="w-full bg-slate-100 rounded-full h-1.5">
-                        <div
-                          className={`h-1.5 rounded-full transition-all ${isOverLimit ? 'bg-red-500' : monthlyCount >= 30 ? 'bg-amber-500' : 'bg-[#282727]'}`}
-                          style={{ width: `${usagePercent}%` }}
-                        />
-                      </div>
-                    </div>
-
-                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                      <div className="flex items-center space-x-2">
-                        {processingCount > 0 && (
-                          <span className="flex items-center text-[11px] text-blue-600">
-                            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 mr-1 animate-pulse" />{processingCount} active
-                          </span>
-                        )}
-                        {completedCount > 0 && (
-                          <span className="flex items-center text-[11px] text-emerald-600">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" />{completedCount} done
-                          </span>
-                        )}
-                        {sellerJobsList.length === 0 && (
-                          <span className="text-[11px] text-slate-300">No jobs yet</span>
-                        )}
-                      </div>
-                      <svg className="w-3.5 h-3.5 text-slate-300 group-hover:text-[#282727]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                      </svg>
-                    </div>
-                  </div>
-                </Link>
+      <div className="sellers" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
+        {sellerStats.length === 0 ? (
+          <div className="await">No sellers yet — create one to start attributing jobs.</div>
+        ) : (
+          sellerStats.map((s) => (
+            <div className="seller" key={s.id}>
+              <div className="nm">{s.name}</div>
+              <div className="ro">{s.role}</div>
+              <div className="big">{s.jobCount}</div>
+              <div className="lbl">jobs run</div>
+              <div className="spark">
+                {s.bars.map((h, i) => (
+                  <i key={i} style={{ height: `${h}%` }}></i>
+                ))}
               </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+              <div className="ftr">
+                <span>${s.spend.toFixed(2)} spend</span>
+                <b>{s.successPct}%</b>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </section>
   );
 }

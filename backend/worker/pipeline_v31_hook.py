@@ -344,6 +344,14 @@ def _make_storage_uploader(base: str):
 async def run_v31_pipeline(company_data: dict, validated_data: dict, job_id: str,
                            jobs_store: Optional[dict] = None) -> dict:
     """Production entry. Raises on failure (caller falls back to Gamma)."""
+    # Re-bind the cost meter to this job so v3.1 Anthropic/ZoomInfo/web-search
+    # calls are attributed even if the contextvar didn't propagate. Best-effort.
+    try:
+        import cost_meter
+        cost_meter.set_job(job_id)
+    except Exception:  # noqa: BLE001
+        pass
+
     import httpx
     from zoominfo_client import ZoomInfoClient
     from providers_live import LiveProviders

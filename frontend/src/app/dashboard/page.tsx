@@ -1,281 +1,191 @@
 'use client';
 
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import AddCompanyForm from '@/components/jobs/AddCompanyForm';
-import NetworkDocs from '@/components/ui/NetworkDocs';
-import { useJobs, useJobPolling } from '@/hooks/useJobs';
+import { apiClient } from '@/lib/api';
+import { useJobs } from '@/hooks/useJobs';
 import { useSellers } from '@/hooks/useSellers';
+import { activeStage } from '@/lib/stages';
 
-const statusDisplay: Record<string, { bg: string; text: string; dot?: string; label: string }> = {
-  pending: { bg: 'bg-slate-100', text: 'text-slate-600', dot: 'bg-slate-400', label: 'Pending' },
-  processing: { bg: 'bg-blue-50', text: 'text-blue-700', dot: 'bg-blue-500', label: 'Processing' },
-  completed: { bg: 'bg-emerald-50', text: 'text-emerald-700', label: 'Completed' },
-  failed: { bg: 'bg-red-50', text: 'text-red-700', label: 'Failed' },
+function elapsed(fromIso: string): string {
+  const s = Math.max(0, Math.floor((Date.now() - new Date(fromIso).getTime()) / 1000));
+  return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+}
+function ago(iso?: string): string {
+  if (!iso) return '';
+  const s = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return 'now';
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h`;
+  return `${Math.floor(s / 86400)}d`;
+}
+const cost = (j: any) => (j.result as any)?.api_cost?.total_usd as number | undefined;
+const contactCount = (j: any) => {
+  const sc = (j.result as any)?.slide_contacts;
+  if (!sc) return undefined;
+  return Object.values(sc).reduce((n: number, v: any) => n + (Array.isArray(v) ? v.filter((c: any) => !c.is_sentinel).length : 0), 0);
 };
 
-function formatTimeAgo(dateString: string): string {
-  const date = new Date(dateString);
-  const now = new Date();
-  const seconds = Math.floor((now.getTime() - date.getTime()) / 1000);
-  if (seconds < 60) return 'Just now';
-  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
-  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
-  return `${Math.floor(seconds / 86400)}d ago`;
-}
+export default function HomePage() {
+  const router = useRouter();
+  const { jobs, addJob, updateJob, activeJobIds } = useJobs();
+  const { sellers, addSellerJob } = useSellers();
 
-export default function DashboardHome() {
-  const { jobs } = useJobs();
-  useJobPolling();
-  const { sellers, sellerJobs, getMonthlyJobCount } = useSellers();
+  const [form, setForm] = useState({ company_name: '', domain: '', industry: '', requested_by: '', sellerId: '', canada_only: false });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
 
-  const completedCount = jobs.filter((j) => j.status === 'completed').length;
-  const processingCount = jobs.filter((j) => j.status === 'processing' || j.status === 'pending').length;
-  const failedCount = jobs.filter((j) => j.status === 'failed').length;
-  const completionRate = jobs.length > 0 ? Math.round((completedCount / jobs.length) * 100) : 0;
+  // Poll active jobs so the in-progress cards stay live.
+  useEffect(() => {
+    if (activeJobIds.length === 0) return;
+    let alive = true;
+    const tick = async () => {
+      await Promise.all(activeJobIds.map(async (id) => {
+        try {
+          const s = (await apiClient.checkJobStatus(id)) as any;
+          if (!alive) return;
+          updateJob(id, {
+            status: s.status, progress: s.progress ?? 0, currentStep: s.current_step || 'Processing…',
+            result: s.result, completedAt: s.status === 'completed' || s.status === 'failed' ? new Date().toISOString() : undefined,
+          } as any);
+        } catch { /* keep prior */ }
+      }));
+    };
+    tick();
+    const t = setInterval(tick, 3000);
+    return () => { alive = false; clearInterval(t); };
+  }, [activeJobIds, updateJob]);
 
-  const MONTHLY_LIMIT = 40;
+  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
+
+  const launch = async () => {
+    setError('');
+    if (!form.company_name || !form.domain || !form.requested_by) { setError('Company, domain and requested-by are required.'); return; }
+    setSubmitting(true);
+    const seller = sellers.find((s) => s.id === form.sellerId);
+    const req = {
+      company_name: form.company_name, domain: form.domain, industry: form.industry || undefined,
+      requested_by: form.requested_by, salesperson_name: seller?.name, canada_only: form.canada_only,
+    };
+    try {
+      const res = await apiClient.submitProfileRequest(req);
+      addJob(res.job_id, req, seller?.id, seller?.name);
+      if (seller) {
+        await addSellerJob({
+          job_id: res.job_id, seller_id: seller.id, company_name: form.company_name, domain: form.domain,
+          status: 'processing', requested_by: form.requested_by, salesperson_name: seller.name, created_at: new Date().toISOString(),
+        });
+      }
+      router.push(`/dashboard/jobs/${res.job_id}`);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to launch'); setSubmitting(false);
+    }
+  };
+
+  const inProgress = jobs.filter((j) => j.status === 'processing' || j.status === 'pending');
+  const recent = jobs.slice(0, 6);
+  const triage = jobs.filter((j) => j.status === 'completed' || j.status === 'failed').slice(0, 3);
+
+  const sellerStats = sellers.slice(0, 4).map((s) => {
+    const sj = jobs.filter((j) => j.sellerId === s.id);
+    const done = sj.filter((j) => j.status === 'completed').length;
+    const failed = sj.filter((j) => j.status === 'failed').length;
+    const spend = sj.reduce((a, j) => a + (cost(j) || 0), 0);
+    const rate = done + failed ? Math.round((done / (done + failed)) * 100) : 100;
+    return { s, count: sj.length, spend, rate };
+  });
 
   return (
-    <div className="p-6 lg:p-8">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-[#282727]">Company Intelligence</h1>
-        <p className="text-base text-[#939393]">Generate comprehensive company profiles powered by 20 AI specialists.</p>
-      </div>
-
-      {/* Stats Strip */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="card px-5 py-3.5">
-          <p className="text-sm text-[#939393] mb-0.5">Total Jobs</p>
-          <p className="text-3xl font-bold text-[#282727]">{jobs.length}</p>
-        </div>
-        <div className="card px-5 py-3.5">
-          <div className="flex items-baseline justify-between">
-            <div>
-              <p className="text-sm text-[#939393] mb-0.5">Completed</p>
-              <p className="text-3xl font-bold text-emerald-600">{completedCount}</p>
+    <div className="grid-home">
+      <div className="col">
+        <div className="panel"><div className="ph"><span className="eye" /><span className="k">01 · Intake</span><h3>New profile</h3></div>
+          <div className="pb">
+            <label>Company name</label><input className="inp" value={form.company_name} onChange={(e) => set('company_name', e.target.value)} placeholder="Microsoft" />
+            <div className="two">
+              <div><label>Domain</label><input className="inp" value={form.domain} onChange={(e) => set('domain', e.target.value)} placeholder="microsoft.com" /></div>
+              <div><label>Industry</label><input className="inp" value={form.industry} onChange={(e) => set('industry', e.target.value)} placeholder="Technology" /></div>
             </div>
-            {jobs.length > 0 && (
-              <span className="text-sm font-medium text-emerald-600">{completionRate}%</span>
-            )}
-          </div>
-        </div>
-        <div className="card px-5 py-3.5">
-          <p className="text-sm text-[#939393] mb-0.5">Processing</p>
-          <div className="flex items-center space-x-2">
-            <p className="text-3xl font-bold text-blue-600">{processingCount}</p>
-            {processingCount > 0 && (
-              <span className="w-2.5 h-2.5 bg-blue-500 rounded-full animate-pulse" />
-            )}
-          </div>
-        </div>
-        <div className="card px-5 py-3.5">
-          <p className="text-sm text-[#939393] mb-0.5">Failed</p>
-          <p className="text-3xl font-bold text-red-600">{failedCount}</p>
-        </div>
-      </div>
-
-      {/* Main content: Form + Activity Table — same height */}
-      <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch">
-        {/* Form Column */}
-        <div className="xl:col-span-4 flex">
-          <div className="card p-5 flex flex-col w-full">
-            <h2 className="text-base font-semibold text-[#282727] mb-3">New Profile</h2>
-            <AddCompanyForm />
-          </div>
-        </div>
-
-        {/* Activity Table Column */}
-        <div className="xl:col-span-8 flex">
-          <div className="card overflow-hidden flex flex-col w-full">
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
-              <h2 className="text-base font-semibold text-[#282727]">Recent Activity</h2>
-              {jobs.length > 0 && (
-                <Link
-                  href="/dashboard/jobs"
-                  className="text-sm font-medium text-primary-500 hover:text-primary-600"
-                >
-                  View all →
-                </Link>
-              )}
-            </div>
-
-            {jobs.length === 0 ? (
-              <div className="text-center py-12 px-4 flex-1 flex flex-col items-center justify-center">
-                <div className="w-14 h-14 mx-auto mb-3 rounded-lg bg-slate-100 flex items-center justify-center">
-                  <svg className="w-7 h-7 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
-                  </svg>
-                </div>
-                <p className="text-base font-medium text-[#282727] mb-1">No jobs yet</p>
-                <p className="text-sm text-[#939393]">Add a company using the form to get started.</p>
+            <div className="two">
+              <div><label>Requested by</label><input className="inp" value={form.requested_by} onChange={(e) => set('requested_by', e.target.value)} placeholder="you@intercept" /></div>
+              <div><label>Seller</label>
+                <select className="inp" value={form.sellerId} onChange={(e) => set('sellerId', e.target.value)}>
+                  <option value="">— none —</option>
+                  {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
               </div>
-            ) : (
-              <div className="flex-1 flex flex-col">
-                {/* Table header */}
-                <div className="hidden sm:grid grid-cols-12 gap-3 px-5 py-2.5 bg-slate-50 text-xs font-semibold text-[#939393] uppercase tracking-wider border-b border-slate-100">
-                  <div className="col-span-4">Company</div>
-                  <div className="col-span-2">Status</div>
-                  <div className="col-span-2">Seller</div>
-                  <div className="col-span-2">Confidence</div>
-                  <div className="col-span-2 text-right">Time</div>
-                </div>
-
-                {/* Table rows */}
-                <div className="flex-1">
-                  {jobs.slice(0, 12).map((job) => {
-                    const status = statusDisplay[job.status] || statusDisplay.pending;
-                    const isClickable = job.status === 'completed';
-
-                    const row = (
-                      <div
-                        className={`grid grid-cols-1 sm:grid-cols-12 gap-1 sm:gap-3 px-5 py-3 border-b border-slate-50 items-center transition-colors ${
-                          isClickable ? 'hover:bg-slate-50 cursor-pointer group' : ''
-                        }`}
-                      >
-                        {/* Company */}
-                        <div className="sm:col-span-4 min-w-0">
-                          <p className={`text-sm font-medium text-[#282727] truncate ${isClickable ? 'group-hover:text-primary-500' : ''}`}>
-                            {job.companyName}
-                          </p>
-                          <p className="text-xs text-[#939393] truncate">{job.domain}</p>
-                        </div>
-                        {/* Status */}
-                        <div className="sm:col-span-2">
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${status.bg} ${status.text}`}>
-                            {status.dot && (
-                              <span className={`w-1.5 h-1.5 rounded-full ${status.dot} mr-1 animate-pulse`} />
-                            )}
-                            {status.label}
-                          </span>
-                        </div>
-                        {/* Seller */}
-                        <div className="sm:col-span-2">
-                          {job.sellerName ? (
-                            <span className="text-sm text-[#282727]">{job.sellerName}</span>
-                          ) : (
-                            <span className="text-sm text-slate-300">—</span>
-                          )}
-                        </div>
-                        {/* Confidence */}
-                        <div className="sm:col-span-2">
-                          {job.status === 'completed' && job.result ? (
-                            <span className="text-sm font-semibold text-emerald-600">
-                              {Math.round(job.result.confidence_score * 100)}%
-                            </span>
-                          ) : job.status === 'processing' || job.status === 'pending' ? (
-                            <div className="w-16 bg-slate-100 rounded-full h-1.5">
-                              <div
-                                className="bg-blue-500 h-1.5 rounded-full transition-all"
-                                style={{ width: `${job.progress}%` }}
-                              />
-                            </div>
-                          ) : (
-                            <span className="text-sm text-slate-300">—</span>
-                          )}
-                        </div>
-                        {/* Time */}
-                        <div className="sm:col-span-2 text-right flex items-center justify-end space-x-2">
-                          <span className="text-xs text-[#939393]">{formatTimeAgo(job.createdAt)}</span>
-                          {isClickable && (
-                            <svg className="w-4 h-4 text-slate-300 group-hover:text-primary-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    );
-
-                    if (isClickable) {
-                      return <Link key={job.jobId} href={`/dashboard/jobs/${job.jobId}`}>{row}</Link>;
-                    }
-                    return <div key={job.jobId}>{row}</div>;
-                  })}
-                </div>
-
-                {/* Show count if more jobs */}
-                {jobs.length > 12 && (
-                  <div className="px-5 py-3 text-center border-t border-slate-100 mt-auto">
-                    <Link href="/dashboard/jobs" className="text-sm font-medium text-primary-500 hover:text-primary-600">
-                      View all {jobs.length} jobs →
-                    </Link>
-                  </div>
-                )}
+            </div>
+            <div className="toggle"><span>Canada-only contacts</span>
+              <div className={'sw' + (form.canada_only ? ' on' : '')} onClick={() => set('canada_only', !form.canada_only)} />
+            </div>
+            {error && <div className="err" style={{ height: 'auto', marginTop: 8 }}>{error}</div>}
+            <button className="launch" onClick={launch} disabled={submitting}>{submitting ? 'Launching…' : '⚡ Launch profile'}</button>
+          </div>
+        </div>
+        <div className="panel"><div className="ph"><span className="eye" /><span className="k">Triage</span><h3>Inbox</h3><span className="n">{triage.length} new</span></div>
+          <div className="pb">
+            {triage.length === 0 && <div className="await">no completed or failed jobs yet</div>}
+            {triage.map((j) => (
+              <div key={j.jobId} className={'alert ' + (j.status === 'completed' ? 'ok' : 'bad')}>
+                <div className="ai">{j.status === 'completed' ? '✓' : '✕'}</div>
+                <div className="at"><b>{j.companyName}</b> {j.status === 'completed' ? 'deck ready' : 'failed'}
+                  <small>{j.status === 'completed' ? `${contactCount(j) ?? '—'} contacts · $${(cost(j) || 0).toFixed(2)}` : (j.currentStep || 'error')}</small></div>
+                <Link className="go" href={`/dashboard/jobs/${j.jobId}`}>{j.status === 'completed' ? 'View' : 'Open'}</Link>
               </div>
-            )}
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Sellers Overview Card */}
-      {sellers.length > 0 && (
-        <div className="mt-6">
-          <div className="card overflow-hidden">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-              <h2 className="text-base font-semibold text-[#282727]">Sellers Overview</h2>
-              <Link
-                href="/dashboard/sellers"
-                className="text-sm font-medium text-primary-500 hover:text-primary-600"
-              >
-                Manage sellers →
-              </Link>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-px bg-slate-100">
-              {sellers.map((seller) => {
-                const monthlyCount = getMonthlyJobCount(seller.id);
-                const sellerJobsList = sellerJobs.filter((j) => j.seller_id === seller.id);
-                const completedSellerJobs = sellerJobsList.filter((j) => j.status === 'completed').length;
-                const usagePercent = Math.min((monthlyCount / MONTHLY_LIMIT) * 100, 100);
-                const isOverLimit = monthlyCount >= MONTHLY_LIMIT;
-
-                return (
-                  <Link key={seller.id} href={`/dashboard/sellers/${seller.id}`}>
-                    <div className="bg-white p-4 hover:bg-slate-50 transition-colors cursor-pointer h-full">
-                      <div className="flex items-center space-x-2.5 mb-2.5">
-                        <div className="w-8 h-8 rounded bg-[#282727] flex items-center justify-center flex-shrink-0">
-                          <span className="text-white font-bold text-sm">{seller.name.charAt(0)}</span>
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-sm font-semibold text-[#282727] truncate">{seller.name}</p>
-                          <p className="text-xs text-[#939393]">{sellerJobsList.length} job{sellerJobsList.length !== 1 ? 's' : ''}</p>
-                        </div>
-                      </div>
-                      <div className="mb-2">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-[#939393]">Monthly</span>
-                          <span className={`text-xs font-semibold ${isOverLimit ? 'text-red-600' : monthlyCount >= 30 ? 'text-amber-600' : 'text-[#282727]'}`}>
-                            {monthlyCount}/{MONTHLY_LIMIT}
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-100 rounded-full h-1.5">
-                          <div
-                            className={`h-1.5 rounded-full transition-all ${isOverLimit ? 'bg-red-500' : monthlyCount >= 30 ? 'bg-amber-500' : 'bg-[#282727]'}`}
-                            style={{ width: `${usagePercent}%` }}
-                          />
-                        </div>
-                      </div>
-                      <div className="flex items-center space-x-2">
-                        {completedSellerJobs > 0 && (
-                          <span className="flex items-center text-xs text-emerald-600">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1" />{completedSellerJobs} done
-                          </span>
-                        )}
-                        {sellerJobsList.length === 0 && (
-                          <span className="text-xs text-slate-300">No jobs yet</span>
-                        )}
-                      </div>
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+      <div className="col">
+        <div className="panel"><div className="ph"><span className="eye" /><span className="k">Live</span><h3>In progress</h3><span className="n">{inProgress.length} jobs</span></div>
+          <div className="pb">
+            {inProgress.length === 0 && <div className="await">no jobs running — launch one to see it here live</div>}
+            {inProgress.map((j) => {
+              const act = activeStage(j.progress, j.status);
+              return (
+                <div key={j.jobId} className="jobc" onClick={() => router.push(`/dashboard/jobs/${j.jobId}`)}>
+                  <div className="top"><b>{j.companyName}</b><span className="dom">{j.domain}</span><span className="meta">{elapsed(j.createdAt)} elapsed</span></div>
+                  <div className="strip">{Array.from({ length: 9 }).map((_, i) => <i key={i} className={i < act ? 'done' : i === act ? 'act' : ''} />)}</div>
+                  <div className="sub"><span className="st">▸ Stage {act + 1}/9 · {j.currentStep || 'Processing…'}</span><span className="ct">${(cost(j) || 0).toFixed(2)}</span></div>
+                </div>
+              );
+            })}
           </div>
         </div>
-      )}
-
-      {/* Platform Documentation Network */}
-      <div className="mt-6">
-        <NetworkDocs />
+        <div className="panel"><div className="ph"><span className="eye" /><span className="k">History</span><h3>Recent activity</h3><span className="n">synced · all devices</span></div>
+          <div className="pb" style={{ paddingTop: 0 }}>
+            <table>
+              <thead><tr><th>Company</th><th>Seller</th><th>Status</th><th>Contacts</th><th>Cost</th><th>When</th></tr></thead>
+              <tbody>
+                {recent.length === 0 && <tr><td colSpan={6} style={{ color: 'var(--faint)' }}>No jobs yet.</td></tr>}
+                {recent.map((j) => (
+                  <tr key={j.jobId} style={{ cursor: 'pointer' }} onClick={() => router.push(`/dashboard/jobs/${j.jobId}`)}>
+                    <td><b>{j.companyName}</b></td>
+                    <td>{j.sellerName || '—'}</td>
+                    <td><span className={'badge ' + (j.status === 'completed' ? 'done' : j.status === 'failed' ? 'fail' : 'run')}><span className="d" />{j.status === 'completed' ? 'Done' : j.status === 'failed' ? 'Failed' : 'Running'}</span></td>
+                    <td>{contactCount(j) ?? '—'}</td>
+                    <td className="cost">${(cost(j) || 0).toFixed(2)}</td>
+                    <td>{ago(j.completedAt || j.createdAt)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="panel"><div className="ph"><span className="eye" /><span className="k">Team</span><h3>Seller overview</h3></div>
+          <div className="pb"><div className="sellers">
+            {sellerStats.length === 0 && <div className="await">no sellers yet — add one in the Sellers tab</div>}
+            {sellerStats.map(({ s, count, spend, rate }) => (
+              <div key={s.id} className="seller">
+                <div className="nm">{s.name}</div><div className="ro">Seller</div>
+                <div className="big">{count}</div><div className="lbl">jobs run</div>
+                <div className="spark">{[40, 70, 55, 90, 75, 100].map((h, i) => <i key={i} style={{ height: `${h}%` }} />)}</div>
+                <div className="ftr"><span>${spend.toFixed(2)}</span><b>{rate}%</b></div>
+              </div>
+            ))}
+          </div></div>
+        </div>
       </div>
     </div>
   );

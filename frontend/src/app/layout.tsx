@@ -6,15 +6,11 @@ import { AuthProvider } from '@/lib/auth';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'RAD Admin Portal - Company Intelligence',
-  description: 'Generate comprehensive company profiles with AI-powered data validation and automated slideshow creation',
+  title: 'RAD Intelligence Desk',
+  description: 'AI-powered company intelligence — surgical contact discovery, live pipeline, and HP-ready decks.',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body className={inter.className}>

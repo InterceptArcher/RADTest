@@ -128,6 +128,13 @@ class LiveProviders:
         if tools:
             kwargs["tools"] = tools
         resp = await client.messages.create(**kwargs)
+        # Cost metering (best-effort; must never break the pipeline). record_anthropic
+        # also picks up web_search usage from resp.usage.server_tool_use when present.
+        try:
+            import cost_meter  # lazy: keeps providers_live importable without it
+            cost_meter.record_anthropic(HAIKU_MODEL, getattr(resp, "usage", None))
+        except Exception:  # noqa: BLE001
+            pass
         return "".join(getattr(b, "text", "") for b in resp.content)
 
     # --- Stage 1 -----------------------------------------------------------

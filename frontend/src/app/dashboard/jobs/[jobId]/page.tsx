@@ -1,598 +1,250 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useJobs } from '@/hooks/useJobs';
-import {
-  ExecutiveSnapshotCard,
-  BuyingSignalsCard,
-  StakeholderMapCard,
-  SalesProgramCard,
-  OutreachGeneratorModal,
-  NewsIntelligenceCard,
-  OpportunityThemesCard,
-} from '@/components/intelligence';
-import ConfidenceBadge from '@/components/jobs/ConfidenceBadge';
-import ContactCatalogue from '@/components/jobs/ContactCatalogue';
-import type { StakeholderRoleType } from '@/types';
+import { useLiveJob } from '@/hooks/useLiveJob';
+import { STAGES, activeStage, nodeStates } from '@/lib/stages';
 
-/** Returns true only when a phone string is a real number (not empty, not ZoomInfo-masked `***`). */
-function isRealPhone(phone: string | undefined): boolean {
-  return !!phone && !/^\*+$/.test(phone);
-}
+const PERSONAS = ['CIO', 'CTO', 'CFO', 'COO', 'CISO', 'CPO'];
+const arr = (x: any): any[] => (Array.isArray(x) ? x : []);
+const initials = (name: string) => (name || '').split(' ').filter(Boolean).slice(0, 2).map((p) => p[0]).join('').toUpperCase() || '··';
 
-interface InfoItemProps {
-  label: string;
-  value: string | number | undefined | null;
-  icon?: React.ReactNode;
-}
+interface Contact { persona: string; name: string; title: string; email: string; phone: string; linkedin: string; about: string; }
 
-function InfoItem({ label, value, icon }: InfoItemProps) {
-  return (
-    <div className="flex items-start space-x-3 py-3 border-b border-slate-100 last:border-0">
-      {icon && <div className="text-slate-400 mt-0.5">{icon}</div>}
-      <div className="flex-1 min-w-0">
-        <p className="text-sm text-slate-500">{label}</p>
-        {value ? (
-          <p className="text-slate-900 font-medium truncate">{value}</p>
-        ) : (
-          <p className="text-slate-400 font-medium">—</p>
-        )}
-      </div>
-    </div>
-  );
-}
-
-interface BadgeListProps {
-  items: string[] | string | undefined;
-  variant?: 'default' | 'primary' | 'success' | 'purple';
-}
-
-function BadgeList({ items, variant = 'default' }: BadgeListProps) {
-  if (!items) return <span className="text-slate-400 text-sm">Not available</span>;
-
-  const itemArray = Array.isArray(items)
-    ? items
-    : items.split(',').map((s) => s.trim()).filter(Boolean);
-
-  if (itemArray.length === 0) {
-    return <span className="text-slate-400 text-sm">Not available</span>;
-  }
-
-  const variantClasses = {
-    default: 'bg-slate-100 text-slate-700 ring-slate-500/20',
-    primary: 'bg-blue-50 text-blue-700 ring-blue-600/20',
-    success: 'bg-emerald-50 text-emerald-700 ring-emerald-600/20',
-    purple: 'bg-purple-50 text-purple-700 ring-purple-600/20',
-  };
-
-  return (
-    <div className="flex flex-wrap gap-2">
-      {itemArray.map((item, index) => (
-        <span
-          key={index}
-          className={`inline-flex items-center px-3 py-1.5 rounded-lg text-sm font-medium ring-1 ring-inset ${variantClasses[variant]}`}
-        >
-          {item}
-        </span>
-      ))}
-    </div>
-  );
-}
-
-export default function JobDetailPage() {
-  const params = useParams();
+export default function JobView() {
+  const { jobId } = useParams<{ jobId: string }>();
   const router = useRouter();
-  const { getJob, fetchJobFromSupabase } = useJobs();
+  const { getJob } = useJobs();
+  const { status, log } = useLiveJob(jobId);
+  const [sel, setSel] = useState(0);
 
-  // Outreach modal state
-  const [outreachModalOpen, setOutreachModalOpen] = useState(false);
-  const [selectedRoleType, setSelectedRoleType] = useState<StakeholderRoleType>('CIO');
-  const [selectedStakeholderName, setSelectedStakeholderName] = useState<string | undefined>();
+  const meta = getJob(jobId);
+  const st = status?.status || meta?.status || 'pending';
+  const progress = status?.progress ?? meta?.progress ?? 0;
+  const result: any = status?.result || meta?.result || {};
+  const company = result.company_name || meta?.companyName || 'Job';
+  const domain = result.domain || meta?.domain || '';
+  const done = st === 'completed';
+  const failed = st === 'failed';
+  const act = activeStage(progress, st);
+  const states = nodeStates(progress, st);
+  const apiCost = status?.api_cost || result.api_cost;
 
-  // Remote loading state — when a job isn't in local state, try Supabase
-  const [remoteLoading, setRemoteLoading] = useState(false);
-  const [remoteFetched, setRemoteFetched] = useState(false);
+  const elapsedLabel = useMemo(() => {
+    const start = meta?.createdAt ? new Date(meta.createdAt).getTime() : Date.now();
+    const end = done || failed ? (meta?.completedAt ? new Date(meta.completedAt).getTime() : Date.now()) : Date.now();
+    const s = Math.max(0, Math.floor((end - start) / 1000));
+    return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+  }, [meta, done, failed]);
 
-  const jobId = params.jobId as string;
-  const job = getJob(jobId);
-
-  // If job not found locally, try fetching from Supabase (seller jobs are hosted)
-  useEffect(() => {
-    if (!job && !remoteFetched && !remoteLoading) {
-      setRemoteLoading(true);
-      fetchJobFromSupabase(jobId).finally(() => {
-        setRemoteLoading(false);
-        setRemoteFetched(true);
+  // ---- contacts (flatten slide_contacts in persona order) ----
+  const contacts: Contact[] = useMemo(() => {
+    const sc = result.slide_contacts || result.contact_catalogue || {};
+    const out: Contact[] = [];
+    PERSONAS.forEach((p) => arr(sc[p]).forEach((c: any) => {
+      if (c?.is_sentinel) return;
+      out.push({
+        persona: p, name: c.name || '', title: c.title || '',
+        email: c.email || '', phone: c.phone || c.direct_phone || c.mobile_phone || '',
+        linkedin: c.linkedin_url || '',
+        about: c.about || `${c.name} is the ${p} contact at ${company}${c.title ? ` (${c.title})` : ''}.`,
       });
-    }
-  }, [job, jobId, remoteFetched, remoteLoading, fetchJobFromSupabase]);
+    }));
+    return out;
+  }, [result, company]);
+  const cur = contacts[Math.min(sel, Math.max(0, contacts.length - 1))];
 
-  const handleGenerateOutreach = (roleType: StakeholderRoleType, stakeholderName?: string) => {
-    setSelectedRoleType(roleType);
-    setSelectedStakeholderName(stakeholderName);
-    setOutreachModalOpen(true);
-  };
+  const scrollTo = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 
-  // Show loading while attempting to fetch from Supabase
-  if (!job && remoteLoading) {
-    return (
-      <div className="p-8 lg:p-10">
-        <div className="card p-12 text-center max-w-md mx-auto">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-blue-50 flex items-center justify-center">
-            <svg className="w-8 h-8 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-slate-900 mb-2">Loading job...</h2>
-          <p className="text-slate-600">Fetching job data from the server.</p>
-        </div>
-      </div>
-    );
-  }
+  // ---- defensive section data ----
+  const segments = arr(result.customer_segments);
+  const products = arr(result.products);
+  const technologies = arr(result.technologies);
+  const competitors = arr(result.competitors);
+  const geo = arr(result.geographic_reach);
+  const intent = arr(result.buying_signals?.intent_topics || result.buying_signals?.intent_topics_detailed?.map((t: any) => t.topic));
+  const news = arr(result.news_intelligence?.articles || result.news_intelligence?.news || result.news_data);
+  const themes = arr(result.opportunity_themes?.pain_points || result.opportunity_themes?.themes);
+  const program = arr(result.sales_program?.steps || result.sales_program?.recommended_next_steps);
+  const revenue = result.annual_revenue || result.revenue || result.revenue_range;
+  const itSpend = result.executive_snapshot?.estimated_it_spend || result.estimated_it_spend;
 
-  if (!job) {
-    return (
-      <div className="p-8 lg:p-10">
-        <div className="card p-12 text-center max-w-md mx-auto">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 flex items-center justify-center">
-            <svg className="w-8 h-8 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-slate-900 mb-2">
-            Job Not Found
-          </h2>
-          <p className="text-slate-600 mb-6">
-            This job may have expired or does not exist.
-          </p>
-          <Link href="/dashboard/jobs" className="btn-primary">
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to Jobs
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  if (job.status !== 'completed' || !job.result?.validated_data) {
-    return (
-      <div className="p-8 lg:p-10">
-        <div className="card p-12 text-center max-w-md mx-auto">
-          <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-blue-50 flex items-center justify-center">
-            <svg className="w-8 h-8 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
-              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-semibold text-slate-900 mb-2">
-            Processing...
-          </h2>
-          <p className="text-slate-600 mb-6">
-            This job is still being processed. Please wait for it to complete.
-          </p>
-          <Link href="/dashboard/jobs" className="btn-secondary">
-            <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-            </svg>
-            Back to Jobs
-          </Link>
-        </div>
-      </div>
-    );
-  }
-
-  // Use job.result directly for top-level fields, fallback to validated_data
-  const data = {
-    ...job.result.validated_data,
-    // Override with top-level fields if they exist
-    company_name: job.result.company_name || job.result.validated_data?.company_name,
-    domain: job.result.domain || job.result.validated_data?.domain,
-    industry: job.result.industry || job.result.validated_data?.industry,
-    sub_industry: job.result.sub_industry || job.result.validated_data?.sub_industry,
-    employee_count: job.result.employee_count || job.result.validated_data?.employee_count,
-    employees_range: job.result.employees_range || job.result.validated_data?.employees_range,
-    annual_revenue: job.result.annual_revenue || job.result.validated_data?.annual_revenue,
-    revenue: job.result.revenue || job.result.validated_data?.revenue,
-    revenue_range: job.result.revenue_range || job.result.validated_data?.revenue_range,
-    headquarters: job.result.headquarters || job.result.validated_data?.headquarters,
-    geographic_reach: job.result.geographic_reach || job.result.validated_data?.geographic_reach,
-    founded_year: job.result.founded_year || job.result.validated_data?.founded_year,
-    founders: job.result.founders || job.result.validated_data?.founders,
-    ceo: job.result.ceo || job.result.validated_data?.ceo,
-    target_market: job.result.target_market || job.result.validated_data?.target_market,
-    customer_segments: job.result.customer_segments || job.result.validated_data?.customer_segments,
-    products: job.result.products || job.result.validated_data?.products,
-    technologies: job.result.technologies || job.result.validated_data?.technologies,
-    competitors: job.result.competitors || job.result.validated_data?.competitors,
-    company_type: job.result.company_type || job.result.validated_data?.company_type,
-    ownership_type: job.result.ownership_type || job.result.validated_data?.ownership_type,
-    linkedin_url: job.result.linkedin_url || job.result.validated_data?.linkedin_url,
-    phone: job.result.phone || job.result.validated_data?.phone,
-    ticker: job.result.ticker || job.result.validated_data?.ticker,
-    parent_company: job.result.parent_company || job.result.validated_data?.parent_company,
-    num_locations: job.result.num_locations || job.result.validated_data?.num_locations,
-  };
-
-  // Extract new intelligence sections from result
-  const executiveSnapshot = job.result.executive_snapshot;
-  const buyingSignals = job.result.buying_signals;
-  const opportunityThemes = job.result.opportunity_themes;
-  const stakeholderMap = job.result.stakeholder_map;
-  const supportingAssets = job.result.supporting_assets;
-  const salesProgram = job.result.sales_program;
-  const newsIntelligence = job.result.news_intelligence;
+  const awaiting = (label: string) => (
+    <>
+      <div className="await"><span className="d" /> {label}</div>
+      <div className="skel" style={{ width: '88%' }} /><div className="skel" style={{ width: '70%' }} />
+    </>
+  );
 
   return (
-    <div className="p-8 lg:p-10">
-      {/* Header */}
-      <div className="mb-8">
-        <button
-          onClick={() => router.back()}
-          className="text-slate-500 hover:text-slate-900 mb-4 inline-flex items-center text-sm font-medium transition-colors"
-        >
-          <svg
-            className="w-5 h-5 mr-1"
-            fill="none"
-            stroke="currentColor"
-            viewBox="0 0 24 24"
-          >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d="M15 19l-7-7 7-7"
-            />
-          </svg>
-          Back to Jobs
-        </button>
+    <>
+      <div className="jobhead">
+        <a className="back" onClick={() => router.push('/dashboard/jobs')}>← Queue</a>
+        <div><h2>{company}</h2><div className="dom">{domain}{meta?.sellerName ? ` · ${meta.sellerName}` : ''}</div></div>
+        <div className="right">
+          <span className={'badge ' + (done ? 'done' : failed ? 'fail' : 'run')} style={{ fontSize: 11, padding: '6px 11px' }}>
+            <span className="d" />{done ? 'COMPLETE' : failed ? 'FAILED' : 'LIVE'}
+          </span>
+          <div className="stat">stage<b>{done ? '9' : act + 1} / 9</b></div>
+          <div className="stat">elapsed<b>{elapsedLabel}</b></div>
+          <div className="stat">api cost<b className="hp">${(apiCost?.total_usd ?? 0).toFixed(2)}</b></div>
+          {result.slideshow_url
+            ? <a className="hbtn prime" href={result.slideshow_url} target="_blank" rel="noreferrer">▸ Slideshow</a>
+            : <a className="hbtn prime disabled">▸ Slideshow</a>}
+          <Link className={'hbtn' + (done ? '' : ' disabled')} href={`/dashboard/jobs/${jobId}/debug`}>⚙ Debug</Link>
+        </div>
+      </div>
 
-        {/* Requester Info Banner */}
-        {(job.sellerName || job.requestedBy) && (
-          <div className="card p-4 mb-6 border-l-4 border-l-[#282727]">
-            <div className="flex items-center space-x-4">
-              <div className="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center">
-                <svg className="w-5 h-5 text-[#282727]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
-              </div>
-              <div className="flex-1">
-                <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-                  {job.sellerName && (
-                    <div>
-                      <span className="text-xs font-medium text-slate-500">Requested by Seller</span>
-                      <p className="text-sm font-semibold text-slate-900">{job.sellerName}</p>
-                    </div>
-                  )}
-                  {job.requestedBy && (
-                    <div>
-                      <span className="text-xs font-medium text-slate-500">Salesperson Email</span>
-                      <p className="text-sm font-semibold text-slate-900">{job.requestedBy}</p>
-                    </div>
-                  )}
-                  {job.salespersonName && (
-                    <div>
-                      <span className="text-xs font-medium text-slate-500">Salesperson</span>
-                      <p className="text-sm font-semibold text-slate-900">{job.salespersonName}</p>
-                    </div>
-                  )}
+      {/* flowchart */}
+      <div className="panel"><div className="ph"><span className="eye" /><span className="k">Pipeline</span><h3>Live execution</h3>
+        <span className="n">{done ? 'complete · 9/9' : failed ? 'failed' : `running · stage ${act + 1}/9`}</span></div>
+        <div className="flow"><div className="flowrow">
+          {STAGES.map((s, i) => (
+            <div key={i} style={{ display: 'contents' }}>
+              {i > 0 && <div className={'edge ' + (states[i] === 'done' ? 'done' : (states[i] === 'act' ? 'flow-anim' : ''))} />}
+              <div className={'node ' + states[i]}>
+                <div className="box"><div className="ring" />
+                  <svg viewBox="0 0 24 24" fill="none" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round"><path d={s.icon} /></svg>
                 </div>
+                <div className="lab">{s.label}</div>
+                <div className="ms">{states[i] === 'done' ? '✓' : states[i] === 'act' ? 'running' : states[i] === 'fail' ? 'failed' : 'queued'}</div>
               </div>
             </div>
-          </div>
-        )}
+          ))}
+        </div></div>
+      </div>
 
-        <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
-          <div>
-            <div className="flex items-center space-x-3 mb-2">
-              <div className="w-12 h-12 rounded-2xl bg-[#282727] flex items-center justify-center shadow-lg">
-                <span className="text-white font-bold text-lg">
-                  {(data.company_name || job.companyName).charAt(0)}
-                </span>
-              </div>
-              <div>
-                <h1 className="text-2xl lg:text-3xl font-bold text-slate-900 tracking-tight">
-                  {data.company_name || job.companyName}
-                </h1>
-                <p className="text-slate-500">{job.domain}</p>
-              </div>
+      <div className="subnav">
+        {[['g-company', 'Company'], ['g-people', 'People'], ['g-signals', 'Signals & News'], ['g-strategy', 'Strategy'], ['g-tech', 'Technographics'], ['g-trace', 'Trace & cost']]
+          .map(([id, label]) => <a key={id} onClick={() => scrollTo(id)}>{label}</a>)}
+      </div>
+
+      {/* COMPANY */}
+      <div className="group" id="g-company">
+        <div className="grouphead"><div className="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6" /></svg></div><h4>Company</h4><span className="gn">firmographics</span></div>
+        <div className="grid2">
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">01</span><h3>Executive snapshot</h3></div><div className="pb"><div className="kv">
+            <div className="c"><div className="l">Account</div><div className="v">{result.company_type || '—'}</div></div>
+            <div className="c"><div className="l">Industry</div><div className="v">{result.industry || '—'}</div></div>
+            <div className="c"><div className="l">Revenue</div><div className="v mono">{revenue || '—'}</div></div>
+            <div className="c"><div className="l">Employees</div><div className="v mono">{result.employee_count || result.employees_range || '—'}</div></div>
+            <div className="c"><div className="l">IT spend</div><div className="v mono">{itSpend || '—'}</div></div>
+            <div className="c"><div className="l">HQ</div><div className="v">{result.headquarters || '—'}</div></div>
+          </div></div></div>
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">08·09·10</span><h3>Profile</h3></div><div className="pb">
+            <div className="chiprow"><span className="rl">Segments</span><span className="rv">{segments.length ? segments.map((s, i) => <span key={i} className="pill">{s}</span>) : <span className="await"><span className="d" />awaiting</span>}</span></div>
+            <div className="chiprow"><span className="rl">Geography</span><span className="rv">{geo.length ? geo.map((g, i) => <span key={i} className="pill">{g}</span>) : <span className="await"><span className="d" />awaiting</span>}</span></div>
+            <div className="chiprow"><span className="rl">Products</span><span className="rv">{products.length ? products.map((p, i) => <span key={i} className="pill alt">{p}</span>) : <span className="await"><span className="d" />awaiting</span>}</span></div>
+          </div></div>
+        </div>
+      </div>
+
+      {/* PEOPLE */}
+      <div className="group" id="g-people">
+        <div className="grouphead"><div className="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><circle cx="9" cy="8" r="3" /><path d="M3 20a6 6 0 0112 0M17 8a3 3 0 010 6" /></svg></div><h4>People</h4><span className="gn">{contacts.length} contacts</span></div>
+        <div className="grid2">
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">02</span><h3>Stakeholder map</h3><span className="n">{contacts.length} contacts</span></div>
+            <div className="pb" style={{ paddingTop: 8 }}>
+              {contacts.length === 0 && (st === 'completed' ? <div className="await">no contacts</div> : <div className="await"><span className="d" />discovering stakeholders…</div>)}
+              {contacts.map((c, i) => (
+                <div key={i} className={'stk' + (i === sel ? ' on' : '')} onClick={() => setSel(i)}>
+                  <div className="av">{initials(c.name)}</div>
+                  <div className="who"><b>{c.name}</b><small>{c.title}</small></div>
+                  <span className="role">{c.persona}</span>
+                  <div className="ch"><i className={c.email ? 'has' : 'no'}>@</i><i className={c.phone ? 'has' : 'no'}>☎</i><i className={c.linkedin ? 'has' : 'no'}>in</i></div>
+                </div>
+              ))}
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="card px-4 py-3">
-              <p className="text-xs text-slate-500 mb-0.5">Confidence Score</p>
-              <p className="text-2xl font-bold text-emerald-600">
-                {Math.round(job.result.confidence_score * 100)}%
-              </p>
-            </div>
-            <Link
-              href={`/dashboard/jobs/${jobId}/debug`}
-              className="btn-secondary"
-            >
-              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-              </svg>
-              Debug Mode
-            </Link>
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">07</span><h3>Contact dossier</h3><span className="n">← select from the map</span></div>
+            <div className="pb"><div className="dossier">
+              {cur ? <>
+                <div className="dh"><div className="av">{initials(cur.name)}</div><div><b>{cur.name}</b><small>{cur.title}</small></div><span className="role">{cur.persona}</span></div>
+                <div className="bio"><span className="l">About</span>{cur.about}</div>
+                {cur.email ? <a className="lk2" href={`mailto:${cur.email}`}>✉ {cur.email} <span className="ar">↗</span></a> : <a className="lk2" style={{ opacity: .5, pointerEvents: 'none' }}>✉ no email on file</a>}
+                {cur.phone ? <a className="lk2" href={`tel:${cur.phone}`}>☎ {cur.phone} <span className="ar">↗</span></a> : <a className="lk2" style={{ opacity: .5, pointerEvents: 'none' }}>☎ no direct line on file</a>}
+                {cur.linkedin ? <a className="lk2" href={cur.linkedin} target="_blank" rel="noreferrer">in {cur.linkedin.replace(/^https?:\/\//, '')} <span className="ar">↗</span></a> : <a className="lk2" style={{ opacity: .5, pointerEvents: 'none' }}>in no LinkedIn on file</a>}
+              </> : <div className="await"><span className="d" />awaiting contacts…</div>}
+            </div></div>
           </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Main Info */}
-        <div className="lg:col-span-2 space-y-6">
-          {/* Overview */}
-          <div className="card p-6">
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center">
-                <svg className="w-5 h-5 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
-              </div>
-              <h2 className="text-lg font-semibold text-slate-900">Company Overview</h2>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8">
-              <InfoItem label="Industry" value={data.industry} />
-              <InfoItem label="Sub-Industry" value={(data as any).sub_industry} />
-              <InfoItem label="Employee Count" value={data.employee_count || (data as any).employees_range} />
-              <InfoItem label="Annual Revenue" value={(data as any).annual_revenue || data.revenue || (data as any).revenue_range} />
-              <InfoItem label="Headquarters" value={data.headquarters} />
-              <InfoItem label="Founded" value={data.founded_year} />
-              <InfoItem label="CEO" value={data.ceo} />
-              <InfoItem label="Company Type" value={(data as any).company_type || (data as any).ownership_type} />
-              <InfoItem label="Phone" value={isRealPhone((data as any).phone) ? (data as any).phone : undefined} />
-              <InfoItem label="Ticker" value={(data as any).ticker} />
-            </div>
-          </div>
-
-          {/* Executive Snapshot - New Intelligence Section */}
-          {executiveSnapshot && (
-            <ExecutiveSnapshotCard
-              snapshot={executiveSnapshot}
-              companyName={data.company_name || job.companyName}
-              industry={data.industry}
-            />
-          )}
-
-          {/* Buying Signals - New Intelligence Section */}
-          {buyingSignals && (
-            <BuyingSignalsCard signals={buyingSignals} />
-          )}
-
-          {/* Opportunity Themes - New Intelligence Section */}
-          {opportunityThemes && (
-            <OpportunityThemesCard themes={opportunityThemes} />
-          )}
-
-          {/* News Intelligence - New Intelligence Section */}
-          {newsIntelligence && (
-            <NewsIntelligenceCard
-              newsIntelligence={newsIntelligence}
-              companyName={data.company_name || job.companyName}
-            />
-          )}
-
-          {/* Stakeholder Map - New Intelligence Section */}
-          {stakeholderMap && (
-            <StakeholderMapCard
-              stakeholderMap={stakeholderMap}
-              supportingAssets={supportingAssets}
-              onGenerateOutreach={handleGenerateOutreach}
-            />
-          )}
-
-          {/* Sales Program - New Intelligence Section */}
-          {salesProgram && (
-            <SalesProgramCard
-              program={salesProgram}
-            />
-          )}
-
-          {/* v3.1 — surgical contact catalogue (6 persona buckets); renders only on v3.1 jobs */}
-          <ContactCatalogue
-            catalogue={job.result.contact_catalogue}
-            selected={job.result.slide_contacts}
-          />
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Quick Actions */}
-          <div className="card p-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">Quick Actions</h2>
-            <div className="space-y-3">
-              {/* View Slideshow Button */}
-              {job.result.slideshow_url && (
-                <a
-                  href={job.result.slideshow_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="btn-primary w-full"
-                >
-                  <svg
-                    className="w-5 h-5 mr-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M7 4v16M17 4v16M3 8h4m10 0h4M3 12h18M3 16h4m10 0h4M4 20h16a1 1 0 001-1V5a1 1 0 00-1-1H4a1 1 0 00-1 1v14a1 1 0 001 1z"
-                    />
-                  </svg>
-                  View Slideshow
-                </a>
-              )}
-              {/* v3.1 — confidence badge + live view (guarded; v3.1 jobs only) */}
-              {job.result.data_quality_score !== undefined && (
-                <div className="flex justify-center">
-                  <ConfidenceBadge score={job.result.data_quality_score} />
-                </div>
-              )}
-              <Link
-                href={`/dashboard/jobs/${jobId}/live`}
-                className="btn-secondary w-full"
-              >
-                Watch live
-              </Link>
-              <Link
-                href={`/dashboard/jobs/${jobId}/debug`}
-                className="btn-secondary w-full"
-              >
-                <svg
-                  className="w-5 h-5 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"
-                  />
-                </svg>
-                View Debug Info
-              </Link>
-            </div>
-          </div>
-
-          {/* Contact Info */}
-          <div className="card p-6">
-            <h2 className="text-lg font-semibold text-slate-900 mb-4">Contact & Links</h2>
-            <div className="space-y-3">
-              <a
-                href={`https://${job.domain}`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center text-primary-500 hover:text-primary-600 font-medium transition-colors"
-              >
-                <svg
-                  className="w-5 h-5 mr-2"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
-                >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"
-                  />
-                </svg>
-                {job.domain}
-              </a>
-              {(data as any).linkedin_url && (
-                <a
-                  href={(data as any).linkedin_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="flex items-center text-primary-500 hover:text-primary-600 font-medium transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5 mr-2"
-                    fill="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path d="M19 0h-14c-2.761 0-5 2.239-5 5v14c0 2.761 2.239 5 5 5h14c2.762 0 5-2.239 5-5v-14c0-2.761-2.238-5-5-5zm-11 19h-3v-11h3v11zm-1.5-12.268c-.966 0-1.75-.79-1.75-1.764s.784-1.764 1.75-1.764 1.75.79 1.75 1.764-.783 1.764-1.75 1.764zm13.5 12.268h-3v-5.604c0-3.368-4-3.113-4 0v5.604h-3v-11h3v1.765c1.396-2.586 7-2.777 7 2.476v6.759z" />
-                  </svg>
-                  LinkedIn
-                </a>
-              )}
-              {isRealPhone((data as any).phone) && (
-                <a
-                  href={`tel:${(data as any).phone}`}
-                  className="flex items-center text-primary-500 hover:text-primary-600 font-medium transition-colors"
-                >
-                  <svg
-                    className="w-5 h-5 mr-2"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
-                  </svg>
-                  {(data as any).phone}
-                </a>
-              )}
-            </div>
-          </div>
-
-          {/* Customer Segments */}
-          {(data as any).customer_segments && (
-            <div className="card p-6">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Customer Segments</h2>
-              <BadgeList items={(data as any).customer_segments} />
-            </div>
-          )}
-
-          {/* Founders */}
-          {(data as any).founders && (data as any).founders.length > 0 && (
-            <div className="card p-6">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Founders</h2>
-              <ul className="space-y-3">
-                {(data as any).founders.map((founder: string, index: number) => (
-                  <li key={index} className="flex items-center">
-                    <div className="w-9 h-9 bg-gradient-to-br from-slate-200 to-slate-100 rounded-full flex items-center justify-center mr-3">
-                      <span className="text-slate-600 font-semibold text-sm">
-                        {founder.charAt(0)}
-                      </span>
-                    </div>
-                    <span className="text-slate-900 font-medium">{founder}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {/* Geographic Reach */}
-          {((data as any).geographic_reach || data.geographic_reach) && (
-            <div className="card p-6">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Geographic Reach</h2>
-              <BadgeList items={(data as any).geographic_reach || data.geographic_reach} variant="primary" />
-            </div>
-          )}
-
-          {/* Products & Services */}
-          {(data as any).products && (
-            <div className="card p-6">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Products & Services</h2>
-              <BadgeList items={(data as any).products} variant="purple" />
-            </div>
-          )}
-
-          {/* Technologies */}
-          {((data as any).technologies || data.technology) && (
-            <div className="card p-6">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Technologies</h2>
-              <BadgeList items={(data as any).technologies || data.technology} variant="success" />
-            </div>
-          )}
-
-          {/* Competitors */}
-          {(data as any).competitors && (
-            <div className="card p-6">
-              <h2 className="text-lg font-semibold text-slate-900 mb-4">Competitors</h2>
-              <BadgeList items={(data as any).competitors} />
-            </div>
-          )}
+      {/* SIGNALS */}
+      <div className="group" id="g-signals">
+        <div className="grouphead"><div className="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M3 12h4l3 8 4-16 3 8h4" /></svg></div><h4>Signals &amp; News</h4><span className="gn">intent · triggers</span></div>
+        <div className="grid2">
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">03</span><h3>Buying signals</h3></div><div className="pb">
+            {intent.length ? <div className="chiprow"><span className="rl">Active intent</span><span className="rv">{intent.map((t, i) => <span key={i} className="pill">{typeof t === 'string' ? t : t?.topic}</span>)}</span></div> : awaiting('detecting intent…')}
+          </div></div>
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">05</span><h3>News intelligence</h3></div><div className="pb">
+            {news.length ? news.slice(0, 4).map((n: any, i: number) => (
+              <div className="news" key={i}><div className="dt">{(n.date || n.published || '').toString().slice(0, 10) || '—'}</div>
+                <div className="hl">{n.title || n.headline || n.summary || String(n)}{n.summary && (n.title || n.headline) ? <small>{n.summary}</small> : null}</div></div>
+            )) : awaiting('gathering news…')}
+          </div></div>
         </div>
       </div>
 
-      {/* Outreach Generator Modal */}
-      <OutreachGeneratorModal
-        isOpen={outreachModalOpen}
-        onClose={() => setOutreachModalOpen(false)}
-        jobId={jobId}
-        roleType={selectedRoleType}
-        stakeholderName={selectedStakeholderName}
-      />
-    </div>
+      {/* STRATEGY */}
+      <div className="group" id="g-strategy">
+        <div className="grouphead"><div className="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M12 2l3 7 7 .5-5.5 4.5 2 7L12 17l-6.5 4 2-7L2 9.5 9 9z" /></svg></div><h4>Strategy</h4><span className="gn">council output</span></div>
+        <div className="grid2">
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">04</span><h3>Opportunity themes</h3></div><div className="pb">
+            {themes.length ? <ul className="clean">{themes.slice(0, 4).map((t: any, i: number) => <li key={i}><b>{t.title || t.name || t.theme || String(t)}</b>{t.description && <span className="why">{t.description}</span>}</li>)}</ul>
+              : awaiting(act < 5 ? 'pending council…' : '28 specialists deliberating…')}
+          </div></div>
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">06</span><h3>Recommended sales program</h3></div><div className="pb">
+            {program.length ? <ul className="clean">{program.slice(0, 4).map((s: any, i: number) => <li key={i}><b>{`${i + 1} · ${s.step || s.title || s.name || ''}`}</b>{(s.why || s.rationale || s.collateral) && <span className="why">{s.why || s.rationale || s.collateral}</span>}</li>)}</ul>
+              : awaiting('awaiting council + content match…')}
+          </div></div>
+        </div>
+      </div>
+
+      {/* TECHNOGRAPHICS */}
+      <div className="group" id="g-tech">
+        <div className="grouphead"><div className="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><rect x="4" y="4" width="16" height="12" rx="2" /><path d="M8 20h8M12 16v4" /></svg></div><h4>Technographics</h4><span className="gn">stack · competitive set</span></div>
+        <div className="grid2">
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">11</span><h3>Installed technologies</h3></div><div className="pb">
+            {technologies.length ? technologies.map((t, i) => <span key={i} className="pill">{t}</span>) : <span className="await"><span className="d" />awaiting</span>}
+          </div></div>
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">12</span><h3>Competitors</h3></div><div className="pb">
+            {competitors.length ? competitors.map((t, i) => <span key={i} className="pill">{t}</span>) : <span className="await"><span className="d" />awaiting</span>}
+          </div></div>
+        </div>
+      </div>
+
+      {/* TRACE */}
+      <div className="group" id="g-trace">
+        <div className="grouphead"><div className="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8}><path d="M4 4v16h16M8 16l3-4 3 2 4-6" /></svg></div><h4>Trace &amp; cost</h4><span className="gn">telemetry</span></div>
+        <div className="grid2">
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">Spend</span><h3>API cost meter</h3></div><div className="pb"><div className="cost">
+            <div className="total">${(apiCost?.total_usd ?? 0).toFixed(2)}<small> / job</small></div>
+            {(() => {
+              const bs = apiCost?.by_service || {};
+              const a = (bs.anthropic?.usd || 0) + (bs.openai?.usd || 0);
+              const z = bs.zoominfo?.usd || 0, w = bs.web_search?.usd || 0;
+              const tot = a + z + w || 1;
+              return <>
+                <div className="costbar"><i style={{ width: `${(a / tot) * 100}%`, background: 'var(--hp)' }} /><i style={{ width: `${(z / tot) * 100}%`, background: 'var(--hp-light)' }} /><i style={{ width: `${(w / tot) * 100}%`, background: 'var(--warn)' }} /></div>
+                <div className="costleg">
+                  <div className="r"><span className="sw2" style={{ background: 'var(--hp)' }} />LLM (Council + Claude)<span className="a">${a.toFixed(3)}</span></div>
+                  <div className="r"><span className="sw2" style={{ background: 'var(--hp-light)' }} />ZoomInfo (search + enrich)<span className="a">${z.toFixed(3)}</span></div>
+                  <div className="r"><span className="sw2" style={{ background: 'var(--warn)' }} />Web search<span className="a">${w.toFixed(3)}</span></div>
+                </div>
+              </>;
+            })()}
+          </div></div></div>
+          <div className="panel"><div className="ph"><span className="eye" /><span className="k">Trace</span><h3>Audit log</h3><span className="n">{log.length} events</span></div>
+            <div className="pb"><div className="log">
+              {log.length === 0 && <div className="await"><span className="d" />waiting for events…</div>}
+              {log.map((l, i) => <div className="ln" key={i}><span className="t">{l.t}</span><span className="m">{l.m}</span></div>)}
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </>
   );
 }

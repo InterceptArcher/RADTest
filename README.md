@@ -2114,6 +2114,37 @@ curl -X POST http://localhost:8000/profile-request \
 
 ---
 
+## Per-Job API Cost Instrumentation (additive, observational)
+
+Each job now accumulates the estimated USD cost of its external API calls,
+broken down by service, exposed for a live frontend cost meter.
+
+- **Module**: `backend/worker/cost_meter.py` — a dependency-free, best-effort
+  meter. A module-level registry maps `job_id -> CostAccumulator`, bound via a
+  `contextvars.ContextVar` so call sites don't thread the id through their
+  signatures. Pricing lives in one editable `MODEL_PRICING` block (USD per 1M
+  tokens: haiku 1/5, sonnet 3/15, opus 15/75; default sonnet), plus
+  `WEB_SEARCH_USD_PER_CALL=0.01` and `ZOOMINFO_USD_PER_CALL=0.10`.
+- **Rationale — chokepoint instrumentation**: cost is recorded at the single
+  points every call flows through (`providers_live._haiku_text`,
+  `zoominfo_client._make_request`) plus the direct `messages.create` sites in
+  `claude_formatter` and `production_main`. This keeps coverage complete with
+  minimal edits and zero pipeline-logic change.
+- **Rationale — best-effort by design**: every `cost_meter.*` call is wrapped in
+  try/except so a metering failure can never raise into the pipeline. Imports
+  are lazy and stdlib-only (no new pip deps), so the meter is importable in any
+  environment.
+- **Exposure**: the snapshot is written to `jobs_store[job_id]["api_cost"]` and
+  nested inside `result` (and `validated_data`) so it survives the in-memory
+  store being wiped on restart and is returned by `/job-status/{job_id}` via the
+  new `JobStatus.api_cost` field.
+- **Snapshot shape**:
+  `{"total_usd": float, "by_service": {"anthropic": {"calls","input_tokens","output_tokens","usd"}, "zoominfo": {"calls","usd"}, "web_search": {"calls","usd"}}, "tokens": {"input","output"}}`.
+- **Tests**: `backend/tests/test_cost_meter.py` (pure, no network; runs under
+  plain `python3` and pytest).
+
+---
+
 ## License
 
 Proprietary - Intercept

@@ -1,0 +1,682 @@
+<title>RAD Intelligence Desk — Mockup</title>
+<style>
+  :root{
+    --ground:#e9f2fb; --ink:#13202c; --muted:#56697a; --faint:#8aa0b2;
+    --hp:#0096D6; --hp-deep:#0a6fa5; --hp-light:#7fd1f0;
+    --ok:#10b981; --warn:#f59e0b; --bad:#ef4444;
+    --glass:rgba(255,255,255,.58); --glass-2:rgba(255,255,255,.40);
+    --glass-brd:rgba(255,255,255,.85); --hair:rgba(12,90,140,.12);
+    --sh:0 14px 44px -16px rgba(8,84,140,.40); --glow:rgba(0,150,214,.5);
+    --mono:ui-monospace,"SF Mono","JetBrains Mono",Menlo,Consolas,monospace;
+    --sans:"Inter",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;min-height:100vh;background:var(--ground);color:var(--ink);font-family:var(--sans);
+    -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.45;
+    background-image:
+      radial-gradient(60vw 50vh at 12% -5%, rgba(0,150,214,.28), transparent 60%),
+      radial-gradient(50vw 50vh at 100% 8%, rgba(127,209,240,.40), transparent 55%),
+      radial-gradient(55vw 60vh at 85% 100%, rgba(0,150,214,.20), transparent 60%),
+      radial-gradient(40vw 40vh at 30% 110%, rgba(160,210,245,.35), transparent 60%);
+    background-attachment:fixed;}
+  #bg{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+  /* layout: fixed rail, scrolling document */
+  .rail{position:fixed;top:0;left:0;bottom:0;width:218px;z-index:30;padding:16px 14px;display:flex;flex-direction:column;
+    background:linear-gradient(180deg,rgba(255,255,255,.6),rgba(255,255,255,.38));
+    backdrop-filter:blur(24px) saturate(160%);border-right:1px solid var(--glass-brd)}
+  .main{margin-left:218px;min-height:100vh;position:relative;z-index:1}
+  .bar{position:sticky;top:0;z-index:20;height:60px;display:flex;align-items:center;gap:16px;padding:0 24px;
+    background:rgba(233,242,251,.72);backdrop-filter:blur(20px) saturate(160%);border-bottom:1px solid var(--glass-brd)}
+  .canvas{padding:24px}
+
+  .brand{display:flex;align-items:center;gap:11px;padding:6px 6px 18px}
+  .brand .dot{width:34px;height:34px;border-radius:50%;background:radial-gradient(circle at 34% 30%,#33b6ec,#0079b8);box-shadow:0 6px 18px -4px var(--glow),inset 0 1px 0 rgba(255,255,255,.6);display:grid;place-items:center;font-weight:800;font-size:12px;color:#fff;font-style:italic;letter-spacing:-.04em}
+  .brand b{font-weight:700;font-size:15px}
+  .brand small{display:block;font-family:var(--mono);font-size:9px;color:var(--hp-deep);letter-spacing:.16em;text-transform:uppercase;margin-top:1px;opacity:.7}
+  .nav{display:flex;flex-direction:column;gap:3px;margin-top:6px}
+  .nav a{position:relative;display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:11px;color:var(--muted);text-decoration:none;font-size:13px;font-weight:600;border:1px solid transparent;cursor:pointer;transition:.15s}
+  .nav a .ic{width:18px;height:18px;opacity:.85}
+  .nav a:hover{color:var(--ink);background:rgba(255,255,255,.5)}
+  .nav a.on{color:var(--hp-deep);background:linear-gradient(135deg,rgba(255,255,255,.75),rgba(0,150,214,.12));border-color:rgba(0,150,214,.35);box-shadow:0 4px 14px -6px var(--glow)}
+  .nav a.on::before{content:"";position:absolute;left:-1px;top:9px;width:3px;height:20px;background:var(--hp);border-radius:3px;box-shadow:0 0 10px var(--glow)}
+  .rail .foot{font-family:var(--mono);font-size:9.5px;color:var(--faint);padding:10px 8px 2px}
+
+  .bar .title{font-weight:700;font-size:16px;letter-spacing:-.01em}.bar .title small{font-weight:500;color:var(--muted);font-size:13px}
+  .telem{margin-left:auto;display:flex;align-items:center;gap:9px;font-family:var(--mono);font-size:11.5px}
+  .chip{display:inline-flex;align-items:center;gap:7px;padding:7px 12px;border-radius:11px;background:var(--glass);border:1px solid var(--glass-brd);color:var(--muted)}
+  .chip b{color:var(--ink);font-weight:700}.chip.bell b{color:var(--warn)}
+  .live-dot{width:7px;height:7px;border-radius:50%;background:var(--hp);box-shadow:0 0 8px var(--glow);animation:pulse 1.6s infinite}
+
+  .view{display:none}.view.on{display:block;animation:rise .4s ease}
+
+  .panel{position:relative;border-radius:20px;border:1px solid var(--glass-brd);
+    background:linear-gradient(140deg,var(--glass),var(--glass-2));
+    backdrop-filter:blur(28px) saturate(180%);box-shadow:var(--sh);overflow:hidden}
+  .panel::before{content:"";position:absolute;inset:0 0 auto 0;height:40%;background:linear-gradient(180deg,rgba(255,255,255,.55),transparent);pointer-events:none}
+  .ph{position:relative;display:flex;align-items:center;gap:9px;padding:15px 17px 11px}
+  .ph .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.18em;text-transform:uppercase;color:var(--hp-deep);opacity:.7}
+  .ph h3{margin:0;font-size:14px;font-weight:700}
+  .ph .n{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--hp-deep);background:rgba(0,150,214,.1);padding:3px 8px;border-radius:20px}
+  .pb{position:relative;padding:3px 17px 17px}
+  .eye{width:7px;height:7px;border-radius:50%;background:var(--hp);box-shadow:0 0 9px var(--glow)}
+
+  .grid-home{display:grid;grid-template-columns:350px 1fr;gap:18px}
+  .col{display:flex;flex-direction:column;gap:18px;min-width:0}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+  label{display:block;font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint);margin:13px 0 6px}
+  .inp{width:100%;background:rgba(255,255,255,.7);border:1px solid var(--hair);border-radius:11px;padding:11px 13px;color:var(--ink);font-size:13.5px;outline:none}
+  .inp:focus{border-color:var(--hp);box-shadow:0 0 0 3px rgba(0,150,214,.15)}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .toggle{display:flex;align-items:center;justify-content:space-between;margin-top:14px;padding:11px 13px;border:1px solid var(--hair);border-radius:11px;background:rgba(255,255,255,.55)}
+  .toggle span{font-size:12.5px;color:var(--muted);font-weight:500}
+  .sw{width:40px;height:23px;border-radius:13px;background:#cdd9e3;position:relative;border:1px solid var(--hair);cursor:pointer;transition:.2s}
+  .sw.on{background:var(--hp)}.sw::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;border-radius:50%;background:#fff;box-shadow:0 1px 4px rgba(0,0,0,.25);transition:.2s}.sw.on::after{left:19px}
+  .launch{margin-top:16px;width:100%;border:0;border-radius:12px;padding:13px;font-weight:700;font-size:14px;color:#fff;cursor:pointer;background:linear-gradient(180deg,#1cb2ed,#0079b8);box-shadow:0 10px 24px -8px var(--glow),inset 0 1px 0 rgba(255,255,255,.4)}
+  .launch:hover{filter:brightness(1.06)}
+
+  .jobc{padding:14px;border:1px solid var(--hair);border-radius:14px;background:rgba(255,255,255,.5);margin-bottom:11px;cursor:pointer;transition:.15s}
+  .jobc:last-child{margin-bottom:0}.jobc:hover{background:rgba(255,255,255,.75);box-shadow:0 8px 22px -12px var(--glow)}
+  .jobc .top{display:flex;align-items:center;gap:9px}.jobc .top b{font-size:13.5px}
+  .jobc .top .dom{font-family:var(--mono);font-size:10px;color:var(--faint)}.jobc .top .meta{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--muted)}
+  .strip{display:flex;gap:3px;margin:11px 0 8px}
+  .strip i{height:6px;flex:1;border-radius:3px;background:#d3e0ea}
+  .strip i.done{background:var(--hp);opacity:.5}.strip i.act{background:var(--hp);box-shadow:0 0 9px var(--glow);animation:pulse 1.5s infinite}
+  .jobc .sub{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10.5px}
+  .jobc .sub .st{color:var(--hp-deep);font-weight:600}.jobc .sub .ct{color:var(--muted)}
+
+  .alert{display:flex;align-items:center;gap:11px;padding:12px;border-radius:12px;margin-bottom:9px;border:1px solid var(--hair);background:rgba(255,255,255,.5)}
+  .alert:last-child{margin-bottom:0}
+  .alert .ai{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;font-size:13px;flex:0 0 28px;font-weight:700}
+  .alert.ok .ai{background:rgba(16,185,129,.14);color:var(--ok)}.alert.bad .ai{background:rgba(239,68,68,.14);color:var(--bad)}
+  .alert .at{font-size:13px}.alert .at b{font-weight:700}.alert .at small{display:block;font-family:var(--mono);font-size:10px;color:var(--faint);margin-top:1px}
+  .alert .go{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--hp-deep);text-decoration:none;border:1px solid var(--hair);padding:6px 10px;border-radius:8px;background:rgba(255,255,255,.6)}
+  .alert .go:hover{border-color:var(--hp)}
+
+  table{width:100%;border-collapse:collapse;font-size:12.5px}
+  thead th{font-family:var(--mono);font-size:9px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);text-align:left;padding:9px 11px;border-bottom:1px solid var(--hair);font-weight:600}
+  tbody td{padding:11px;border-bottom:1px solid var(--hair);color:var(--muted)}
+  tbody tr:hover{background:rgba(255,255,255,.5)}tbody td b{color:var(--ink);font-weight:600}td.cost{font-family:var(--mono);color:var(--ink)}
+  .badge{display:inline-flex;align-items:center;gap:5px;font-family:var(--mono);font-size:10px;padding:3px 9px;border-radius:20px;border:1px solid var(--hair);background:rgba(255,255,255,.6)}
+  .badge.done{color:var(--ok);border-color:rgba(16,185,129,.35)}.badge.run{color:var(--hp-deep);border-color:rgba(0,150,214,.4)}.badge.fail{color:var(--bad);border-color:rgba(239,68,68,.35)}
+  .badge .d{width:5px;height:5px;border-radius:50%;background:currentColor}.badge.run .d{animation:pulse 1.5s infinite}
+
+  .sellers{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+  .seller{padding:15px;border:1px solid var(--hair);border-radius:16px;background:rgba(255,255,255,.5)}
+  .seller .nm{font-size:13.5px;font-weight:700}.seller .ro{font-family:var(--mono);font-size:9px;color:var(--faint);text-transform:uppercase;letter-spacing:.1em}
+  .seller .big{font-family:var(--mono);font-size:26px;font-weight:700;margin-top:10px;color:var(--hp-deep)}.seller .lbl{font-family:var(--mono);font-size:10px;color:var(--muted)}
+  .spark{display:flex;align-items:flex-end;gap:2px;height:30px;margin-top:10px}.spark i{flex:1;background:linear-gradient(180deg,var(--hp),rgba(0,150,214,.25));border-radius:2px}
+  .seller .ftr{display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:var(--muted);margin-top:10px;padding-top:10px;border-top:1px solid var(--hair)}.seller .ftr b{color:var(--ok)}
+
+  .ca-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .asset{padding:15px;border:1px solid var(--hair);border-radius:16px;background:rgba(255,255,255,.5);display:flex;flex-direction:column;gap:9px}
+  .asset .thumb{height:80px;border-radius:11px;background:linear-gradient(135deg,rgba(0,150,214,.18),rgba(127,209,240,.3));display:grid;place-items:center;color:var(--hp-deep);font-size:22px;border:1px solid var(--hair)}
+  .asset .an{font-size:13px;font-weight:700;line-height:1.3}
+  .tags{display:flex;flex-wrap:wrap;gap:5px}.tag{font-family:var(--mono);font-size:9px;padding:3px 8px;border-radius:20px;background:rgba(0,150,214,.1);color:var(--hp-deep)}
+  .asset .lk{margin-top:auto;font-family:var(--mono);font-size:10px;color:var(--hp);text-decoration:none}
+  .filters{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+  .filters .f{font-family:var(--mono);font-size:11px;padding:7px 13px;border-radius:20px;border:1px solid var(--hair);background:var(--glass);color:var(--muted);cursor:pointer}
+  .filters .f.on{background:var(--hp);color:#fff;border-color:var(--hp)}
+
+  /* ===== JOB VIEW ===== */
+  .jobhead{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+  .back{font-family:var(--mono);font-size:12px;color:var(--muted);text-decoration:none;border:1px solid var(--hair);border-radius:9px;padding:9px 12px;background:var(--glass);cursor:pointer}
+  .back:hover{color:var(--ink)}
+  .jobhead h2{margin:0;font-size:20px;font-weight:800;letter-spacing:-.01em}.jobhead .dom{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .jobhead .right{margin-left:auto;display:flex;align-items:center;gap:11px}
+  .stat{font-family:var(--mono);font-size:10.5px;color:var(--muted);text-align:right}.stat b{display:block;font-size:15px;color:var(--ink);font-weight:700}.stat .hp{color:var(--hp-deep)}
+  .statetog{display:flex;gap:3px;background:var(--glass);border:1px solid var(--glass-brd);border-radius:11px;padding:3px;box-shadow:var(--sh)}
+  .statetog button{font-size:12px;font-weight:700;color:var(--muted);background:none;border:0;padding:7px 14px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:6px;font-family:var(--sans)}
+  .statetog button.on{background:linear-gradient(180deg,#1cb2ed,#0079b8);color:#fff;box-shadow:0 4px 12px -4px var(--glow)}
+  .statetog .d{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+  .flow{padding:28px 22px 24px;overflow-x:auto}
+  .flowrow{display:flex;align-items:flex-start;min-width:980px}
+  .node{flex:0 0 auto;width:112px;display:flex;flex-direction:column;align-items:center;gap:8px;text-align:center}
+  .node .box{width:62px;height:62px;border-radius:17px;display:grid;place-items:center;border:1px solid var(--hair);background:rgba(255,255,255,.55);position:relative;transition:.3s;box-shadow:0 6px 16px -10px rgba(8,84,140,.4)}
+  .node .box svg{width:25px;height:25px;stroke:var(--faint);transition:.3s}
+  .node .lab{font-family:var(--mono);font-size:10px;color:var(--faint);line-height:1.25}.node .ms{font-family:var(--mono);font-size:9px;color:var(--faint)}
+  .node.done .box{border-color:rgba(16,185,129,.45);background:linear-gradient(160deg,rgba(16,185,129,.16),rgba(255,255,255,.6))}
+  .node.done .box svg{stroke:var(--ok)}.node.done .lab{color:var(--muted)}.node.done .ms{color:var(--ok)}
+  .node.act .box{border-color:var(--hp);background:linear-gradient(160deg,rgba(0,150,214,.25),rgba(255,255,255,.6));box-shadow:0 0 0 4px rgba(0,150,214,.14),0 8px 26px -6px var(--glow);animation:pulse 1.7s infinite}
+  .node.act .box svg{stroke:var(--hp-deep)}.node.act .lab{color:var(--hp-deep);font-weight:700}.node.act .ms{color:var(--hp-deep)}
+  .node .ring{position:absolute;inset:-5px;border-radius:20px;border:1.5px solid var(--hp);opacity:0}.node.act .ring{animation:ring 1.7s infinite}
+  .edge{flex:1;height:2px;min-width:24px;background:#c4d6e3;position:relative;margin:31px -2px 0;border-radius:2px}
+  .edge.done{background:rgba(16,185,129,.5)}.edge.flow-anim{background:linear-gradient(90deg,rgba(16,185,129,.45),rgba(0,150,214,.55))}
+  .edge.flow-anim::after{content:"";position:absolute;top:-2px;left:0;width:18px;height:6px;border-radius:4px;background:var(--hp);box-shadow:0 0 12px var(--glow);animation:travel 1.4s linear infinite}
+
+  /* sub-nav + grouped report */
+  .subnav{position:sticky;top:60px;z-index:15;display:flex;gap:7px;flex-wrap:wrap;padding:14px 0 12px;margin:14px 0 4px;background:linear-gradient(180deg,var(--ground) 60%,transparent)}
+  .subnav a{font-family:var(--mono);font-size:11px;padding:7px 13px;border-radius:20px;border:1px solid var(--hair);background:var(--glass);color:var(--muted);cursor:pointer;text-decoration:none;transition:.15s}
+  .subnav a:hover{color:var(--ink)}.subnav a.on{background:var(--hp);color:#fff;border-color:var(--hp)}
+  .group{margin-bottom:24px;scroll-margin-top:120px}
+  .grouphead{display:flex;align-items:center;gap:10px;margin:0 2px 13px}
+  .grouphead .gi{width:27px;height:27px;border-radius:9px;background:rgba(0,150,214,.12);display:grid;place-items:center;color:var(--hp-deep)}
+  .grouphead .gi svg{width:15px;height:15px}
+  .grouphead h4{margin:0;font-size:14px;font-weight:700}
+  .grouphead .gn{margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--faint)}
+
+  .kv{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+  .kv .c{padding:11px;border:1px solid var(--hair);border-radius:11px;background:rgba(255,255,255,.5)}
+  .kv .c .l{font-family:var(--mono);font-size:9px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+  .kv .c .v{font-size:14px;font-weight:700;margin-top:5px}.kv .c .v.mono{font-family:var(--mono);font-size:13px;color:var(--hp-deep)}
+  .chiprow{display:flex;gap:10px;align-items:flex-start;padding:11px 0;border-bottom:1px solid var(--hair)}
+  .chiprow:last-child{border-bottom:0}
+  .chiprow .rl{font-family:var(--mono);font-size:9px;text-transform:uppercase;letter-spacing:.1em;color:var(--faint);flex:0 0 96px;padding-top:6px}
+  .chiprow .rv{flex:1}
+  .pill{display:inline-block;font-family:var(--mono);font-size:10px;padding:5px 10px;border-radius:20px;background:rgba(0,150,214,.1);color:var(--hp-deep);margin:0 5px 5px 0}
+  .pill.alt{background:rgba(16,185,129,.12);color:#0a7d56}
+  .stk{display:flex;align-items:center;gap:10px;padding:10px 9px;border-bottom:1px solid var(--hair);border-radius:9px;transition:.15s}.stk:last-child{border-bottom:0}
+  .stk:hover{background:rgba(0,150,214,.06)}
+  .stk.on{background:rgba(0,150,214,.1);box-shadow:inset 3px 0 0 var(--hp);border-bottom-color:transparent}
+  .stk .av{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#dcebf6,#b9dcf0);display:grid;place-items:center;font-family:var(--mono);font-size:11px;color:var(--hp-deep);border:1px solid var(--hair);flex:0 0 32px;font-weight:700}
+  .stk .who b{font-size:12.5px}.stk .who small{display:block;font-family:var(--mono);font-size:9.5px;color:var(--faint)}
+  .stk .role{font-family:var(--mono);font-size:9px;color:var(--hp-deep);border:1px solid rgba(0,150,214,.3);border-radius:5px;padding:2px 6px;margin-left:auto;background:rgba(0,150,214,.07)}
+  .stk .ch{display:flex;gap:4px;margin-left:9px}
+  .stk .ch i{width:19px;height:19px;border-radius:6px;display:grid;place-items:center;font-family:var(--mono);font-size:9px;border:1px solid var(--hair);color:var(--faint);font-style:normal}
+  .stk .ch i.has{color:var(--ok);border-color:rgba(16,185,129,.4);background:rgba(16,185,129,.08)}.stk .ch i.no{opacity:.35}
+  ul.clean{margin:0;padding:0;list-style:none}ul.clean li{padding:9px 0;border-bottom:1px solid var(--hair);font-size:12.5px;color:var(--muted)}ul.clean li:last-child{border-bottom:0}
+  ul.clean li b{color:var(--ink);font-weight:600;display:block;margin-bottom:2px}ul.clean li .why{font-family:var(--mono);font-size:10px;color:var(--faint)}
+  .news{display:flex;gap:10px;padding:9px 0;border-bottom:1px solid var(--hair)}.news:last-child{border-bottom:0}
+  .news .dt{font-family:var(--mono);font-size:9px;color:var(--faint);flex:0 0 50px}.news .hl{font-size:12px;color:var(--ink)}.news .hl small{display:block;color:var(--muted);font-size:11px;margin-top:2px}
+  .lk2{font-family:var(--mono);font-size:11px;color:var(--hp);text-decoration:none;display:flex;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--hair)}.lk2:last-child{border-bottom:0}.lk2 .ar{margin-left:auto;opacity:.6}
+  .await{font-family:var(--mono);font-size:10.5px;color:var(--faint);display:flex;align-items:center;gap:8px;padding:6px 0}.await .d{width:6px;height:6px;border-radius:50%;background:var(--hp);animation:pulse 1.4s infinite}
+  .skel{height:12px;border-radius:6px;background:linear-gradient(90deg,rgba(255,255,255,.3),rgba(0,150,214,.12),rgba(255,255,255,.3));background-size:200% 100%;animation:shim 1.5s infinite;margin:8px 0}
+
+  .cost .total{font-family:var(--mono);font-size:28px;font-weight:700;color:var(--hp-deep)}.cost .total small{font-size:13px;color:var(--muted);font-weight:400}
+  .costbar{display:flex;height:10px;border-radius:6px;overflow:hidden;border:1px solid var(--hair);margin:10px 0}.costbar i{height:100%}
+  .costleg .r{display:flex;align-items:center;gap:8px;font-family:var(--mono);font-size:11px;color:var(--muted);padding:3px 0}.costleg .r .sw2{width:9px;height:9px;border-radius:3px}.costleg .r .a{margin-left:auto;color:var(--ink)}
+  .log{font-family:var(--mono);font-size:11px;max-height:300px;overflow-y:auto}.log .ln{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid var(--hair);animation:rise .35s ease}.log .ln .t{color:var(--faint);flex:0 0 44px}.log .ln .m{color:var(--muted)}.log .ln .m b{color:var(--ink);font-weight:600}.log .ln.hi .m b{color:var(--hp-deep)}
+
+  .actions{display:flex;gap:11px;margin-top:6px}
+  .btn{flex:1;text-align:center;padding:14px;border-radius:13px;font-weight:700;font-size:13.5px;cursor:pointer;border:1px solid var(--hair);text-decoration:none;background:var(--glass)}
+  .btn.prime{background:linear-gradient(180deg,#1cb2ed,#0079b8);color:#fff;border:0;box-shadow:0 10px 24px -8px var(--glow)}.btn.ghost{color:var(--muted)}.btn.disabled{opacity:.45;pointer-events:none}.btn:hover{filter:brightness(1.05)}
+
+  /* docs */
+  .docwrap{display:grid;grid-template-columns:1fr 320px;gap:18px}
+  .webmap svg{width:100%;height:340px}
+  .map-node rect{fill:rgba(255,255,255,.7);stroke:var(--hp);stroke-width:1.3;cursor:pointer;transition:.2s}
+  .map-node:hover rect,.map-node.on rect{fill:var(--hp);}
+  .map-node text{font-family:var(--mono);font-size:11px;fill:var(--hp-deep);font-weight:600;pointer-events:none}
+  .map-node:hover text,.map-node.on text{fill:#fff}
+  .map-node.hub rect{fill:linear} .map-node.hub rect{fill:rgba(0,150,214,.14)}
+  .map-edge{stroke:var(--hp);stroke-width:1.4;stroke-dasharray:7 5;opacity:.45;animation:dash 3s linear infinite;fill:none}
+  .docdesc{font-size:13px;color:var(--muted)}.docdesc h5{margin:0 0 8px;font-size:14px;color:var(--ink)}
+  .articles{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px}
+  .art{padding:16px;border:1px solid var(--hair);border-radius:16px;background:rgba(255,255,255,.5);cursor:pointer}
+  .art .at2{font-family:var(--mono);font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--faint)}
+  .art h5{margin:7px 0 6px;font-size:14px}.art p{margin:0;font-size:12px;color:var(--muted)}
+  .art .more{font-family:var(--mono);font-size:10px;color:var(--hp);margin-top:10px;display:inline-block}
+
+  /* header action buttons */
+  .hbtn{display:inline-flex;align-items:center;gap:6px;font-family:var(--mono);font-size:11px;font-weight:700;padding:9px 13px;border-radius:10px;border:1px solid var(--hair);background:var(--glass);color:var(--muted);cursor:pointer;text-decoration:none}
+  .hbtn.prime{background:linear-gradient(180deg,#1cb2ed,#0079b8);color:#fff;border:0;box-shadow:0 8px 20px -8px var(--glow)}
+  .hbtn.disabled{opacity:.4;pointer-events:none}.hbtn:hover{filter:brightness(1.06)}
+  .jobhead .right{flex-wrap:wrap;justify-content:flex-end}
+
+  /* contact dossier */
+  .ctabs{display:flex;gap:6px;flex-wrap:wrap;padding:2px 0 12px}
+  .ct{display:flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;padding:5px 11px 5px 5px;border-radius:22px;border:1px solid var(--hair);background:rgba(255,255,255,.5);cursor:pointer;color:var(--muted)}
+  .ct .av2{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#dcebf6,#b9dcf0);display:grid;place-items:center;font-size:9px;color:var(--hp-deep);font-weight:700}
+  .ct.on{background:var(--hp);color:#fff;border-color:var(--hp)}.ct.on .av2{background:rgba(255,255,255,.25);color:#fff}
+  .dossier .dh{display:flex;align-items:center;gap:12px;margin-bottom:12px}
+  .dossier .dh .av{width:44px;height:44px;border-radius:12px;background:linear-gradient(135deg,#dcebf6,#b9dcf0);display:grid;place-items:center;font-family:var(--mono);font-size:14px;color:var(--hp-deep);font-weight:700;border:1px solid var(--hair);flex:0 0 44px}
+  .dossier .dh b{font-size:15px}.dossier .dh small{display:block;font-family:var(--mono);font-size:10px;color:var(--faint)}
+  .dossier .dh .role{margin-left:auto;font-family:var(--mono);font-size:9px;color:var(--hp-deep);border:1px solid rgba(0,150,214,.3);border-radius:6px;padding:3px 8px;background:rgba(0,150,214,.07)}
+  .dossier .bio{font-size:12.5px;color:var(--muted);padding:12px;border:1px solid var(--hair);border-radius:11px;background:rgba(255,255,255,.45);margin-bottom:6px;line-height:1.55}
+  .dossier .bio .l{font-family:var(--mono);font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);display:block;margin-bottom:6px}
+
+  /* login */
+  /* transparent so the animated squiggle/orbs canvas shows through; the app is
+     hidden behind it while locked */
+  #login{position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;background:transparent}
+  .logincard{width:384px;max-width:90vw;border-radius:24px;border:1px solid var(--glass-brd);background:linear-gradient(140deg,rgba(255,255,255,.72),rgba(255,255,255,.52));backdrop-filter:blur(34px) saturate(180%);box-shadow:0 30px 80px -20px rgba(8,84,140,.5);padding:36px 32px;text-align:center}
+  .logincard .dot{width:56px;height:56px;border-radius:50%;margin:0 auto 18px;background:radial-gradient(circle at 34% 30%,#33b6ec,#0079b8);box-shadow:0 10px 26px -6px var(--glow),inset 0 1px 0 rgba(255,255,255,.6);display:grid;place-items:center;font-weight:800;font-size:19px;color:#fff;font-style:italic;letter-spacing:-.04em}
+  .logincard h1{margin:0;font-size:20px;font-weight:800;letter-spacing:-.01em}
+  .logincard p{margin:7px 0 22px;font-size:12.5px;color:var(--muted)}
+  .logincard .err{color:var(--bad);font-family:var(--mono);font-size:11px;height:15px;margin-top:9px}
+  .loginbtn{margin-top:14px;width:100%;border:0;border-radius:12px;padding:13px;font-weight:700;font-size:14px;color:#fff;cursor:pointer;background:linear-gradient(180deg,#1cb2ed,#0079b8);box-shadow:0 10px 24px -8px var(--glow)}
+  .loginbtn:hover{filter:brightness(1.06)}
+
+  /* signout */
+  .signout{display:flex;align-items:center;justify-content:center;gap:9px;width:100%;margin-top:auto;padding:10px 12px;border-radius:11px;border:1px solid var(--hair);background:rgba(255,255,255,.5);color:var(--muted);font-weight:600;font-size:13px;cursor:pointer;font-family:var(--sans)}
+  .signout:hover{color:var(--bad);border-color:rgba(239,68,68,.3)}
+  .signout svg{width:16px;height:16px}
+
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+  @keyframes ring{0%{transform:scale(1);opacity:.55}100%{transform:scale(1.35);opacity:0}}
+  @keyframes travel{0%{left:-18px}100%{left:100%}}
+  @keyframes rise{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  @keyframes shim{0%{background-position:200% 0}100%{background-position:-200% 0}}
+  @keyframes dash{to{stroke-dashoffset:-24}}
+  @media (prefers-reduced-motion:reduce){*{animation:none!important}}
+  @media (max-width:1150px){.ca-grid,.sellers,.articles{grid-template-columns:repeat(2,1fr)}.docwrap{grid-template-columns:1fr}.kv{grid-template-columns:repeat(2,1fr)}}
+</style>
+
+<canvas id="bg"></canvas>
+<aside class="rail">
+  <div class="brand"><div class="dot">hp</div><div><b>RAD Desk</b><small>Intelligence Ops</small></div></div>
+  <nav class="nav" id="nav">
+    <a class="on" data-v="home"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M3 11l9-8 9 8M5 10v10h14V10"/></svg>Home</a>
+    <a data-v="jobs"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/></svg>Jobs</a>
+    <a data-v="sellers"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0112 0M16 7a3 3 0 010 6M21 20a5 5 0 00-7-4.5"/></svg>Sellers</a>
+    <a data-v="content"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5M10 13h6M10 17h6"/></svg>Content Audit</a>
+    <a data-v="docs"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 5a2 2 0 012-2h8l4 4v12a2 2 0 01-2 2H6a2 2 0 01-2-2z"/><path d="M9 8h4M9 12h6M9 16h6"/></svg>Documentation</a>
+  </nav>
+  <button class="signout" onclick="signout()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M16 17l5-5-5-5M21 12H9M9 3H6a2 2 0 00-2 2v14a2 2 0 002 2h3"/></svg>Sign out</button>
+  <div class="foot">v3.1 · build qa11<br>radportal.vercel.app</div>
+</aside>
+
+<div class="main">
+  <header class="bar">
+    <span class="title" id="bartitle">Dashboard <small>· today</small></span>
+    <div class="telem">
+      <span class="chip"><span class="live-dot"></span><b>2</b> running</span>
+      <span class="chip">today <b>$3.71</b></span>
+      <span class="chip bell">⚠ <b>3</b> alerts</span>
+    </div>
+  </header>
+
+  <div class="canvas">
+    <!-- ===== HOME ===== -->
+    <section class="view on" id="view-home">
+      <div class="grid-home">
+        <div class="col">
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">01 · Intake</span><h3>New profile</h3></div>
+            <div class="pb">
+              <label>Company name</label><input class="inp" value="Microsoft"/>
+              <div class="two"><div><label>Domain</label><input class="inp" value="microsoft.com"/></div><div><label>Industry</label><input class="inp" value="Technology"/></div></div>
+              <div class="two"><div><label>Requested by</label><input class="inp" value="v-jahuan@…"/></div><div><label>Seller</label><input class="inp" value="Jason Huang"/></div></div>
+              <div class="toggle"><span>Canada-only contacts</span><div class="sw" onclick="this.classList.toggle('on')"></div></div>
+              <button class="launch" onclick="openJob()">⚡ Launch profile</button>
+            </div>
+          </div>
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">Triage</span><h3>Inbox</h3><span class="n">3 new</span></div>
+            <div class="pb">
+              <div class="alert ok"><div class="ai">✓</div><div class="at"><b>BC Liquor</b> deck ready<small>4 contacts · $0.29</small></div><a class="go">View</a></div>
+              <div class="alert bad"><div class="ai">✕</div><div class="at"><b>Acme Corp</b> failed<small>ZoomInfo: no domain match</small></div><a class="go">Retry</a></div>
+              <div class="alert ok"><div class="ai">✓</div><div class="at"><b>Sun Life</b> deck ready<small>4 contacts · $0.44</small></div><a class="go">View</a></div>
+            </div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">Live</span><h3>In progress</h3><span class="n">2 jobs</span></div>
+            <div class="pb">
+              <div class="jobc" onclick="openJob()"><div class="top"><b>Microsoft</b><span class="dom">microsoft.com</span><span class="meta">02:14 elapsed</span></div>
+                <div class="strip"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="act"></i><i></i><i></i><i></i></div>
+                <div class="sub"><span class="st">▸ Stage 6/9 · LLM Council</span><span class="ct">$0.31</span></div></div>
+              <div class="jobc"><div class="top"><b>Sysco</b><span class="dom">sysco.com</span><span class="meta">04:02 elapsed</span></div>
+                <div class="strip"><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="done"></i><i class="act"></i><i></i></div>
+                <div class="sub"><span class="st">▸ Stage 8/9 · Rendering deck</span><span class="ct">$0.52</span></div></div>
+            </div>
+          </div>
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">History</span><h3>Recent activity</h3><span class="n">synced · all devices</span></div>
+            <div class="pb" style="padding-top:0"><table>
+              <thead><tr><th>Company</th><th>Seller</th><th>Status</th><th>Contacts</th><th>Cost</th><th>When</th></tr></thead>
+              <tbody>
+                <tr><td><b>BC Liquor Distribution</b></td><td>Jason H.</td><td><span class="badge done"><span class="d"></span>Done</span></td><td>4 / 4 ✓</td><td class="cost">$0.29</td><td>2m</td></tr>
+                <tr><td><b>Sun Life Financial</b></td><td>Jason H.</td><td><span class="badge done"><span class="d"></span>Done</span></td><td>4 / 4 ✓</td><td class="cost">$0.44</td><td>14m</td></tr>
+                <tr><td><b>Microsoft</b></td><td>Jason H.</td><td><span class="badge run"><span class="d"></span>Running</span></td><td>4 / 6</td><td class="cost">$0.31</td><td>now</td></tr>
+                <tr><td><b>Acme Corp</b></td><td>Dana P.</td><td><span class="badge fail"><span class="d"></span>Failed</span></td><td>—</td><td class="cost">$0.02</td><td>21m</td></tr>
+                <tr><td><b>Shopify</b></td><td>Dana P.</td><td><span class="badge done"><span class="d"></span>Done</span></td><td>4 / 4 ✓</td><td class="cost">$0.38</td><td>1h</td></tr>
+              </tbody>
+            </table></div>
+          </div>
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">Team</span><h3>Seller overview</h3></div>
+            <div class="pb"><div class="sellers">
+              <div class="seller"><div class="nm">Jason Huang</div><div class="ro">Enterprise</div><div class="big">24</div><div class="lbl">jobs run</div><div class="spark"><i style="height:40%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:90%"></i><i style="height:75%"></i><i style="height:100%"></i></div><div class="ftr"><span>$9.14</span><b>96%</b></div></div>
+              <div class="seller"><div class="nm">Dana Park</div><div class="ro">Mid-market</div><div class="big">17</div><div class="lbl">jobs run</div><div class="spark"><i style="height:60%"></i><i style="height:35%"></i><i style="height:80%"></i><i style="height:50%"></i><i style="height:65%"></i><i style="height:45%"></i></div><div class="ftr"><span>$6.02</span><b>88%</b></div></div>
+              <div class="seller"><div class="nm">Omar Reyes</div><div class="ro">SLED</div><div class="big">11</div><div class="lbl">jobs run</div><div class="spark"><i style="height:50%"></i><i style="height:55%"></i><i style="height:70%"></i><i style="height:60%"></i><i style="height:85%"></i><i style="height:75%"></i></div><div class="ftr"><span>$3.88</span><b>91%</b></div></div>
+              <div class="seller"><div class="nm">Priya Singh</div><div class="ro">Enterprise</div><div class="big">19</div><div class="lbl">jobs run</div><div class="spark"><i style="height:45%"></i><i style="height:60%"></i><i style="height:50%"></i><i style="height:78%"></i><i style="height:62%"></i><i style="height:88%"></i></div><div class="ftr"><span>$7.41</span><b>94%</b></div></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== JOBS ===== -->
+    <section class="view" id="view-jobs">
+      <div class="filters"><span class="f on">All · 38</span><span class="f">Running · 2</span><span class="f">Completed · 33</span><span class="f">Failed · 3</span><span class="f" style="margin-left:auto">Total spend · $41.20</span></div>
+      <div class="panel"><div class="pb" style="padding-top:14px"><table>
+        <thead><tr><th>Company</th><th>Domain</th><th>Seller</th><th>Status</th><th>Stage</th><th>Contacts</th><th>Cost</th><th>Created</th><th>Deck</th></tr></thead>
+        <tbody>
+          <tr onclick="openJob()" style="cursor:pointer"><td><b>Microsoft</b></td><td>microsoft.com</td><td>Jason H.</td><td><span class="badge run"><span class="d"></span>Running</span></td><td>6/9 Council</td><td>4/6</td><td class="cost">$0.31</td><td>now</td><td>—</td></tr>
+          <tr><td><b>Sysco</b></td><td>sysco.com</td><td>Priya S.</td><td><span class="badge run"><span class="d"></span>Running</span></td><td>8/9 Render</td><td>5/5</td><td class="cost">$0.52</td><td>4m</td><td>—</td></tr>
+          <tr><td><b>BC Liquor Distribution</b></td><td>bcldb.com</td><td>Jason H.</td><td><span class="badge done"><span class="d"></span>Done</span></td><td>9/9</td><td>4/4</td><td class="cost">$0.29</td><td>6m</td><td><a class="lk2" style="border:0;padding:0">↗ pptx</a></td></tr>
+          <tr><td><b>Sun Life Financial</b></td><td>sunlife.com</td><td>Jason H.</td><td><span class="badge done"><span class="d"></span>Done</span></td><td>9/9</td><td>4/4</td><td class="cost">$0.44</td><td>14m</td><td><a class="lk2" style="border:0;padding:0">↗ pptx</a></td></tr>
+          <tr><td><b>Acme Corp</b></td><td>acme.com</td><td>Dana P.</td><td><span class="badge fail"><span class="d"></span>Failed</span></td><td>3/9</td><td>—</td><td class="cost">$0.02</td><td>21m</td><td>—</td></tr>
+          <tr><td><b>Shopify</b></td><td>shopify.com</td><td>Dana P.</td><td><span class="badge done"><span class="d"></span>Done</span></td><td>9/9</td><td>4/4</td><td class="cost">$0.38</td><td>1h</td><td><a class="lk2" style="border:0;padding:0">↗ pptx</a></td></tr>
+          <tr><td><b>Lululemon</b></td><td>lululemon.com</td><td>Omar R.</td><td><span class="badge done"><span class="d"></span>Done</span></td><td>9/9</td><td>4/4</td><td class="cost">$0.41</td><td>2h</td><td><a class="lk2" style="border:0;padding:0">↗ pptx</a></td></tr>
+        </tbody>
+      </table></div></div>
+    </section>
+
+    <!-- ===== SELLERS ===== -->
+    <section class="view" id="view-sellers">
+      <div class="row2" style="margin-bottom:18px">
+        <div class="panel"><div class="ph"><span class="eye"></span><span class="k">Team</span><h3>This month</h3></div><div class="pb"><div class="kv">
+          <div class="c"><div class="l">Jobs run</div><div class="v mono">71</div></div>
+          <div class="c"><div class="l">Success</div><div class="v mono">93%</div></div>
+          <div class="c"><div class="l">Spend</div><div class="v mono">$26.45</div></div>
+        </div></div></div>
+        <div class="panel"><div class="ph"><span class="eye"></span><span class="k">Trend</span><h3>Spend / day</h3></div><div class="pb"><div class="spark" style="height:64px"><i style="height:30%"></i><i style="height:55%"></i><i style="height:45%"></i><i style="height:70%"></i><i style="height:60%"></i><i style="height:85%"></i><i style="height:50%"></i><i style="height:95%"></i><i style="height:65%"></i><i style="height:78%"></i><i style="height:88%"></i><i style="height:100%"></i></div></div></div>
+      </div>
+      <div class="sellers" style="grid-template-columns:repeat(3,1fr)">
+        <div class="seller"><div class="nm">Jason Huang</div><div class="ro">Enterprise</div><div class="big">24</div><div class="lbl">jobs run</div><div class="spark"><i style="height:40%"></i><i style="height:70%"></i><i style="height:55%"></i><i style="height:90%"></i><i style="height:75%"></i><i style="height:100%"></i></div><div class="ftr"><span>$9.14 spend</span><b>96%</b></div></div>
+        <div class="seller"><div class="nm">Dana Park</div><div class="ro">Mid-market</div><div class="big">17</div><div class="lbl">jobs run</div><div class="spark"><i style="height:60%"></i><i style="height:35%"></i><i style="height:80%"></i><i style="height:50%"></i><i style="height:65%"></i><i style="height:45%"></i></div><div class="ftr"><span>$6.02 spend</span><b>88%</b></div></div>
+        <div class="seller"><div class="nm">Omar Reyes</div><div class="ro">SLED</div><div class="big">11</div><div class="lbl">jobs run</div><div class="spark"><i style="height:50%"></i><i style="height:55%"></i><i style="height:70%"></i><i style="height:60%"></i><i style="height:85%"></i><i style="height:75%"></i></div><div class="ftr"><span>$3.88 spend</span><b>91%</b></div></div>
+      </div>
+    </section>
+
+    <!-- ===== CONTENT AUDIT ===== -->
+    <section class="view" id="view-content">
+      <div class="filters"><span class="f on">All · 54</span><span class="f">Awareness</span><span class="f">Consideration</span><span class="f">Decision</span><span class="f">Technology</span><span class="f">Insurance</span></div>
+      <div class="ca-grid">
+        <div class="asset"><div class="thumb">📄</div><div class="an">Future-proof your IT for anywhere work</div><div class="tags"><span class="tag">Awareness</span><span class="tag">Anywhere Work</span></div><a class="lk">↗ Open in DAM</a></div>
+        <div class="asset"><div class="thumb">🪟</div><div class="an">HP Workforce Experience: Windows 11 Readiness</div><div class="tags"><span class="tag">Consideration</span><span class="tag">Endpoint</span></div><a class="lk">↗ Open in DAM</a></div>
+        <div class="asset"><div class="thumb">⚡</div><div class="an">High-performance power from anywhere</div><div class="tags"><span class="tag">Proof</span><span class="tag">Workstations</span></div><a class="lk">↗ Open in DAM</a></div>
+        <div class="asset"><div class="thumb">🤖</div><div class="an">Maximize productivity with AI workstation laptops</div><div class="tags"><span class="tag">Decision</span><span class="tag">AI</span></div><a class="lk">↗ Open in DAM</a></div>
+        <div class="asset"><div class="thumb">🔐</div><div class="an">HP Wolf Security for endpoint protection</div><div class="tags"><span class="tag">Consideration</span><span class="tag">Security</span></div><a class="lk">↗ Open in DAM</a></div>
+        <div class="asset"><div class="thumb">📊</div><div class="an">Total cost of ownership: device lifecycle</div><div class="tags"><span class="tag">Decision</span><span class="tag">Finance</span></div><a class="lk">↗ Open in DAM</a></div>
+      </div>
+    </section>
+
+    <!-- ===== DOCUMENTATION ===== -->
+    <section class="view" id="view-docs">
+      <div class="docwrap">
+        <div class="panel webmap"><div class="ph"><span class="eye"></span><span class="k">Platform map</span><h3>How RAD works</h3><span class="n">click a node</span></div>
+          <div class="pb">
+            <svg viewBox="0 0 700 320" id="map">
+              <g id="edges"></g><g id="nodes"></g>
+            </svg>
+          </div>
+        </div>
+        <div class="panel"><div class="ph"><span class="eye"></span><span class="k">About</span><h3 id="dt">RAD Platform</h3></div>
+          <div class="pb"><p class="docdesc" id="dd">Your central hub for AI-powered company intelligence. A flag-gated v3.1 pipeline runs surgical contact discovery, a 28-specialist council, and exact-copy deck rendering. Click any node on the map to learn about it.</p></div>
+        </div>
+      </div>
+      <div class="articles">
+        <div class="art"><div class="at2">Guide</div><h5>Getting started</h5><p>Submit a company + domain and a seller. The pipeline runs automatically and a deck is ready in ~3 minutes.</p><span class="more">Read →</span></div>
+        <div class="art"><div class="at2">How it works</div><h5>The 9-stage pipeline</h5><p>Orchestrator → discovery → enrich → intel → council → formatter → render. Watch it live in the job view.</p><span class="more">Read →</span></div>
+        <div class="art"><div class="at2">People</div><h5>Reading the stakeholder map</h5><p>Relevance-first selection with an email + phone + LinkedIn reachability floor of 4 per deck.</p><span class="more">Read →</span></div>
+        <div class="art"><div class="at2">Reference</div><h5>API cost meter</h5><p>Every job tallies Anthropic tokens + ZoomInfo + web-search calls into a per-job cost you can audit.</p><span class="more">Read →</span></div>
+        <div class="art"><div class="at2">Admin</div><h5>Managing sellers</h5><p>Create sellers, set monthly job limits, and attribute every profile to the rep who requested it.</p><span class="more">Read →</span></div>
+        <div class="art"><div class="at2">Reference</div><h5>Canada-only mode</h5><p>Restrict contact discovery to Canada — no US/global fallback — for region-sensitive accounts.</p><span class="more">Read →</span></div>
+      </div>
+    </section>
+
+    <!-- ===== JOB VIEW ===== -->
+    <section class="view" id="view-job">
+      <div class="jobhead">
+        <a class="back" onclick="go('jobs')">← Queue</a>
+        <div><h2>Microsoft</h2><div class="dom">microsoft.com · prod-9f67…08aa · Jason Huang</div></div>
+        <div class="right">
+          <div class="statetog"><button class="on" id="t-live" onclick="setState(false)"><span class="d"></span>Live</button><button id="t-done" onclick="setState(true)">✓ Completed</button></div>
+          <div class="stat">stage<b id="stagecount">6 / 9</b></div>
+          <div class="stat">elapsed<b id="elapsed">02:14</b></div>
+          <div class="stat">api cost<b class="hp" id="costhead">$0.31</b></div>
+          <a class="hbtn prime disabled" id="deckbtn">▸ Slideshow</a>
+          <a class="hbtn disabled" id="debugbtn">⚙ Debug</a>
+        </div>
+      </div>
+
+      <div class="panel"><div class="ph"><span class="eye"></span><span class="k">Pipeline</span><h3>Live execution</h3><span class="n" id="flowstate">running · stage 6/9</span></div>
+        <div class="flow"><div class="flowrow" id="flowrow"></div></div>
+      </div>
+
+      <div class="subnav" id="subnav">
+        <a class="on" data-g="g-company">Company</a><a data-g="g-people">People</a><a data-g="g-signals">Signals &amp; News</a><a data-g="g-strategy">Strategy</a><a data-g="g-tech">Technographics</a><a data-g="g-trace">Trace &amp; cost</a>
+      </div>
+
+      <!-- COMPANY -->
+      <div class="group" id="g-company">
+        <div class="grouphead"><div class="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-6h6v6"/></svg></div><h4>Company</h4><span class="gn">firmographics · validated</span></div>
+        <div class="grid2">
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">01</span><h3>Executive snapshot</h3></div><div class="pb"><div class="kv">
+            <div class="c"><div class="l">Account</div><div class="v">Public</div></div>
+            <div class="c"><div class="l">Revenue</div><div class="v mono">$245.1B</div></div>
+            <div class="c"><div class="l">Employees</div><div class="v mono">228,000</div></div>
+            <div class="c"><div class="l">IT spend</div><div class="v mono">$18–30B</div></div>
+            <div class="c"><div class="l">HQ</div><div class="v">Redmond, WA</div></div>
+            <div class="c"><div class="l">Industry</div><div class="v">Technology</div></div>
+          </div></div></div>
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">08·09·10</span><h3>Profile</h3></div><div class="pb">
+            <div class="chiprow"><span class="rl">Segments</span><span class="rv"><span class="pill">Enterprise IT</span><span class="pill">Developers</span><span class="pill">Public sector</span><span class="pill">SMB</span><span class="pill">Education</span></span></div>
+            <div class="chiprow"><span class="rl">Geography</span><span class="rv"><span class="pill">Global · 190+ countries</span><span class="pill">60+ data-center regions</span></span></div>
+            <div class="chiprow"><span class="rl">Products</span><span class="rv"><span class="pill alt">Azure</span><span class="pill alt">M365</span><span class="pill alt">Copilot</span><span class="pill alt">Dynamics</span><span class="pill alt">Surface</span></span></div>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- PEOPLE -->
+      <div class="group" id="g-people">
+        <div class="grouphead"><div class="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="8" r="3"/><path d="M3 20a6 6 0 0112 0M17 8a3 3 0 010 6"/></svg></div><h4>People</h4><span class="gn">stakeholders · 4 reachable</span></div>
+        <div class="grid2">
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">02</span><h3>Stakeholder map</h3><span class="n" id="stk-n">3 contacts</span></div><div class="pb" style="padding-top:8px"><div id="stkmap"></div></div></div>
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">07</span><h3>Contact dossier</h3><span class="n">← select from the map</span></div><div class="pb">
+            <div class="dossier" id="dossier"></div>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- SIGNALS -->
+      <div class="group" id="g-signals">
+        <div class="grouphead"><div class="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 12h4l3 8 4-16 3 8h4"/></svg></div><h4>Signals &amp; News</h4><span class="gn">intent · triggers</span></div>
+        <div class="grid2">
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">03</span><h3>Buying signals</h3></div><div class="pb">
+            <div class="chiprow"><span class="rl">Active intent</span><span class="rv"><span class="pill">AI infrastructure</span><span class="pill">Endpoint security</span><span class="pill">Cloud migration</span><span class="pill">Copilot</span></span></div>
+            <ul class="clean"><li><b>Active intent surge — AI/ML</b><span class="why">consuming AI infra + security content; internal evaluation likely</span></li></ul>
+          </div></div>
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">05</span><h3>News intelligence</h3></div><div class="pb">
+            <div class="news"><div class="dt">Jun 18</div><div class="hl">Microsoft–Chevron AI infrastructure deal<small>Signals data-center / AI compute expansion</small></div></div>
+            <div class="news"><div class="dt">Jun 11</div><div class="hl">Work IQ APIs now generally available<small>Build on the Work IQ graph</small></div></div>
+            <div class="news"><div class="dt">Jun 03</div><div class="hl">Copilot expanded across M365 enterprise<small>Productivity-AI push deepens</small></div></div>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- STRATEGY -->
+      <div class="group" id="g-strategy">
+        <div class="grouphead"><div class="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 2l3 7 7 .5-5.5 4.5 2 7L12 17l-6.5 4 2-7L2 9.5 9 9z"/></svg></div><h4>Strategy</h4><span class="gn">council output</span></div>
+        <div class="grid2">
+          <div class="panel" id="p-themes"><div class="ph"><span class="eye"></span><span class="k">04</span><h3>Opportunity themes</h3><span class="n" id="themes-n">council running…</span></div><div class="pb" id="themes-body">
+            <div class="await"><span class="d"></span>28 specialists deliberating</div><div class="skel" style="width:90%"></div><div class="skel" style="width:72%"></div><div class="skel" style="width:84%"></div>
+          </div></div>
+          <div class="panel" id="p-program"><div class="ph"><span class="eye"></span><span class="k">06</span><h3>Recommended sales program</h3><span class="n" id="prog-n">pending</span></div><div class="pb" id="prog-body">
+            <div class="await"><span class="d"></span>awaiting council + content match</div><div class="skel" style="width:80%"></div><div class="skel" style="width:88%"></div>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- TECHNOGRAPHICS -->
+      <div class="group" id="g-tech">
+        <div class="grouphead"><div class="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="4" y="4" width="16" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></div><h4>Technographics</h4><span class="gn">stack · competitive set</span></div>
+        <div class="grid2">
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">11</span><h3>Installed technologies</h3></div><div class="pb">
+            <span class="pill">Azure AD</span><span class="pill">ServiceNow</span><span class="pill">Salesforce</span><span class="pill">SAP</span><span class="pill">Workday</span><span class="pill">Okta</span><span class="pill">Splunk</span>
+          </div></div>
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">12</span><h3>Competitors</h3></div><div class="pb">
+            <span class="pill">AWS</span><span class="pill">Google Cloud</span><span class="pill">Oracle</span><span class="pill">Salesforce</span><span class="pill">IBM</span><span class="pill">ServiceNow</span>
+          </div></div>
+        </div>
+      </div>
+
+      <!-- TRACE -->
+      <div class="group" id="g-trace">
+        <div class="grouphead"><div class="gi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M4 4v16h16M8 16l3-4 3 2 4-6"/></svg></div><h4>Trace &amp; cost</h4><span class="gn">telemetry</span></div>
+        <div class="grid2">
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">Spend</span><h3>API cost meter</h3></div><div class="pb"><div class="cost">
+            <div class="total" id="costtotal">$0.31<small> / job</small></div>
+            <div class="costbar"><i style="width:62%;background:var(--hp)"></i><i style="width:26%;background:var(--hp-light)"></i><i style="width:12%;background:var(--warn)"></i></div>
+            <div class="costleg"><div class="r"><span class="sw2" style="background:var(--hp)"></span>Anthropic (Haiku/Sonnet/Opus)<span class="a">$0.192</span></div><div class="r"><span class="sw2" style="background:var(--hp-light)"></span>ZoomInfo (search + enrich)<span class="a">$0.081</span></div><div class="r"><span class="sw2" style="background:var(--warn)"></span>Web search<span class="a">$0.037</span></div></div>
+          </div></div></div>
+          <div class="panel"><div class="ph"><span class="eye"></span><span class="k">Trace</span><h3>Audit log</h3><span class="n" id="logn">live</span></div><div class="pb"><div class="log" id="log"></div></div></div>
+        </div>
+      </div>
+
+    </section>
+  </div>
+</div>
+
+<div id="login">
+  <div class="logincard">
+    <div class="dot">hp</div>
+    <h1>RAD Intelligence Desk</h1>
+    <p>Enter the access code to continue.</p>
+    <input class="inp" id="pw" type="password" placeholder="Access code" autocomplete="off" style="text-align:center;font-family:var(--mono)"/>
+    <div class="err" id="lerr"></div>
+    <button class="loginbtn" onclick="tryLogin()">Enter</button>
+  </div>
+</div>
+
+<script>
+const titles={home:'Dashboard <small>· today</small>',jobs:'Jobs <small>· queue</small>',sellers:'Sellers <small>· team</small>',content:'Content Audit <small>· 54 assets</small>',docs:'Documentation',job:'Microsoft <small>· live</small>'};
+function go(v){
+  document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id==='view-'+v));
+  document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
+  document.getElementById('bartitle').innerHTML=titles[v]||titles.home;
+  scrollTo(0,0);
+}
+document.querySelectorAll('#nav a').forEach(a=>a.onclick=()=>go(a.dataset.v));
+function openJob(){document.querySelectorAll('.view').forEach(s=>s.classList.toggle('on',s.id==='view-job'));document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v==='jobs'));document.getElementById('bartitle').innerHTML=titles.job;scrollTo(0,0);}
+
+// sub-nav scroll
+document.querySelectorAll('#subnav a').forEach(a=>a.onclick=()=>{
+  document.querySelectorAll('#subnav a').forEach(x=>x.classList.toggle('on',x===a));
+  document.getElementById(a.dataset.g).scrollIntoView({behavior:'smooth',block:'start'});
+});
+
+// flowchart
+const STAGES=[['Initialize','M12 2v6m0 8v6M2 12h6m8 0h6'],['Orchestrator','M4 6h16M4 12h10M4 18h7'],['Contact Discovery','M21 21l-4.3-4.3M11 18a7 7 0 100-14 7 7 0 000 14z'],['Enrich & Validate','M9 12l2 2 4-4M12 2l8 4v6c0 5-3.5 8-8 10-4.5-2-8-5-8-10V6z'],['Company Intel','M3 12h4l3 8 4-16 3 8h4'],['LLM Council','M12 3l8 4.5v9L12 21l-8-4.5v-9zM12 3v18'],['Formatter','M4 5h16M4 12h16M4 19h10'],['Deck Render','M3 4h18v12H3zM8 20h8M12 16v4'],['Complete','M5 13l4 4L19 7']];
+const MS=['00:08','00:21','01:02','01:31','01:58','02:58','03:30','03:41','03:41'];
+let active=5;
+function renderFlow(){
+  const row=document.getElementById('flowrow');row.innerHTML='';
+  STAGES.forEach((s,i)=>{
+    if(i>0){const e=document.createElement('div');e.className='edge '+(i<active?'done':(i===active?'flow-anim':''));row.appendChild(e);}
+    const cls=i<active?'done':(i===active?'act':'');const n=document.createElement('div');n.className='node '+cls;
+    n.innerHTML='<div class="box"><div class="ring"></div><svg viewBox="0 0 24 24" fill="none" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="'+s[1]+'"/></svg></div><div class="lab">'+s[0]+'</div><div class="ms">'+(i<active?MS[i]:(i===active?'running':'queued'))+'</div>';
+    row.appendChild(n);
+  });
+}
+renderFlow();
+const log=document.getElementById('log');
+[['02:14','LLM Council started — <b>28 specialists</b>',1],['02:08','Selected <b>4 contacts</b> · reachability floor met',0],['02:06','ZoomInfo enrich-by-name → Kevin Scott <b>email ✓</b>',0],['02:01','ZoomInfo search · <b>47 candidates</b>',0],['01:32','Orchestrator → ZoomInfo (primary)',0]].forEach(l=>addLog(l[0],l[1],l[2]));
+function addLog(t,m,hi){const d=document.createElement('div');d.className='ln'+(hi?' hi':'');d.innerHTML='<span class="t">'+t+'</span><span class="m">'+m+'</span>';log.prepend(d);}
+function setState(done){
+  active=done?9:5;renderFlow();
+  document.getElementById('t-live').classList.toggle('on',!done);document.getElementById('t-done').classList.toggle('on',done);
+  document.getElementById('deckbtn').classList.toggle('disabled',!done);document.getElementById('debugbtn').classList.toggle('disabled',!done);
+  document.getElementById('flowstate').textContent=done?'complete · 9/9 · 03:41':'running · stage 6/9';
+  document.getElementById('stagecount').textContent=done?'9 / 9':'6 / 9';
+  document.getElementById('elapsed').textContent=done?'03:41':'02:14';
+  document.getElementById('costhead').textContent=done?'$0.42':'$0.31';
+  document.getElementById('costtotal').innerHTML=(done?'$0.42':'$0.31')+'<small> / job</small>';
+  document.getElementById('logn').textContent=done?'37 events':'live';
+  document.getElementById('themes-n').textContent=done?'3 themes':'council running…';
+  document.getElementById('themes-body').innerHTML=done?'<ul class="clean"><li><b>Scale AI across 228k employees</b><span class="why">Copilot + AI workflows org-wide; device readiness gap</span></li><li><b>Endpoint security at fleet scale</b><span class="why">harden posture across a massive device estate</span></li><li><b>Standardize the device lifecycle</b><span class="why">consistent refresh + provisioning to cut TCO</span></li></ul>':'<div class="await"><span class="d"></span>28 specialists deliberating</div><div class="skel" style="width:90%"></div><div class="skel" style="width:72%"></div><div class="skel" style="width:84%"></div>';
+  document.getElementById('prog-n').textContent=done?'4 steps':'pending';
+  document.getElementById('prog-body').innerHTML=done?'<ul class="clean"><li><b>1 · Build awareness</b><span class="why">Future-proof your IT for anywhere work</span></li><li><b>2 · Frame challenges</b><span class="why">HP Workforce Experience: Win 11 readiness</span></li><li><b>3 · Prove outcomes</b><span class="why">High-performance power from anywhere</span></li><li><b>4 · Enable decision</b><span class="why">AI workstation laptops one-pager</span></li></ul>':'<div class="await"><span class="d"></span>awaiting council + content match</div><div class="skel" style="width:80%"></div><div class="skel" style="width:88%"></div>';
+  hasCoo=done;renderPeople();
+  if(done){addLog('03:41','Deck → <b>hprad_microsoft_2026-06-24.pptx</b>',1);addLog('03:30','Formatter authored 9 slides',0);addLog('02:58','Council complete',0);}
+}
+
+// ---- contact dossier (tabbed bios) ----
+const CONTACTS=[
+  {init:'ND',name:"Nathalie D'Hers",role:'CIO',title:'Corporate VP · Microsoft Digital',email:'nathalie.dhers@microsoft.com',phone:'+1 425-882-8080',li:'linkedin.com/in/nathalie-dhers',bio:"Leads Microsoft Digital — the internal IT org that runs Microsoft on Microsoft. Owns enterprise IT strategy, employee digital experience, and the systems supporting 228,000 employees worldwide. Strongest entry point for device-fleet and endpoint conversations."},
+  {init:'KS',name:'Kevin Scott',role:'CTO',title:'Chief Technology Officer & EVP, AI',email:'kevin.scott@microsoft.com',phone:null,li:'linkedin.com/in/kevin-scott',bio:"Sets Microsoft's overall technology and AI direction and oversees the Copilot / AI platform. Engage on where AI workloads meet endpoint and workstation strategy. Reachable by email + LinkedIn; no direct line on file."},
+  {init:'BA',name:'Bonita Armstrong',role:'CFO',title:'Sr Manager, Operations · Office of the CEO',email:'bonita.armstrong@microsoft.com',phone:'+1 425-706-1000',li:'linkedin.com/in/bonita-armstrong',bio:"Surfaced for the CFO persona as the most reachable operations contact (full email + phone + LinkedIn). A warm operational entry point while pursuing the finance organization."}
+];
+const COO={init:'CD',name:'Carolina Dybeck Happe',role:'COO',title:'EVP & Chief Operating Officer',email:'carolina.dybeckhappe@microsoft.com',phone:'+1 425-882-8080',li:'linkedin.com/in/carolina-dybeck-happe',bio:"Runs global operations and the commercial engine across Microsoft. Resolved on completion via the web fallback + ZoomInfo enrich-by-name. Senior owner for operational-efficiency and device-lifecycle / TCO discussions."};
+let curC=0,hasCoo=false;
+function people(){return hasCoo?CONTACTS.concat([COO]):CONTACTS;}
+function renderPeople(){
+  const list=people();if(curC>=list.length)curC=0;
+  // clickable stakeholder map — drives the dossier on the right
+  const m=document.getElementById('stkmap');m.innerHTML='';
+  list.forEach((c,i)=>{
+    const r=document.createElement('div');r.className='stk'+(i===curC?' on':'');
+    r.innerHTML='<div class="av">'+c.init+'</div><div class="who"><b>'+c.name+'</b><small>'+c.title+'</small></div><span class="role">'+c.role+'</span><div class="ch"><i class="has">@</i>'+(c.phone?'<i class="has">☎</i>':'<i class="no">☎</i>')+'<i class="has">in</i></div>';
+    r.onclick=()=>{curC=i;renderPeople();};
+    m.appendChild(r);
+  });
+  if(!hasCoo){const w=document.createElement('div');w.className='stk';w.style.cursor='default';w.innerHTML='<div class="av">··</div><div class="who"><span class="await"><span class="d"></span>resolving COO contact…</span></div>';m.appendChild(w);}
+  document.getElementById('stk-n').textContent=list.length+' contacts';
+  // dossier for the selected contact (defaults to the first)
+  const c=list[curC];
+  document.getElementById('dossier').innerHTML=
+    '<div class="dh"><div class="av">'+c.init+'</div><div><b>'+c.name+'</b><small>'+c.title+'</small></div><span class="role">'+c.role+'</span></div>'+
+    '<div class="bio"><span class="l">About</span>'+c.bio+'</div>'+
+    '<a class="lk2">✉ '+c.email+' <span class="ar">↗</span></a>'+
+    (c.phone?'<a class="lk2">☎ '+c.phone+' <span class="ar">↗</span></a>':'<a class="lk2" style="opacity:.5;pointer-events:none">☎ no direct line on file</a>')+
+    '<a class="lk2">in '+c.li+' <span class="ar">↗</span></a>';
+}
+renderPeople();
+
+// ---- auth (mock) ----
+function lock(){document.querySelector('.rail').style.display='none';document.querySelector('.main').style.display='none';document.getElementById('login').style.display='flex';}
+function unlock(){document.querySelector('.rail').style.display='';document.querySelector('.main').style.display='';document.getElementById('login').style.display='none';}
+function tryLogin(){
+  const v=(document.getElementById('pw').value||'').trim().toLowerCase();
+  if(v==='radical rad'){unlock();document.getElementById('lerr').textContent='';}
+  else{document.getElementById('lerr').textContent="That access code isn't right — try again.";}
+}
+function signout(){document.getElementById('pw').value='';document.getElementById('lerr').textContent='';go('home');lock();}
+document.getElementById('pw').addEventListener('keydown',e=>{if(e.key==='Enter')tryLogin();});
+lock(); // start locked — app hidden, squiggle backdrop visible
+
+// ---- docs webmap ----
+const DN=[
+  {id:'platform',label:'RAD Platform',x:350,y:160,w:128,h:40,hub:1,d:'Your central hub for AI-powered company intelligence. The flag-gated v3.1 pipeline runs surgical contact discovery, a 28-specialist council, and exact-copy deck rendering.'},
+  {id:'start',label:'Getting Started',x:130,y:60,w:124,h:34,d:'Submit a company, domain and seller. The pipeline processes the request automatically and a deck is ready in roughly three minutes.'},
+  {id:'workflow',label:'AI Workflow',x:570,y:60,w:112,h:34,d:'A 28-specialist council plus surgical providers analyse financials, news, tech stack, competitors and stakeholders, synthesised into one intelligence report.'},
+  {id:'profiles',label:'Company Profiles',x:580,y:260,w:134,h:34,d:'Detailed overviews: revenue, headcount, IT spend, segments, geography, technologies, competitors and confidence-scored summaries.'},
+  {id:'sellers',label:'Seller Mgmt',x:120,y:260,w:112,h:34,d:'Create and manage sellers with monthly job limits. Track which rep requested each profile and monitor usage + spend per seller.'},
+  {id:'stakeholders',label:'Stakeholders',x:215,y:160,w:112,h:34,d:'Relevance-first decision-maker discovery with an email + phone + LinkedIn reachability floor of four contacts per deck.'},
+  {id:'pipeline',label:'Data Pipeline',x:485,y:160,w:114,h:34,d:'Live job tracking with per-stage progress, an audit log, and a running API-cost meter across every job.'}
+];
+const DE=[['platform','start'],['platform','workflow'],['platform','profiles'],['platform','sellers'],['platform','stakeholders'],['platform','pipeline'],['start','stakeholders'],['workflow','pipeline'],['stakeholders','sellers'],['pipeline','profiles']];
+const eg=document.getElementById('edges'),ng=document.getElementById('nodes');
+const byId=id=>DN.find(n=>n.id===id);
+DE.forEach(([a,b])=>{const A=byId(a),B=byId(b);const l=document.createElementNS('http://www.w3.org/2000/svg','line');l.setAttribute('x1',A.x);l.setAttribute('y1',A.y);l.setAttribute('x2',B.x);l.setAttribute('y2',B.y);l.setAttribute('class','map-edge');eg.appendChild(l);});
+DN.forEach(n=>{
+  const g=document.createElementNS('http://www.w3.org/2000/svg','g');g.setAttribute('class','map-node'+(n.hub?' hub':''));g.style.cursor='pointer';
+  const r=document.createElementNS('http://www.w3.org/2000/svg','rect');r.setAttribute('x',n.x-n.w/2);r.setAttribute('y',n.y-n.h/2);r.setAttribute('width',n.w);r.setAttribute('height',n.h);r.setAttribute('rx',10);
+  const t=document.createElementNS('http://www.w3.org/2000/svg','text');t.setAttribute('x',n.x);t.setAttribute('y',n.y+4);t.setAttribute('text-anchor','middle');t.textContent=n.label;
+  g.appendChild(r);g.appendChild(t);g.onclick=()=>{document.querySelectorAll('.map-node').forEach(x=>x.classList.remove('on'));g.classList.add('on');document.getElementById('dt').textContent=n.label;document.getElementById('dd').textContent=n.d;};
+  ng.appendChild(g);
+});
+
+// ambient HP-blue glass background
+const c=document.getElementById('bg'),x=c.getContext('2d');let W,H;
+function rz(){W=c.width=innerWidth;H=c.height=innerHeight;}rz();addEventListener('resize',rz);
+const orbs=[];for(let i=0;i<7;i++)orbs.push({x:Math.random(),y:Math.random(),r:120+Math.random()*180,vx:(Math.random()-.5)*.0006,vy:(Math.random()-.5)*.0006,h:Math.random()<.5?'0,150,214':'127,209,240'});
+let phase=0;
+function squiggle(baseFrac,ampFrac,lw,alpha,off,glow){
+  x.save();x.globalAlpha=alpha;x.lineWidth=lw;x.lineCap='round';
+  x.shadowColor='rgba(0,150,214,.85)';x.shadowBlur=glow;
+  const g=x.createLinearGradient(0,0,W,0);
+  g.addColorStop(0,'rgba(0,150,214,0)');g.addColorStop(.18,'rgba(0,150,214,.75)');g.addColorStop(.5,'rgba(0,134,214,1)');g.addColorStop(.82,'rgba(91,155,245,.8)');g.addColorStop(1,'rgba(127,209,240,0)');
+  x.strokeStyle=g;x.beginPath();
+  const base=H*baseFrac,amp=H*ampFrac;
+  for(let px=-60;px<=W+60;px+=12){const t=px/(W||1);const y=base+Math.sin(t*Math.PI*3+phase+off)*amp*Math.sin(t*Math.PI);px<=-60?x.moveTo(px,y):x.lineTo(px,y);}
+  x.stroke();x.restore();
+}
+function draw(){
+  x.clearRect(0,0,W,H);
+  squiggle(.60,.22,Math.max(80,W*.072),.55,0,110);   // hero ribbon — bold, glowing
+  squiggle(.60,.22,Math.max(26,W*.022),.85,0,40);     // bright core line on top
+  squiggle(.40,.13,Math.max(40,W*.034),.20,2.1,80);   // softer second ribbon for depth
+  orbs.forEach(o=>{o.x+=o.vx;o.y+=o.vy;if(o.x<-.1||o.x>1.1)o.vx*=-1;if(o.y<-.1||o.y>1.1)o.vy*=-1;
+    const g=x.createRadialGradient(o.x*W,o.y*H,0,o.x*W,o.y*H,o.r);g.addColorStop(0,'rgba('+o.h+',.16)');g.addColorStop(1,'rgba('+o.h+',0)');
+    x.fillStyle=g;x.beginPath();x.arc(o.x*W,o.y*H,o.r,0,7);x.fill();});
+  phase+=.004;
+  x.save();x.globalAlpha=.05;x.translate(W-150,H-130);x.strokeStyle='#0a6fa5';x.lineWidth=10;x.beginPath();x.arc(0,0,92,0,7);x.stroke();
+  x.fillStyle='#0a6fa5';x.font='italic 800 64px '+getComputedStyle(document.body).fontFamily;x.textAlign='center';x.textBaseline='middle';x.fillText('hp',0,6);x.restore();
+}
+let raf;function loop(){draw();raf=requestAnimationFrame(loop);}
+if(!matchMedia('(prefers-reduced-motion:reduce)').matches)loop();else draw();
+</script>

@@ -217,6 +217,11 @@ class ClaudeFormatter:
         try:
             resp = await client.messages.create(model=self._model, max_tokens=2048, temperature=0.3,
                                                  system=system, messages=[{"role": "user", "content": user}])
+            try:  # cost metering — best-effort, never breaks the deck
+                import cost_meter
+                cost_meter.record_anthropic(self._model, getattr(resp, "usage", None))
+            except Exception:  # noqa: BLE001
+                pass
             text = "".join(getattr(b, "text", "") for b in resp.content)
             s = text[text.find("["):text.rfind("]") + 1]
             authored = json.loads(s)
@@ -252,6 +257,11 @@ class ClaudeFormatter:
                 model=self._model, max_tokens=4096, temperature=0.2,
                 system=system, messages=[{"role": "user", "content": user}],
             )
+            try:  # cost metering — best-effort, never breaks the formatter
+                import cost_meter
+                cost_meter.record_anthropic(self._model, getattr(resp, "usage", None))
+            except Exception:  # noqa: BLE001
+                pass
             text = "".join(getattr(b, "text", "") for b in resp.content)
             try:
                 output = json.loads(_extract_json(text))

@@ -619,6 +619,15 @@ class ZoomInfoClient:
         await self._ensure_valid_token()
         await self.rate_limiter.acquire()
         url = f"{self.base_url}{endpoint}"
+        # Cost metering — single chokepoint for ALL ZoomInfo GTM API calls.
+        # Best-effort: must never break a ZoomInfo request. (A 401 re-auth retry
+        # recurses into _make_request and is counted as a separate physical call,
+        # which is the intended behaviour.)
+        try:
+            import cost_meter
+            cost_meter.record_call("zoominfo")
+        except Exception:  # noqa: BLE001
+            pass
         logger.debug(f"ZoomInfo POST {url}")
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             response = await client.post(

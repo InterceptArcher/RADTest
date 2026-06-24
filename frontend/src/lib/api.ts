@@ -153,6 +153,20 @@ class APIClient {
   }
 
   /**
+   * Fetch the Content Audit V2 catalogue (DAM assets) from the backend.
+   * Returns whatever the backend provides; rendered defensively.
+   */
+  async getContentAudit(): Promise<any[]> {
+    try {
+      const response = await axios.get(`${this.baseURL}/api/content-audit`, { timeout: 15000 });
+      const d: any = response.data;
+      return Array.isArray(d) ? d : (d?.items || d?.assets || []);
+    } catch {
+      return [];
+    }
+  }
+
+  /**
    * Check backend health.
    *
    * @returns True if backend is healthy, false otherwise

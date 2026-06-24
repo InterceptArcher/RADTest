@@ -5,13 +5,14 @@ import { createContext, useContext, useState, useEffect, ReactNode } from 'react
 interface AuthContextType {
   isAuthenticated: boolean;
   loading: boolean;
-  login: (email: string, password: string) => boolean;
+  /** Returns true when the access code is correct. */
+  login: (code: string) => boolean;
   logout: () => void;
 }
 
 const AUTH_KEY = 'rad_authenticated';
-const VALID_EMAIL = 'admin@intercept';
-const VALID_PASSWORD = 'radicalrad';
+// Single shared access code — case-insensitive, surrounding space tolerated.
+const ACCESS_CODE = 'radical rad';
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
@@ -20,13 +21,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const stored = localStorage.getItem(AUTH_KEY);
-    setIsAuthenticated(stored === 'true');
+    setIsAuthenticated(localStorage.getItem(AUTH_KEY) === 'true');
     setLoading(false);
   }, []);
 
-  const login = (email: string, password: string): boolean => {
-    if (email === VALID_EMAIL && password === VALID_PASSWORD) {
+  const login = (code: string): boolean => {
+    if ((code || '').trim().toLowerCase() === ACCESS_CODE) {
       localStorage.setItem(AUTH_KEY, 'true');
       setIsAuthenticated(true);
       return true;
