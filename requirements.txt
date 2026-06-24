@@ -15,8 +15,9 @@ httpx==0.27.2
 gql==3.5.0
 gql[httpx]==3.5.0
 
-# Supabase client
-supabase==2.3.4
+# Supabase client. 2.9.1 requires httpx>=0.26 (matches the proxy= kwarg its
+# sub-deps emit); 2.3.4 capped httpx<0.26 and conflicted with the 0.27.2 pin.
+supabase==2.9.1
 
 # LLM integrations
 openai==1.10.0
