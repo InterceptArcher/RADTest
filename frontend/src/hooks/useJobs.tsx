@@ -209,7 +209,9 @@ export function JobsProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const removeJob = useCallback((jobId: string) => {
-    // Check if this is a seller job before removing from state
+    // Hard delete: remove from local state AND every Supabase table that holds
+    // a row for this job, so it's gone across all devices and won't reappear on
+    // reload. localStorage is updated automatically by the persistence effect.
     setJobs((prev) => {
       const job = prev.find((j) => j.jobId === jobId);
       if (job?.sellerId) {
@@ -222,6 +224,15 @@ export function JobsProvider({ children }: { children: ReactNode }) {
             if (error) console.error('Failed to delete seller job from Supabase:', error);
           });
       }
+      // job_results holds a durable row for every COMPLETED job (seller or not).
+      // Always clear it so the deck/result can't be recovered after delete.
+      supabase
+        .from('job_results')
+        .delete()
+        .eq('job_id', jobId)
+        .then(({ error }) => {
+          if (error) console.error('Failed to delete job_results from Supabase:', error);
+        });
       return prev.filter((j) => j.jobId !== jobId);
     });
   }, []);

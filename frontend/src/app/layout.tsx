@@ -6,7 +6,7 @@ import { AuthProvider } from '@/lib/auth';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'RAD Intelligence Desk',
+  title: 'RADAR Intelligence Desk',
   description: 'AI-powered company intelligence — surgical contact discovery, live pipeline, and HP-ready decks.',
 };
 

@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useJobs } from '@/hooks/useJobs';
+import { sortJobs, type SortMode } from '@/lib/jobSort';
 import { activeStage, STAGES } from '@/lib/stages';
 
 function ago(iso?: string): string {
@@ -24,8 +25,12 @@ type Filter = 'all' | 'processing' | 'completed' | 'failed';
 
 export default function JobsPage() {
   const router = useRouter();
-  const { jobs } = useJobs();
+  const { jobs, removeJob } = useJobs();
   const [filter, setFilter] = useState<Filter>('all');
+  const [sort, setSort] = useState<SortMode>('recent');
+  // Two-step delete: first click arms the row, second confirms. Avoids a
+  // blocking window.confirm and prevents one-click accidental deletes.
+  const [confirmId, setConfirmId] = useState<string | null>(null);
 
   const counts = {
     all: jobs.length,
@@ -34,24 +39,38 @@ export default function JobsPage() {
     failed: jobs.filter((j) => j.status === 'failed').length,
   };
   const totalSpend = jobs.reduce((a, j) => a + (cost(j) || 0), 0);
-  const shown = jobs.filter((j) =>
+  const filtered = jobs.filter((j) =>
     filter === 'all' ? true : filter === 'processing' ? (j.status === 'processing' || j.status === 'pending') : j.status === filter);
+  const shown = sortJobs(filtered, sort);
 
   const chip = (f: Filter, label: string) => (
     <span className={'f' + (filter === f ? ' on' : '')} onClick={() => setFilter(f)}>{label} · {counts[f]}</span>
   );
+  const sortChip = (m: SortMode, label: string) => (
+    <span className={'f' + (sort === m ? ' on' : '')} onClick={() => setSort(m)}>{label}</span>
+  );
+
+  const confirmDelete = (e: React.MouseEvent, jobId: string) => {
+    e.stopPropagation();
+    removeJob(jobId);
+    setConfirmId(null);
+  };
 
   return (
     <>
       <div className="filters">
         {chip('all', 'All')}{chip('processing', 'Running')}{chip('completed', 'Completed')}{chip('failed', 'Failed')}
-        <span className="f" style={{ marginLeft: 'auto' }}>Total spend · ${totalSpend.toFixed(2)}</span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <span className="f" style={{ cursor: 'default', opacity: 0.7 }}>Sort</span>
+          {sortChip('recent', 'Recent')}{sortChip('seller', 'Seller A–Z')}
+          <span className="f" style={{ cursor: 'default' }}>Total spend · ${totalSpend.toFixed(2)}</span>
+        </div>
       </div>
       <div className="panel"><div className="pb" style={{ paddingTop: 14 }}>
         <table>
-          <thead><tr><th>Company</th><th>Domain</th><th>Seller</th><th>Status</th><th>Stage</th><th>Contacts</th><th>Cost</th><th>Created</th><th>Deck</th></tr></thead>
+          <thead><tr><th>Company</th><th>Domain</th><th>Seller</th><th>Status</th><th>Stage</th><th>Contacts</th><th>Cost</th><th>Created</th><th>Deck</th><th></th></tr></thead>
           <tbody>
-            {shown.length === 0 && <tr><td colSpan={9} style={{ color: 'var(--faint)' }}>No jobs match this filter.</td></tr>}
+            {shown.length === 0 && <tr><td colSpan={10} style={{ color: 'var(--faint)' }}>No jobs match this filter.</td></tr>}
             {shown.map((j) => {
               const act = activeStage(j.progress, j.status);
               const url = (j.result as any)?.slideshow_url;
@@ -66,6 +85,16 @@ export default function JobsPage() {
                   <td className="cost">${(cost(j) || 0).toFixed(2)}</td>
                   <td>{ago(j.createdAt)}</td>
                   <td>{url ? <a className="lk2" style={{ border: 0, padding: 0 }} href={url} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()}>↗ pptx</a> : '—'}</td>
+                  <td onClick={(e) => e.stopPropagation()}>
+                    {confirmId === j.jobId ? (
+                      <span className="delconf">
+                        <button type="button" className="del yes" onClick={(e) => confirmDelete(e, j.jobId)}>Delete</button>
+                        <button type="button" className="del no" onClick={(e) => { e.stopPropagation(); setConfirmId(null); }}>Cancel</button>
+                      </span>
+                    ) : (
+                      <button type="button" className="del" title="Delete job" aria-label="Delete job" onClick={(e) => { e.stopPropagation(); setConfirmId(j.jobId); }}>🗑</button>
+                    )}
+                  </td>
                 </tr>
               );
             })}

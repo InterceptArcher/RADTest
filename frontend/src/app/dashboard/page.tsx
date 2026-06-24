@@ -6,6 +6,8 @@ import Link from 'next/link';
 import { apiClient } from '@/lib/api';
 import { useJobs } from '@/hooks/useJobs';
 import { useSellers } from '@/hooks/useSellers';
+import { useNotifications } from '@/lib/notifications';
+import { sortJobs } from '@/lib/jobSort';
 import { activeStage } from '@/lib/stages';
 
 function elapsed(fromIso: string): string {
@@ -31,6 +33,7 @@ export default function HomePage() {
   const router = useRouter();
   const { jobs, addJob } = useJobs();
   const { sellers, addSellerJob, createSeller } = useSellers();
+  const { isViewed, markViewed } = useNotifications();
 
   const [form, setForm] = useState({ company_name: '', domain: '', industry: '', requested_by: '', salesperson: '', canada_only: false });
   const [submitting, setSubmitting] = useState(false);
@@ -72,8 +75,15 @@ export default function HomePage() {
   };
 
   const inProgress = jobs.filter((j) => j.status === 'processing' || j.status === 'pending');
-  const recent = jobs.slice(0, 6);
-  const triage = jobs.filter((j) => j.status === 'completed' || j.status === 'failed').slice(0, 3);
+  const recent = sortJobs(jobs, 'recent').slice(0, 6);
+  // Inbox: finished jobs (completed + failed), newest first. The "X new" pill
+  // counts only jobs the user hasn't opened yet — opening one (below) marks it
+  // viewed and decrements the pill, but the row itself stays in the inbox.
+  const finished = sortJobs(jobs.filter((j) => j.status === 'completed' || j.status === 'failed'), 'recent');
+  // Inbox shows at most the 3 most-recent finished jobs; older ones are offloaded
+  // (not shown). "X new" counts only unopened jobs among those 3, so it's <= 3.
+  const triage = finished.slice(0, 3);
+  const newCount = triage.filter((j) => !isViewed(j.jobId)).length;
 
   const sellerStats = sellers.slice(0, 4).map((s) => {
     const sj = jobs.filter((j) => j.sellerId === s.id);
@@ -107,17 +117,21 @@ export default function HomePage() {
             <button className="launch" onClick={launch} disabled={submitting}>{submitting ? 'Launching…' : '⚡ Launch profile'}</button>
           </div>
         </div>
-        <div className="panel"><div className="ph"><span className="eye" /><span className="k">Triage</span><h3>Inbox</h3><span className="n">{triage.length} new</span></div>
+        <div className="panel"><div className="ph"><span className="eye" /><span className="k">Triage</span><h3>Inbox</h3><span className="n">{newCount} new</span></div>
           <div className="pb">
             {triage.length === 0 && <div className="await">no completed or failed jobs yet</div>}
-            {triage.map((j) => (
-              <div key={j.jobId} className={'alert ' + (j.status === 'completed' ? 'ok' : 'bad')}>
-                <div className="ai">{j.status === 'completed' ? '✓' : '✕'}</div>
-                <div className="at"><b>{j.companyName}</b> {j.status === 'completed' ? 'deck ready' : 'failed'}
-                  <small>{j.status === 'completed' ? `${contactCount(j) ?? '—'} contacts · $${(cost(j) || 0).toFixed(2)}` : (j.currentStep || 'error')}</small></div>
-                <Link className="go" href={`/dashboard/jobs/${j.jobId}`}>{j.status === 'completed' ? 'View' : 'Open'}</Link>
-              </div>
-            ))}
+            {triage.map((j) => {
+              const unread = !isViewed(j.jobId);
+              return (
+                <div key={j.jobId} className={'alert ' + (j.status === 'completed' ? 'ok' : 'bad') + (unread ? ' unread' : '')}>
+                  <div className="ai">{j.status === 'completed' ? '✓' : '✕'}</div>
+                  <div className="at"><b>{j.companyName}</b> {j.status === 'completed' ? 'deck ready' : 'failed'}
+                    {unread && <span className="newdot">new</span>}
+                    <small>{j.status === 'completed' ? `${contactCount(j) ?? '—'} contacts · $${(cost(j) || 0).toFixed(2)}` : (j.currentStep || 'error')}</small></div>
+                  <Link className="go" href={`/dashboard/jobs/${j.jobId}`} onClick={() => markViewed(j.jobId)}>{j.status === 'completed' ? 'View' : 'Open'}</Link>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>

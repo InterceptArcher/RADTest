@@ -21,6 +21,59 @@
 
 ---
 
+## Portal UX Batch — RADAR Rename, Chronological Jobs, Actionable Alerts & Job Delete (2026-06-24)
+
+A cosmetic + UX batch on the frontend portal. No backend or data-layer changes —
+the hybrid jobs store (localStorage for local-only jobs + Supabase `seller_jobs`/
+`job_results`) is intentionally left intact.
+
+### 1. Rebrand to **RADAR**
+- Navbar wordmark (`Rail.tsx`) `RAD Desk` → `RADAR`; browser tab title
+  (`app/layout.tsx`) `RAD Intelligence Desk` → `RADAR Intelligence Desk`.
+- **Rationale:** purely cosmetic naming alignment. The dead `Sidebar.tsx`
+  ("RAD Admin Portal") is not mounted, so it was left untouched to avoid churn.
+
+### 2. Jobs sorted chronologically by default (`sortJobs()`)
+- New pure comparator `lib/jobSort.ts`: `recent` (newest first, default) and
+  `seller` (seller name A–Z, unsellered jobs last, recency tiebreak). Wired into
+  the Jobs page with a Recent / Seller A–Z toggle; the dashboard "Recent
+  activity" + inbox also use `recent`.
+- **Rationale:** the latest job should surface on top. Sorting is extracted as a
+  pure, deterministic function so it's unit-tested without rendering
+  (`__tests__/jobSort.test.ts`).
+
+### 3. Actionable notification bell + inbox "new" semantics
+- `CommandBar.tsx` bell is now a button opening a dropdown of finished-job
+  notifications (completed **and** failed), newest first. **Hovering** a
+  notification flags it seen (decrements the badge); **clicking** routes to the
+  dashboard inbox. The visible list is snapshotted on open so a hover doesn't
+  yank the row out from under the cursor mid-session.
+- Inbox "X new" pill now counts only jobs the user hasn't opened. Clicking
+  **View/Open** marks the job viewed (−1 from the pill) **without** removing the
+  inbox row — it just stops being "new".
+- State lives in a new `NotificationsProvider` (`lib/notifications.tsx`) backed
+  by **per-device localStorage** (`dismissed` + `viewed` sets). Pure helpers
+  `toNotifications()` / `unseenCount()` are unit-tested
+  (`__tests__/notifications.test.ts`).
+- **Rationale:** seen/viewed state is a personal reading position, so per-device
+  localStorage is the correct scope (a teammate dismissing an alert shouldn't
+  clear yours). No Supabase migration needed.
+
+### 4. Delete jobs (hard delete everywhere)
+- Jobs table gains a two-step delete (arm → confirm, no blocking `window.confirm`).
+  `useJobs.removeJob()` extended to also delete the `job_results` row (in
+  addition to the existing `seller_jobs` delete), so a deleted job is gone across
+  devices and cannot be recovered on reload.
+- **Rationale:** there was previously no way to remove a job; hard delete was the
+  explicitly requested behavior, gated behind a confirm to prevent accidents.
+
+### Tests
+- `jobSort.test.ts` (5) + `notifications.test.ts` (6) — all green. Full suite:
+  pre-existing failures in unrelated debug/StakeholderPhonePanel suites are
+  untouched by this batch. `next build` compiles clean.
+
+---
+
 ## Contact Floor Overhaul, Geo Top-up, Job Recovery & Header Caps (2026-06-24)
 
 A batch addressing three issues: decks shipping too few contacts, jobs stuck

@@ -23,7 +23,7 @@ export default function Rail() {
     <aside className="rail">
       <div className="brand">
         <div className="dot">hp</div>
-        <div><b>RAD Desk</b><small>Intelligence Ops</small></div>
+        <div><b>RADAR</b><small>Intelligence Ops</small></div>
       </div>
       <nav className="nav">
         {NAV.map((n) => (

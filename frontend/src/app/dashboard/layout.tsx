@@ -7,6 +7,7 @@ import CommandBar from '@/components/layout/CommandBar';
 import Background from '@/components/ui/Background';
 import { JobsProvider, useJobPolling } from '@/hooks/useJobs';
 import { SellersProvider } from '@/hooks/useSellers';
+import { NotificationsProvider } from '@/lib/notifications';
 import { useAuth } from '@/lib/auth';
 
 /**
@@ -43,13 +44,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <SellersProvider>
       <JobsProvider>
-        <JobPollingMount />
-        <Background />
-        <Rail />
-        <div className="main">
-          <CommandBar />
-          <div className="canvas">{children}</div>
-        </div>
+        <NotificationsProvider>
+          <JobPollingMount />
+          <Background />
+          <Rail />
+          <div className="main">
+            <CommandBar />
+            <div className="canvas">{children}</div>
+          </div>
+        </NotificationsProvider>
       </JobsProvider>
     </SellersProvider>
   );
