@@ -294,3 +294,5 @@
 .article-body li{font-size:14px;color:#3a4a58;line-height:1.72;margin:0 0 6px}
 .article-body b{color:var(--ink)}
 .art{transition:.15s}.art:hover{box-shadow:0 10px 26px -12px var(--glow);transform:translateY(-1px)}
+
+.secthead{font-family:var(--mono);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--hp-deep);opacity:.75;font-weight:600}
