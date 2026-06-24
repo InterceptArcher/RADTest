@@ -555,6 +555,25 @@ async def debug_zoominfo_auth(live: bool = False):
     except Exception as e:  # noqa: BLE001
         out["error"] = str(e)
 
+    # Raw probe: surface the actual exception from a direct supabase-py read so
+    # we can see WHY persistence fails (vs. the swallowed debug-level log).
+    try:
+        from supabase import create_client as _cc
+        import supabase as _sb_mod
+        _url = os.getenv("SUPABASE_URL")
+        _key = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        out["supabase_probe"] = {
+            "py_version": getattr(_sb_mod, "__version__", "unknown"),
+            "url_present": bool(_url), "key_present": bool(_key),
+        }
+        sb = _cc(_url, _key)
+        r = sb.table("zi_auth_tokens").select("*").execute()
+        out["supabase_probe"]["read_ok"] = True
+        out["supabase_probe"]["rows"] = len(r.data or [])
+    except Exception as e:  # noqa: BLE001
+        out.setdefault("supabase_probe", {})["read_ok"] = False
+        out["supabase_probe"]["error"] = f"{type(e).__name__}: {str(e)[:400]}"
+
     out["verdict"] = (
         "HEALTHY — refresh_token auto-rotates and persists across restarts."
         if out.get("auto_auth") and out.get("persistence_healthy")
