@@ -41,6 +41,22 @@ export function useLiveJob(jobId: string) {
     };
 
     const loadSupabase = async () => {
+      // Durable per-job store first — written server-side at completion for ALL
+      // jobs, so it survives a backend restart and works for non-seller jobs.
+      try {
+        const { data } = await supabase.from('job_results').select('*').eq('job_id', jobId).maybeSingle();
+        if (data && alive) {
+          setStatus({
+            status: data.status || 'completed',
+            progress: 100,
+            current_step: 'Complete',
+            result: data.result || undefined,
+            api_cost: data.result?.api_cost,
+          });
+          return;
+        }
+      } catch { /* fall through to seller_jobs */ }
+      // Legacy fallback: seller_jobs.result_data (older jobs / frontend-synced).
       try {
         const { data } = await supabase.from('seller_jobs').select('*').eq('job_id', jobId).maybeSingle();
         if (data && alive) {

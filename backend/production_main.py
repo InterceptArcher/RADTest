@@ -565,7 +565,7 @@ async def debug_v31():
     """Diagnose why the v3.1 flag-gated pipeline is/ isn't engaging.
     If this endpoint 404s, the latest code has NOT deployed yet."""
     result = {
-        "marker": "v31-diag-2-qa15",
+        "marker": "v31-diag-2-qa16",
         "USE_V31_PIPELINE": os.getenv("USE_V31_PIPELINE", "NOT SET"),
         "flag_active": os.getenv("USE_V31_PIPELINE", "").strip().lower() == "true",
         "ANTHROPIC_API_KEY_set": bool(os.getenv("ANTHROPIC_API_KEY")),
@@ -2937,6 +2937,13 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["current_step"] = "Complete!"
         logger.info(f"Completed processing for job {job_id}")
 
+        # Durable persistence so a portal reload recovers this job even after the
+        # in-memory jobs_store is wiped by a Render restart (Tier 2 reload fix).
+        persist_job_result(
+            job_id, "completed", jobs_store[job_id].get("result"),
+            company_name=company_data.get("company_name"),
+        )
+
     except Exception as e:
         logger.error(f"Error processing job {job_id}: {str(e)}")
         import traceback
@@ -2953,6 +2960,7 @@ async def process_company_profile(job_id: str, company_data: dict):
         jobs_store[job_id]["hunter_data"] = hunter_data
         jobs_store[job_id]["stakeholders_data"] = stakeholders_data
         jobs_store[job_id]["news_data"] = news_data
+        persist_job_result(job_id, "failed", jobs_store[job_id].get("result"))
 
 
 async def fetch_apollo_data(company_data: dict) -> dict:
@@ -3614,6 +3622,43 @@ Use real, accurate data. If data is unavailable, use "Unknown"."""
         return fallback_data
 
 
+def persist_job_result(job_id: str, status: str, result: Optional[dict],
+                       company_name: Optional[str] = None) -> None:
+    """
+    Upsert a job's full result into the durable `job_results` Supabase table,
+    keyed by job_id. The in-memory jobs_store is wiped on every Render restart,
+    so this is what lets the portal recover a completed job's data on reload —
+    for ALL jobs (seller-attributed or not), independent of any frontend poller.
+
+    Best-effort: a persistence failure must never fail the job.
+    """
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        from supabase import create_client, Client
+        supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        supabase.table("job_results").upsert({
+            "job_id": job_id,
+            "company_name": company_name or (result or {}).get("company_name"),
+            "status": status,
+            "result": result,
+            "updated_at": datetime.utcnow().isoformat() + "Z",
+        }, on_conflict="job_id").execute()
+        logger.info(f"Persisted job_results row for {job_id} (status={status})")
+    except Exception as e:  # noqa: BLE001
+        msg = str(e)
+        if "job_results" in msg or "does not exist" in msg or "PGRST" in msg:
+            logger.warning(
+                "Failed to persist job_results for %s — the Supabase 'job_results' "
+                "table is likely missing. Apply migration "
+                "backend/migrations/2026-06-24_job_results.sql. Without it, a portal "
+                "reload after a backend restart cannot recover this job. Error: %s",
+                job_id, e,
+            )
+        else:
+            logger.warning("Failed to persist job_results for %s: %s", job_id, e)
+
+
 async def store_validated_data(company_name: str, validated_data: dict):
     """Store validated data in Supabase"""
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -3951,6 +3996,47 @@ async def get_job_status(job_id: str):
         api_cost=api_cost,
         created_at=job.get("created_at")
     )
+
+
+@app.get("/job-result/{job_id}", tags=["Status"])
+async def get_job_result(job_id: str):
+    """
+    Return a completed job's full result, durably.
+
+    Reads the in-memory jobs_store first (fast path), then falls back to the
+    persisted `job_results` Supabase row. This is what lets the portal recover a
+    job's data on reload after a Render restart has wiped the in-memory store —
+    for ALL jobs, independent of any frontend poller. 404 only if neither has it.
+    """
+    job = jobs_store.get(job_id)
+    if job and job.get("result"):
+        return {
+            "job_id": job_id,
+            "status": job.get("status", "completed"),
+            "result": job.get("result"),
+            "source": "memory",
+        }
+
+    if SUPABASE_URL and SUPABASE_KEY:
+        try:
+            from supabase import create_client, Client
+            supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+            res = supabase.table("job_results").select("*").eq(
+                "job_id", job_id
+            ).maybe_single().execute()
+            if res and res.data:
+                row = res.data
+                return {
+                    "job_id": job_id,
+                    "status": row.get("status", "completed"),
+                    "result": row.get("result"),
+                    "company_name": row.get("company_name"),
+                    "source": "supabase",
+                }
+        except Exception as e:  # noqa: BLE001
+            logger.warning("job_results lookup failed for %s: %s", job_id, e)
+
+    raise HTTPException(status_code=404, detail=f"No result for job {job_id}")
 
 
 # Active background reconcile tasks held in a module-level set so the

@@ -21,6 +21,50 @@
 
 ---
 
+## Portal QA Batch 6 — Stale "processing" + Reload Data Loss (2026-06-24)
+
+Two related symptoms: (1) a job kept showing "processing" in the queue/home/cards
+**after it had finished**, and (2) **reloading the Job View wiped all the data**.
+
+### Root cause (single, shared)
+Job completion and result-saving were driven only by *page-scoped* pollers, and the
+hook built to do this app-wide — `useJobPolling` — **was defined but never mounted**.
+Consequences:
+- The Home page's inline poll updated the shared store only while Home was open. On
+  the Job View, `useLiveJob` updated only its own local state — never writing status
+  back — so the rest of the app stayed frozen at "processing".
+- The bulky `result` is intentionally stripped from localStorage, the in-memory
+  backend `jobs_store` is wiped on Render restart, and the only durable per-job copy
+  (`seller_jobs.result_data`) was written by a *frontend* poller — so for non-seller
+  jobs, or when no tab was open at completion, a reload had nothing to recover.
+
+### Fix — Tier 1 (live everywhere)
+- **Mounted `useJobPolling()` in the dashboard layout** (inside `JobsProvider`), so
+  active jobs poll + sync completion on every page, not just Home.
+- **Hardened `useJobPolling`**: it now depends on a *stable* key of the active ids and
+  reads the latest jobs/ids through a ref, instead of re-subscribing every render
+  (the old `[activeJobIds, jobs]` deps tore down and recreated the interval constantly).
+- Removed the now-redundant Home inline poll (the global poller covers it).
+
+### Fix — Tier 2 (durable reload, server-side)
+- New **`job_results`** Supabase table (migration `backend/migrations/2026-06-24_job_results.sql`),
+  written **server-side at completion** via `persist_job_result()` for **every** job,
+  keyed by `job_id` — independent of any frontend poller or seller attribution.
+- New **`GET /job-result/{job_id}`** endpoint: in-memory `jobs_store` first, then the
+  persisted `job_results` row.
+- `useLiveJob` reload fallback now reads `job_results` first (full result, survives
+  restarts, works for non-seller jobs), then the legacy `seller_jobs.result_data`.
+- The frontend poller also upserts `job_results` for all jobs, so the durable copy is
+  written whether the row originates from the backend or a watching tab.
+
+**Rationale**: One mount + one stable-deps refactor fixes the stale-status class of
+bug for the whole app; a server-side, poller-independent durable store closes the
+"nobody was watching / backend restarted" reload hole that the in-memory `jobs_store`
+otherwise guarantees. Both migrations follow the repo's RLS allow-all convention so
+the backend (anon or service-role key) and supabase-js client can both read/write.
+
+---
+
 ## Portal QA Batch 5 — Live Meters, Job-View Data Mapping & ZoomInfo Token Durability (2026-06-24)
 
 Three issues surfaced while running a live job from the redesigned portal.

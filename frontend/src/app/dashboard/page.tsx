@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { apiClient } from '@/lib/api';
@@ -29,33 +29,16 @@ const contactCount = (j: any) => {
 
 export default function HomePage() {
   const router = useRouter();
-  const { jobs, addJob, updateJob, activeJobIds } = useJobs();
+  const { jobs, addJob } = useJobs();
   const { sellers, addSellerJob, createSeller } = useSellers();
 
   const [form, setForm] = useState({ company_name: '', domain: '', industry: '', requested_by: '', salesperson: '', canada_only: false });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
-  // Poll active jobs so the in-progress cards stay live.
-  useEffect(() => {
-    if (activeJobIds.length === 0) return;
-    let alive = true;
-    const tick = async () => {
-      await Promise.all(activeJobIds.map(async (id) => {
-        try {
-          const s = (await apiClient.checkJobStatus(id)) as any;
-          if (!alive) return;
-          updateJob(id, {
-            status: s.status, progress: s.progress ?? 0, currentStep: s.current_step || 'Processing…',
-            result: s.result, completedAt: s.status === 'completed' || s.status === 'failed' ? new Date().toISOString() : undefined,
-          } as any);
-        } catch { /* keep prior */ }
-      }));
-    };
-    tick();
-    const t = setInterval(tick, 3000);
-    return () => { alive = false; clearInterval(t); };
-  }, [activeJobIds, updateJob]);
+  // Active-job polling is handled app-wide by useJobPolling() (mounted in the
+  // dashboard layout), so the in-progress cards here stay live off the shared
+  // jobs store without a duplicate poller.
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }));
 

@@ -297,21 +297,34 @@ export function useJobs() {
   return context;
 }
 
-// Hook to poll active jobs and sync seller job statuses + results to Supabase
+// Hook to poll active jobs and sync statuses + results to Supabase.
+// Mounted once app-wide (dashboard layout) so completion is captured no matter
+// which page is open.
 export function useJobPolling() {
   const { activeJobIds, updateJob, jobs } = useJobs();
 
+  // `activeJobIds` is a fresh array every render and `jobs` changes on every
+  // poll result — depending on them directly would tear down and recreate the
+  // interval constantly. Depend on a STABLE key of the active ids, and read the
+  // latest jobs/ids through a ref so the poll closure always sees fresh data
+  // without re-subscribing.
+  const activeKey = activeJobIds.join(',');
+  const ref = useRef({ activeJobIds, jobs, updateJob });
+  ref.current = { activeJobIds, jobs, updateJob };
+
   useEffect(() => {
-    if (activeJobIds.length === 0) return;
+    if (!activeKey) return;
 
     const pollJobs = async () => {
-      for (const jobId of activeJobIds) {
+      const { activeJobIds: ids, jobs: curJobs, updateJob: update } = ref.current;
+      for (const jobId of ids) {
         try {
           const status = await apiClient.checkJobStatus(jobId);
           const newStatus = status.status;
+          const done = newStatus === 'completed' || newStatus === 'failed';
           const completedAt = newStatus === 'completed' ? new Date().toISOString() : undefined;
 
-          updateJob(jobId, {
+          update(jobId, {
             status: newStatus,
             progress: status.progress ?? 0,
             currentStep: status.current_step ?? 'Processing...',
@@ -319,26 +332,44 @@ export function useJobPolling() {
             completedAt,
           });
 
-          // Sync status + result to Supabase for seller-assigned jobs
-          const job = jobs.find((j) => j.jobId === jobId);
-          if (job?.sellerId && (newStatus === 'completed' || newStatus === 'failed')) {
-            const updatePayload: Record<string, any> = {
-              status: newStatus,
-              completed_at: completedAt || new Date().toISOString(),
-            };
+          if (done) {
+            const job = curJobs.find((j) => j.jobId === jobId);
 
-            // Save result data to Supabase so other devices can access it
+            // Durable, per-job result store (job_results) — written for ALL jobs
+            // so a reload recovers the view even for non-seller jobs and after a
+            // backend restart wipes the in-memory store.
             if (newStatus === 'completed' && status.result) {
-              updatePayload.result_data = status.result;
+              supabase
+                .from('job_results')
+                .upsert({
+                  job_id: jobId,
+                  company_name: job?.companyName ?? status.result?.company_name ?? null,
+                  status: newStatus,
+                  result: status.result,
+                  updated_at: new Date().toISOString(),
+                }, { onConflict: 'job_id' })
+                .then(({ error }) => {
+                  if (error) console.error('Failed to persist job_results:', error);
+                });
             }
 
-            supabase
-              .from('seller_jobs')
-              .update(updatePayload)
-              .eq('job_id', jobId)
-              .then(({ error }) => {
-                if (error) console.error('Failed to sync seller job to Supabase:', error);
-              });
+            // Sync status + result to seller_jobs for seller-attributed jobs
+            if (job?.sellerId) {
+              const updatePayload: Record<string, any> = {
+                status: newStatus,
+                completed_at: completedAt || new Date().toISOString(),
+              };
+              if (newStatus === 'completed' && status.result) {
+                updatePayload.result_data = status.result;
+              }
+              supabase
+                .from('seller_jobs')
+                .update(updatePayload)
+                .eq('job_id', jobId)
+                .then(({ error }) => {
+                  if (error) console.error('Failed to sync seller job to Supabase:', error);
+                });
+            }
           }
         } catch (e) {
           console.error(`Failed to poll job ${jobId}:`, e);
@@ -346,12 +377,8 @@ export function useJobPolling() {
       }
     };
 
-    // Poll immediately
     pollJobs();
-
-    // Then poll every 2 seconds
     const interval = setInterval(pollJobs, 2000);
-
     return () => clearInterval(interval);
-  }, [activeJobIds, updateJob, jobs]);
+  }, [activeKey]);
 }
