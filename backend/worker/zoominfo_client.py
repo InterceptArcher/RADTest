@@ -624,8 +624,11 @@ class ZoomInfoClient:
         # recurses into _make_request and is counted as a separate physical call,
         # which is the intended behaviour.)
         try:
-            import cost_meter
-            cost_meter.record_call("zoominfo")
+            try:
+                from worker import cost_meter as _cm
+            except Exception:  # noqa: BLE001
+                import cost_meter as _cm  # bare path (v3.1 inserts worker/ on sys.path)
+            _cm.record_call("zoominfo")
         except Exception:  # noqa: BLE001
             pass
         logger.debug(f"ZoomInfo POST {url}")

@@ -610,10 +610,13 @@ async def call_openai(prompt: str, system_prompt: str, model: str = "gpt-4o-mini
 
         # Cost metering (best-effort; never breaks the council).
         try:
-            import sys, os as _os
-            sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "worker"))
-            import cost_meter
-            cost_meter.record_openai(model, getattr(response, "usage", None))
+            try:
+                from worker import cost_meter as _cm
+            except Exception:
+                import sys, os as _os
+                sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "worker"))
+                import cost_meter as _cm
+            _cm.record_openai(model, getattr(response, "usage", None))
         except Exception:
             pass
 
