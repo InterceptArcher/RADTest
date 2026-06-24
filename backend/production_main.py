@@ -486,6 +486,10 @@ async def debug_env():
             "ZOOMINFO_CLIENT_SECRET": mask(os.getenv("ZOOMINFO_CLIENT_SECRET")),
         },
         "zoominfo_auth_method": zi_auth_method,
+        # Supabase project host/ref the backend actually talks to (NOT a secret —
+        # the ref appears in every client URL). Used to confirm backend/frontend
+        # point at the same project.
+        "supabase_host": (os.getenv("SUPABASE_URL", "") or "").replace("https://", "").split(".")[0] or "NOT SET",
         "note": "All values checked at request time. NOT SET = missing from Render environment variables."
     }
 
