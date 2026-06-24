@@ -30,9 +30,9 @@ const contactCount = (j: any) => {
 export default function HomePage() {
   const router = useRouter();
   const { jobs, addJob, updateJob, activeJobIds } = useJobs();
-  const { sellers, addSellerJob } = useSellers();
+  const { sellers, addSellerJob, createSeller } = useSellers();
 
-  const [form, setForm] = useState({ company_name: '', domain: '', industry: '', requested_by: '', sellerId: '', canada_only: false });
+  const [form, setForm] = useState({ company_name: '', domain: '', industry: '', requested_by: '', salesperson: '', canada_only: false });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
 
@@ -63,14 +63,19 @@ export default function HomePage() {
     setError('');
     if (!form.company_name || !form.domain || !form.requested_by) { setError('Company, domain and requested-by are required.'); return; }
     setSubmitting(true);
-    const seller = sellers.find((s) => s.id === form.sellerId);
+    // The salesperson name IS the seller (and the name fed into the deck). Find an
+    // existing seller by name (case-insensitive) or auto-create one — no manual
+    // seller management.
+    const spName = form.salesperson.trim();
+    let seller = sellers.find((s) => s.name.trim().toLowerCase() === spName.toLowerCase());
     const req = {
       company_name: form.company_name, domain: form.domain, industry: form.industry || undefined,
-      requested_by: form.requested_by, salesperson_name: seller?.name, canada_only: form.canada_only,
+      requested_by: form.requested_by, salesperson_name: spName || undefined, canada_only: form.canada_only,
     };
     try {
+      if (!seller && spName) { try { seller = (await createSeller(spName)) || undefined; } catch { /* best-effort */ } }
       const res = await apiClient.submitProfileRequest(req);
-      addJob(res.job_id, req, seller?.id, seller?.name);
+      addJob(res.job_id, req, seller?.id, seller?.name || spName || undefined);
       if (seller) {
         await addSellerJob({
           job_id: res.job_id, seller_id: seller.id, company_name: form.company_name, domain: form.domain,
@@ -108,11 +113,8 @@ export default function HomePage() {
             </div>
             <div className="two">
               <div><label>Requested by</label><input className="inp" value={form.requested_by} onChange={(e) => set('requested_by', e.target.value)} placeholder="you@intercept" /></div>
-              <div><label>Seller</label>
-                <select className="inp" value={form.sellerId} onChange={(e) => set('sellerId', e.target.value)}>
-                  <option value="">— none —</option>
-                  {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-                </select>
+              <div><label>Salesperson</label><input className="inp" list="sellerlist" value={form.salesperson} onChange={(e) => set('salesperson', e.target.value)} placeholder="e.g. Jason Huang" />
+                <datalist id="sellerlist">{sellers.map((s) => <option key={s.id} value={s.name} />)}</datalist>
               </div>
             </div>
             <div className="toggle"><span>Canada-only contacts</span>

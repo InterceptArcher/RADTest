@@ -260,3 +260,20 @@
   @keyframes dash{to{stroke-dashoffset:-24}}
   @media (prefers-reduced-motion:reduce){*{animation:none!important}}
   @media (max-width:1150px){.ca-grid,.sellers,.articles{grid-template-columns:repeat(2,1fr)}.docwrap{grid-template-columns:1fr}.kv{grid-template-columns:repeat(2,1fr)}}
+
+/* --- Sellers: monthly draw counter + add/delete --- */
+.addseller{display:flex;gap:9px;margin-top:4px}
+.addseller .inp{flex:1}
+.addseller button{border:0;border-radius:11px;padding:0 16px;font-weight:700;font-size:13px;color:#fff;cursor:pointer;background:linear-gradient(180deg,#1cb2ed,#0079b8);box-shadow:0 8px 20px -8px var(--glow)}
+.addseller button:hover{filter:brightness(1.06)}
+.seller{position:relative}
+.seller .del{position:absolute;top:11px;right:11px;width:22px;height:22px;border-radius:7px;border:1px solid var(--hair);background:rgba(255,255,255,.5);color:var(--faint);cursor:pointer;font-size:13px;line-height:1;display:grid;place-items:center}
+.seller .del:hover{color:var(--bad);border-color:rgba(239,68,68,.35)}
+.drawmeter{margin:12px 0 2px}
+.drawmeter .top2{display:flex;justify-content:space-between;align-items:baseline;font-family:var(--mono);font-size:10px;color:var(--muted);margin-bottom:6px}
+.drawmeter .top2 b{font-size:14px;color:var(--hp-deep)}
+.drawmeter.over .top2 b{color:var(--warn)}
+.drawbar{height:9px;border-radius:6px;background:#d3e0ea;overflow:hidden;border:1px solid var(--hair)}
+.drawbar i{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--hp),var(--hp-light));transition:width .4s}
+.drawmeter.over .drawbar i{background:linear-gradient(90deg,#f59e0b,#fbbf24)}
+.drawmeter .over-note{font-family:var(--mono);font-size:9.5px;color:var(--warn);margin-top:5px}
