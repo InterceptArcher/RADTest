@@ -56,9 +56,12 @@ OPENAI_PRICING: Dict[str, Dict[str, float]] = {
 }
 _DEFAULT_OPENAI_KEY = "gpt-4o-mini"
 
-# Flat per-use prices in USD.
+# Flat per-use prices in USD. ZoomInfo has no token usage to price on, so it is
+# a rough per-API-call estimate (ZoomInfo bills by opaque credits — set this to
+# your plan's effective per-call credit cost). The meter reports the call COUNT
+# alongside the dollar figure so the estimate is transparent.
 WEB_SEARCH_USD_PER_CALL = 0.01   # one Anthropic web_search tool invocation
-ZOOMINFO_USD_PER_CALL = 0.10     # one ZoomInfo GTM API call (rough credit est.)
+ZOOMINFO_USD_PER_CALL = 0.01     # one ZoomInfo GTM API call (rough credit est.)
 
 # Round the reported total to this many decimal places.
 _USD_ROUND = 4

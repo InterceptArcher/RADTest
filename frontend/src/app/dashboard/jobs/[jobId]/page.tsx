@@ -226,13 +226,14 @@ export default function JobView() {
               const bs = apiCost?.by_service || {};
               const a = (bs.anthropic?.usd || 0) + (bs.openai?.usd || 0);
               const z = bs.zoominfo?.usd || 0, w = bs.web_search?.usd || 0;
+              const llmCalls = (bs.anthropic?.calls || 0) + (bs.openai?.calls || 0);
               const tot = a + z + w || 1;
               return <>
                 <div className="costbar"><i style={{ width: `${(a / tot) * 100}%`, background: 'var(--hp)' }} /><i style={{ width: `${(z / tot) * 100}%`, background: 'var(--hp-light)' }} /><i style={{ width: `${(w / tot) * 100}%`, background: 'var(--warn)' }} /></div>
                 <div className="costleg">
-                  <div className="r"><span className="sw2" style={{ background: 'var(--hp)' }} />LLM (Council + Claude)<span className="a">${a.toFixed(3)}</span></div>
-                  <div className="r"><span className="sw2" style={{ background: 'var(--hp-light)' }} />ZoomInfo (search + enrich)<span className="a">${z.toFixed(3)}</span></div>
-                  <div className="r"><span className="sw2" style={{ background: 'var(--warn)' }} />Web search<span className="a">${w.toFixed(3)}</span></div>
+                  <div className="r"><span className="sw2" style={{ background: 'var(--hp)' }} />LLM · {llmCalls} calls<span className="a">${a.toFixed(3)}</span></div>
+                  <div className="r"><span className="sw2" style={{ background: 'var(--hp-light)' }} />ZoomInfo · {bs.zoominfo?.calls || 0} calls<span className="a">${z.toFixed(3)}</span></div>
+                  <div className="r"><span className="sw2" style={{ background: 'var(--warn)' }} />Web search · {bs.web_search?.calls || 0}<span className="a">${w.toFixed(3)}</span></div>
                 </div>
               </>;
             })()}
