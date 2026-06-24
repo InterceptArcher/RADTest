@@ -1,95 +1,90 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { apiClient } from '@/lib/api';
 
-/**
- * Content Audit V2 (DAM) asset — shape is intentionally loose because the
- * backend payload varies; every field is read defensively below.
- */
-interface ContentAuditItem {
-  asset_name?: string;
-  name?: string;
-  title?: string;
-  industry?: string;
-  funnel_stage?: string;
-  stage?: string;
-  type?: string;
-  sp_link?: string;
-  link?: string;
-  url?: string;
-  [key: string]: unknown;
+interface Item {
+  asset_name?: string; name?: string; title?: string;
+  asset_summary?: string; industry?: string; consideration?: string;
+  format?: string; audience?: string; marketing_or_sales?: string;
+  service_solution?: string; sp_link?: string; link?: string; url?: string;
+  [k: string]: unknown;
 }
 
-function assetName(item: ContentAuditItem): string {
-  return item.asset_name || item.name || item.title || 'Untitled asset';
-}
+const name = (i: Item) => i.asset_name || i.name || i.title || 'Untitled asset';
+const link = (i: Item) => i.sp_link || i.link || i.url || '';
+const summary = (i: Item) => (i.asset_summary || '').toString();
+const emoji = (i: Item) => {
+  const f = (i.format || '').toLowerCase();
+  if (f.includes('thought')) return '💡';
+  if (f.includes('prescriptive')) return '🧭';
+  if (f.includes('product')) return '🧩';
+  return '📄';
+};
+const tags = (i: Item) => [i.consideration, i.format, i.audience,
+  i.industry && i.industry !== 'Industry agnostic' ? i.industry : '']
+  .filter((t): t is string => typeof t === 'string' && t.trim().length > 0);
 
-function assetTags(item: ContentAuditItem): string[] {
-  return [item.industry, item.funnel_stage, item.stage, item.type].filter(
-    (t): t is string => typeof t === 'string' && t.trim().length > 0
-  );
-}
-
-function assetLink(item: ContentAuditItem): string | undefined {
-  return item.sp_link || item.link || item.url || undefined;
-}
+const FUNNEL = ['Awareness', 'Consideration', 'Decision'];
 
 export default function ContentAuditPage() {
-  const [items, setItems] = useState<ContentAuditItem[]>([]);
+  const [items, setItems] = useState<Item[]>([]);
   const [fetched, setFetched] = useState(false);
+  const [filter, setFilter] = useState('All');
 
   useEffect(() => {
-    apiClient
-      .getContentAudit()
-      .then((data) => setItems(Array.isArray(data) ? (data as ContentAuditItem[]) : []))
+    apiClient.getContentAudit()
+      .then((d) => setItems(Array.isArray(d) ? (d as Item[]) : []))
       .finally(() => setFetched(true));
   }, []);
 
-  const loading = items.length === 0 && !fetched;
+  const counts = useMemo(() => {
+    const c: Record<string, number> = { All: items.length };
+    FUNNEL.forEach((f) => { c[f] = items.filter((i) => (i.consideration || '') === f).length; });
+    return c;
+  }, [items]);
+
+  const shown = filter === 'All' ? items : items.filter((i) => (i.consideration || '') === filter);
+  const loading = !fetched && items.length === 0;
 
   return (
-    <section className="view" id="view-content">
+    <>
       <div className="filters">
-        <span className="f on">All · {items.length}</span>
-        <span className="f">Awareness</span>
-        <span className="f">Consideration</span>
-        <span className="f">Decision</span>
-        <span className="f">Technology</span>
-        <span className="f">Insurance</span>
+        {['All', ...FUNNEL].map((f) => (
+          <span key={f} className={'f' + (filter === f ? ' on' : '')} onClick={() => setFilter(f)}>
+            {f} · {counts[f] ?? 0}
+          </span>
+        ))}
+        <span className="f" style={{ marginLeft: 'auto' }}>HP Canada DAM · {items.length} assets</span>
       </div>
 
       {loading ? (
-        <div className="await">loading content audit…</div>
-      ) : items.length === 0 ? (
-        <div className="await">No content audit assets found yet.</div>
+        <div className="await"><span className="d" /> loading content audit…</div>
+      ) : shown.length === 0 ? (
+        <div className="await">No assets match this filter.</div>
       ) : (
         <div className="ca-grid">
-          {items.map((item, idx) => {
-            const link = assetLink(item);
+          {shown.map((it, idx) => {
+            const href = link(it);
             return (
               <div className="asset" key={idx}>
-                <div className="thumb">📄</div>
-                <div className="an">{assetName(item)}</div>
-                <div className="tags">
-                  {assetTags(item).map((tag, i) => (
-                    <span className="tag" key={i}>
-                      {tag}
-                    </span>
-                  ))}
-                </div>
-                {link ? (
-                  <a className="lk" href={link} target="_blank" rel="noopener noreferrer">
-                    ↗ Open in DAM
-                  </a>
-                ) : (
-                  <a className="lk">↗ Open in DAM</a>
+                <div className="thumb">{emoji(it)}</div>
+                <div className="an">{name(it)}</div>
+                {summary(it) && (
+                  <div style={{ fontSize: 11.5, color: 'var(--muted)', lineHeight: 1.5,
+                    display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                    {summary(it)}
+                  </div>
                 )}
+                <div className="tags">{tags(it).map((t, i) => <span className="tag" key={i}>{t}</span>)}</div>
+                {href
+                  ? <a className="lk" href={href} target="_blank" rel="noopener noreferrer">↗ Open in DAM</a>
+                  : <span className="lk" style={{ opacity: .5 }}>no DAM link</span>}
               </div>
             );
           })}
         </div>
       )}
-    </section>
+    </>
   );
 }

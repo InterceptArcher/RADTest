@@ -53,6 +53,9 @@ export default function SellersPage() {
     };
   }, [stats, jobs]);
 
+  const over = team.monthly > MONTHLY_LIMIT;
+  const pct = Math.min(100, Math.round((team.monthly / MONTHLY_LIMIT) * 100));
+
   return (
     <>
       <div className="row2" style={{ marginBottom: 18 }}>
@@ -60,40 +63,38 @@ export default function SellersPage() {
           <div className="ph"><span className="eye" /><span className="k">Team</span><h3>This month</h3></div>
           <div className="pb"><div className="kv">
             <div className="c"><div className="l">Sellers</div><div className="v mono">{team.sellers}</div></div>
-            <div className="c"><div className="l">Draws</div><div className="v mono">{team.monthly}</div></div>
             <div className="c"><div className="l">Success</div><div className="v mono">{team.successPct}%</div></div>
             <div className="c"><div className="l">Spend</div><div className="v mono">${team.spend.toFixed(2)}</div></div>
           </div></div>
         </div>
+        {/* GLOBAL monthly draw meter — across all sellers, overflow allowed, resets monthly */}
         <div className="panel">
-          <div className="ph"><span className="eye" /><span className="k">Draws</span><h3>By seller</h3>
-            <span className="n">auto-created from intake</span></div>
-          <div className="pb"><div className="spark" style={{ height: 64 }}>
-            {team.bars.map((h, i) => <i key={i} style={{ height: `${h}%` }} />)}
-          </div></div>
+          <div className="ph"><span className="eye" /><span className="k">Bandwidth</span><h3>Monthly draws</h3>
+            <span className="n">resets {new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toLocaleString('en', { month: 'short', day: 'numeric' })}</span></div>
+          <div className="pb">
+            <div className={'drawmeter' + (over ? ' over' : '')}>
+              <div className="top2" style={{ fontSize: 11 }}><span>Profiles drawn this month</span><b style={{ fontSize: 20 }}>{team.monthly} / {MONTHLY_LIMIT}</b></div>
+              <div className="drawbar" style={{ height: 12 }}><i style={{ width: `${pct}%` }} /></div>
+              {over
+                ? <div className="over-note">+{team.monthly - MONTHLY_LIMIT} over the {MONTHLY_LIMIT}/month guide</div>
+                : <div className="over-note" style={{ color: 'var(--faint)' }}>{MONTHLY_LIMIT - team.monthly} draws remaining</div>}
+            </div>
+          </div>
         </div>
       </div>
 
       <div className="sellers" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
         {stats.length === 0 && <div className="await">No sellers yet — they appear automatically when you enter a salesperson on a new profile.</div>}
-        {stats.map((s) => {
-          const over = s.monthly > MONTHLY_LIMIT;
-          const pct = Math.min(100, Math.round((s.monthly / MONTHLY_LIMIT) * 100));
-          return (
-            <div className="seller" key={s.id}>
-              <button className="del" title="Remove seller" onClick={() => deleteSeller(s.id)}>×</button>
-              <div className="nm">{s.name}</div>
-              <div className="ro">Seller</div>
-              <div className={'drawmeter' + (over ? ' over' : '')}>
-                <div className="top2"><span>Draws this month</span><b>{s.monthly} / {MONTHLY_LIMIT}</b></div>
-                <div className="drawbar"><i style={{ width: `${pct}%` }} /></div>
-                {over && <div className="over-note">+{s.monthly - MONTHLY_LIMIT} over the monthly guide</div>}
-              </div>
-              <div className="spark">{s.bars.map((h, i) => <i key={i} style={{ height: `${h}%` }} />)}</div>
-              <div className="ftr"><span>{s.jobCount} total · ${s.spend.toFixed(2)}</span><b>{s.successPct}%</b></div>
-            </div>
-          );
-        })}
+        {stats.map((s) => (
+          <div className="seller" key={s.id}>
+            <button className="del" title="Remove seller" onClick={() => deleteSeller(s.id)}>×</button>
+            <div className="nm">{s.name}</div>
+            <div className="ro">Seller</div>
+            <div className="big">{s.monthly}</div><div className="lbl">draws this month</div>
+            <div className="spark">{s.bars.map((h, i) => <i key={i} style={{ height: `${h}%` }} />)}</div>
+            <div className="ftr"><span>{s.jobCount} total · ${s.spend.toFixed(2)}</span><b>{s.successPct}%</b></div>
+          </div>
+        ))}
       </div>
     </>
   );
