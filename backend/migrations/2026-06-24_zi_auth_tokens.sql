@@ -28,6 +28,10 @@ create table if not exists zi_auth_tokens (
 comment on table zi_auth_tokens is
     'Single-row key/value store for the rotating ZoomInfo Okta refresh_token so it survives Render restarts. Written by worker/zoominfo_client.py _persist_refresh_token().';
 
--- The backend uses the service-role key, which bypasses RLS. We still enable RLS
--- with no public policy so the table is never exposed via the anon/public API.
+-- Match the repo convention (setup/migrations/001_sellers_and_seller_jobs.sql):
+-- enable RLS WITH an allow-all policy. This is required because the backend may
+-- be using the anon SUPABASE_KEY — with RLS on and no policy, the upsert would
+-- be silently blocked and the persistence fix would not take effect.
 alter table zi_auth_tokens enable row level security;
+create policy "Allow all on zi_auth_tokens" on zi_auth_tokens
+    for all using (true) with check (true);
